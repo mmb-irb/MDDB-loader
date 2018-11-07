@@ -1,0 +1,22 @@
+{
+  "name": "model-cns_db_loader",
+  "version": "0.0.1",
+  "description": "MoDEL-CNS DB loader",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "[git@mmb.pcb.ub.es:22123]:aluciani/MoDEL-CNS_DB_loader.git"
+  },
+  "author": "Aurélien Luciani <aurelien.luciani@irbbarcelona.org>",
+  "license": "ISC",
+  "dependencies": {
+    "mongodb": "3.1.9",
+    "yargs": "12.0.2"
+  },
+  "devDependencies": {
+    "nodemon": "1.18.6"
+  }
+}
