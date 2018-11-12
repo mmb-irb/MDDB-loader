@@ -1,15 +1,57 @@
+const promisify = require('util').promisify;
 const fs = require('fs');
+const fetch = require('node-fetch');
+
+// Promisify All the things
+const readdir = promisify(fs.readdir);
+const readFile = promisify(fs.readFile);
 
 const mongodb = require('mongodb');
+const _ = require('lodash');
 
-const loadFolder = (folder, bucket) =>
+const NEW_LINES = /\s*\n+\s*/g;
+const SEPARATORS = /\s*,\s*/g;
+const loadMetadata = async folder =>
+  _.fromPairs(
+    (await readFile(folder + 'metadata', 'utf8'))
+      .split(NEW_LINES)
+      .filter(Boolean)
+      .map(line => {
+        const split = line.split(SEPARATORS);
+        const numberMaybe = +split[1];
+        return [
+          split[0],
+          Number.isFinite(numberMaybe) ? numberMaybe : split[1],
+        ];
+      }),
+  );
+
+const loadFile = (folder, filename, bucket) =>
   new Promise((resolve, reject) => {
-    const stream = bucket.openUploadStream('test.txt');
-    stream.on('error', reject);
-    stream.on('finish', resolve);
-    stream.write(Buffer.from(folder));
-    stream.end(Buffer.from('\n'));
+    fs.createReadStream(folder + filename)
+      .pipe(bucket.openUploadStream(filename))
+      .on('error', reject)
+      .on('finish', resolve);
   });
+
+// const filePatternToLoad = /\.(xtc|dcd|pdb)$/i;
+const filePatternToLoad = /\.(dcd|pdb)$/i;
+
+const loadFolder = async (folder, bucket) => {
+  const filenames = (await readdir(folder)).filter(filename =>
+    filePatternToLoad.test(filename),
+  );
+  const metadata = await loadMetadata(folder);
+  const storedFiles = await Promise.all(
+    filenames.map(filename => loadFile(folder, filename, bucket)),
+  );
+  return { metadata, files: storedFiles };
+};
+
+const loadPdbInfo = (pdbID = '5l9u') =>
+  fetch(`http://mmb.pcb.ub.es/api/pdb/${pdbID}/entry`).then(response =>
+    response.json(),
+  );
 
 const loadFolders = async ({ folders }) => {
   let mongoConfig;
@@ -22,17 +64,24 @@ const loadFolders = async ({ folders }) => {
   }
   let client;
   try {
-    const { server, port, db: _db, ...config } = mongoConfig;
+    const { server, port, db: dbName, ...config } = mongoConfig;
     client = await mongodb.MongoClient.connect(
       `mongodb://${server}:${port}`,
       config,
     );
-    const bucket = new mongodb.GridFSBucket(client.db(mongoConfig.db));
+    const db = client.db(dbName);
+    const bucket = new mongodb.GridFSBucket(db);
     for (const [index, folder] of folders.entries()) {
       try {
         console.log(`processing folder ${index + 1} out of ${folders.length}`);
         console.log(`== starting load of '${folder}'`);
-        await loadFolder(folder, bucket);
+        const projects = db.collection('projects');
+        await projects.insertOne({
+          pdbInfo: await loadPdbInfo(
+            (folder.match(/\/(\w{4})[^\/]+\/?$/i) || [])[1],
+          ),
+          ...(await loadFolder(folder, bucket)),
+        });
         console.log(`== finished loading '${folder}'`);
       } catch (error) {
         console.error(error);
