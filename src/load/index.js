@@ -53,6 +53,18 @@ const loadPdbInfo = (pdbID = '5l9u') =>
     response.json(),
   );
 
+const getNextId = async counters => {
+  const result = await counters.findOneAndUpdate(
+    { name: 'identifier' },
+    { $inc: { count: 1 } },
+    {
+      projection: { _id: false, count: true },
+      returnOriginal: false,
+    },
+  );
+  return `MCDN${`${result.value.count}`.padStart(5, '0')}`;
+};
+
 const loadFolders = async ({ folders }) => {
   let mongoConfig;
   try {
@@ -81,6 +93,9 @@ const loadFolders = async ({ folders }) => {
             (folder.match(/\/(\w{4})[^\/]+\/?$/i) || [])[1],
           ),
           ...(await loadFolder(folder, bucket)),
+          // do this last, in case something fails before doesn't trigger the
+          // counter increment (side-effect)
+          _id: await getNextId(db.collection('counters')),
         });
         console.log(`== finished loading '${folder}'`);
       } catch (error) {
