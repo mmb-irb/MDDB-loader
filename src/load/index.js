@@ -48,10 +48,12 @@ const loadFolder = async (folder, bucket) => {
   return { metadata, files: storedFiles };
 };
 
-const loadPdbInfo = (pdbID = '5l9u') =>
-  fetch(`http://mmb.pcb.ub.es/api/pdb/${pdbID}/entry`).then(response =>
-    response.json(),
-  );
+const loadPdbInfo = pdbID =>
+  pdbID
+    ? fetch(`http://mmb.pcb.ub.es/api/pdb/${pdbID}/entry`).then(response =>
+        response.json(),
+      )
+    : undefined;
 
 const getNextId = async counters => {
   const result = await counters.findOneAndUpdate(
@@ -59,10 +61,11 @@ const getNextId = async counters => {
     { $inc: { count: 1 } },
     {
       projection: { _id: false, count: true },
+      // return the new document with the new counter for the custom identifier
       returnOriginal: false,
     },
   );
-  return `MCDN${`${result.value.count}`.padStart(5, '0')}`;
+  return `MCNS${`${result.value.count}`.padStart(5, '0')}`;
 };
 
 const loadFolders = async ({ folders }) => {
