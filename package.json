@@ -13,6 +13,7 @@
   "author": "Aurélien Luciani <aurelien.luciani@irbbarcelona.org>",
   "license": "ISC",
   "dependencies": {
+    "dev-null": "0.1.1",
     "lodash": "4.17.11",
     "mongodb": "3.1.9",
     "node-fetch": "2.2.1",

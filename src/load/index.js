@@ -1,6 +1,7 @@
 const promisify = require('util').promisify;
 const fs = require('fs');
 const fetch = require('node-fetch');
+const devNull = require('dev-null');
 
 // Promisify All the things
 const readdir = promisify(fs.readdir);
@@ -26,10 +27,10 @@ const loadMetadata = async folder =>
       }),
   );
 
-const loadFile = (folder, filename, bucket) =>
+const loadFile = (folder, filename, bucket, dryRun) =>
   new Promise((resolve, reject) => {
     fs.createReadStream(folder + filename)
-      .pipe(bucket.openUploadStream(filename))
+      .pipe(dryRun ? devNull() : bucket.openUploadStream(filename))
       .on('error', reject)
       .on('finish', resolve);
   });
@@ -37,13 +38,13 @@ const loadFile = (folder, filename, bucket) =>
 // const filePatternToLoad = /\.(xtc|dcd|pdb)$/i;
 const filePatternToLoad = /\.(dcd|pdb)$/i;
 
-const loadFolder = async (folder, bucket) => {
+const loadFolder = async (folder, bucket, dryRun) => {
   const filenames = (await readdir(folder)).filter(filename =>
     filePatternToLoad.test(filename),
   );
   const metadata = await loadMetadata(folder);
   const storedFiles = await Promise.all(
-    filenames.map(filename => loadFile(folder, filename, bucket)),
+    filenames.map(filename => loadFile(folder, filename, bucket, dryRun)),
   );
   return { metadata, files: storedFiles };
 };
@@ -55,10 +56,10 @@ const loadPdbInfo = pdbID =>
       )
     : undefined;
 
-const getNextId = async counters => {
+const getNextId = async (counters, dryRun) => {
   const result = await counters.findOneAndUpdate(
     { name: 'identifier' },
-    { $inc: { count: 1 } },
+    { $inc: { count: dryRun ? 0 : 1 } },
     {
       projection: { _id: false, count: true },
       // return the new document with the new counter for the custom identifier
@@ -68,7 +69,7 @@ const getNextId = async counters => {
   return `MCNS${`${result.value.count}`.padStart(5, '0')}`;
 };
 
-const loadFolders = async ({ folders }) => {
+const loadFolders = async ({ folders, dryRun = false }) => {
   let mongoConfig;
   try {
     // mongo config file, can be json or js code
@@ -86,20 +87,24 @@ const loadFolders = async ({ folders }) => {
     );
     const db = client.db(dbName);
     const bucket = new mongodb.GridFSBucket(db);
+    if (dryRun) {
+      console.log('running in "dry-run" mode, won\'t affect the database');
+    }
     for (const [index, folder] of folders.entries()) {
       try {
         console.log(`processing folder ${index + 1} out of ${folders.length}`);
         console.log(`== starting load of '${folder}'`);
         const projects = db.collection('projects');
-        await projects.insertOne({
+        const document = {
           pdbInfo: await loadPdbInfo(
             (folder.match(/\/(\w{4})[^\/]+\/?$/i) || [])[1],
           ),
-          ...(await loadFolder(folder, bucket)),
+          ...(await loadFolder(folder, bucket, dryRun)),
           // do this last, in case something fails before doesn't trigger the
           // counter increment (side-effect)
-          _id: await getNextId(db.collection('counters')),
-        });
+          _id: await getNextId(db.collection('counters'), dryRun),
+        };
+        if (!dryRun) await projects.insertOne(document);
         console.log(`== finished loading '${folder}'`);
       } catch (error) {
         console.error(error);

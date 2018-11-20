@@ -38,4 +38,10 @@ const argv = yargs
     }
     if (cleanedUpFolders.length) return cleanedUpFolders;
   })
+  .option('d', {
+    alias: 'dry-run',
+    default: false,
+    description: "Doesn't write to database",
+    type: 'boolean',
+  })
   .help().argv;
