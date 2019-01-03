@@ -4,6 +4,15 @@ const process = require('process');
 
 const yargs = require('yargs');
 
+const MULTIPLE_SLASHES = /\/+/g;
+
+const resolve = (path, isFolder) => {
+  const workingDirectory = process.cwd();
+  return `${path.startsWith('/') ? '' : `${workingDirectory}/`}${path}${
+    isFolder ? '/' : ''
+  }`.replace(MULTIPLE_SLASHES, '/');
+};
+
 const argv = yargs
   .command(
     'load <folders...>',
@@ -20,12 +29,8 @@ const argv = yargs
     const folderSet = new Set(folders);
     const erroredFolders = [];
     const cleanedUpFolders = [];
-    const workingDirectory = process.cwd();
     for (const folder of folderSet) {
-      const cleanedUpFolder = (folder.startsWith('/')
-        ? `${folder}/`
-        : `${workingDirectory}/${folder}/`
-      ).replace(/\/+/g, '/');
+      const cleanedUpFolder = resolve(folder, true);
       try {
         fs.accessSync(cleanedUpFolder, fs.constants.X_OK);
         cleanedUpFolders.push(cleanedUpFolder);
@@ -44,4 +49,10 @@ const argv = yargs
     description: "Doesn't write to database",
     type: 'boolean',
   })
+  .option('o', {
+    alias: 'output',
+    description: 'File output to save documents to (debugging purposes)',
+    type: 'string',
+  })
+  .coerce('o', output => resolve(output, false))
   .help().argv;

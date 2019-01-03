@@ -35,18 +35,64 @@ const loadFile = (folder, filename, bucket, dryRun) =>
       .on('finish', resolve);
   });
 
+const analyses = [
+  {
+    name: 'rgyr',
+    pattern: /rgyr/,
+    process: fileContent => {
+      console.log(`rgyr file length: ${fileContent.length}`);
+      return fileContent.length;
+    },
+  },
+  {
+    name: 'rmsd',
+    pattern: /rmsd/,
+    process: fileContent => {
+      console.log(`rmsd file length: ${fileContent.length}`);
+      return fileContent.length;
+    },
+  },
+  {
+    name: 'fluctuation',
+    pattern: /rmsf/,
+    process: fileContent => {
+      console.log(`fluctuation file length: ${fileContent.length}`);
+      return fileContent.length;
+    },
+  },
+];
+
+const loadAnalysis = async (folder, analysisFile) => {
+  const { name, process } =
+    analyses.find(({ pattern }) => pattern.test(analysisFile)) || {};
+  if (!name) return;
+  console.log(`loading analysis files: ${analysisFile}`);
+  const fileContent = await readFile(folder + analysisFile);
+  return [name, process(fileContent)];
+};
+
 // const filePatternToLoad = /\.(xtc|dcd|pdb)$/i;
-const filePatternToLoad = /\.(dcd|pdb)$/i;
+const rawFilePatternToLoad = /\.(dcd|pdb)$/i;
+const analysisFilePatternToLoad = /\.xvg$/i;
 
 const loadFolder = async (folder, bucket, dryRun) => {
-  const filenames = (await readdir(folder)).filter(filename =>
-    filePatternToLoad.test(filename),
+  const allFiles = await readdir(folder);
+  const rawFiles = allFiles.filter(filename =>
+    rawFilePatternToLoad.test(filename),
+  );
+  const analysisFiles = allFiles.filter(filename =>
+    analysisFilePatternToLoad.test(filename),
   );
   const metadata = await loadMetadata(folder);
   const storedFiles = await Promise.all(
-    filenames.map(filename => loadFile(folder, filename, bucket, dryRun)),
+    rawFiles.map(filename => loadFile(folder, filename, bucket, dryRun)),
   );
-  return { metadata, files: storedFiles };
+  const analyses = _.fromPairs(
+    (await Promise.all(
+      analysisFiles.map(filename => loadAnalysis(folder, filename)),
+    )).filter(Boolean),
+  );
+  return { metadata, files: storedFiles, analyses };
 };
 
 const loadPdbInfo = pdbID =>
@@ -69,7 +115,7 @@ const getNextId = async (counters, dryRun) => {
   return `MCNS${`${result.value.count}`.padStart(5, '0')}`;
 };
 
-const loadFolders = async ({ folders, dryRun = false }) => {
+const loadFolders = async ({ folders, dryRun = false, output }) => {
   let mongoConfig;
   try {
     // mongo config file, can be json or js code
@@ -79,6 +125,7 @@ const loadFolders = async ({ folders, dryRun = false }) => {
     return;
   }
   let client;
+  let writer;
   try {
     const { server, port, db: dbName, ...config } = mongoConfig;
     client = await mongodb.MongoClient.connect(
@@ -90,6 +137,7 @@ const loadFolders = async ({ folders, dryRun = false }) => {
     if (dryRun) {
       console.log('running in "dry-run" mode, won\'t affect the database');
     }
+    writer = output && (await require('./output-writer')(output));
     for (const [index, folder] of folders.entries()) {
       try {
         console.log(`processing folder ${index + 1} out of ${folders.length}`);
@@ -104,7 +152,11 @@ const loadFolders = async ({ folders, dryRun = false }) => {
           // counter increment (side-effect)
           _id: await getNextId(db.collection('counters'), dryRun),
         };
-        if (!dryRun) await projects.insertOne(document);
+        const tasks = [
+          writer && writer.writeToOutput(document),
+          !dryRun && projects.insertOne(document),
+        ].filter(Boolean);
+        await Promise.all(tasks);
         console.log(`== finished loading '${folder}'`);
       } catch (error) {
         console.error(error);
@@ -112,10 +164,10 @@ const loadFolders = async ({ folders, dryRun = false }) => {
       }
     }
   } catch (error) {
-    console.error('mongodb connection error');
     console.error(error);
   } finally {
     if (client && 'close' in client) client.close();
+    if (writer) await writer.closeOutput();
   }
 };
 
