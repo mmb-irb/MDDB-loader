@@ -9,6 +9,9 @@ const readFile = promisify(fs.readFile);
 
 const mongodb = require('mongodb');
 const _ = require('lodash');
+const mathjs = require('mathjs');
+
+const readFilePerLine = require('../utils/read-file-per-line');
 
 const NEW_LINES = /\s*\n+\s*/g;
 const SEPARATORS = /\s*,\s*/g;
@@ -35,40 +38,65 @@ const loadFile = (folder, filename, bucket, dryRun) =>
       .on('finish', resolve);
   });
 
+const processFunctionCreator = (...keys) => async dataAsyncGenerator => {
+  const output = {
+    step: 0,
+    y: new Map(keys.map(y => [y, { average: 0, stddev: 0, data: [] }])),
+  };
+  for await (const data of dataAsyncGenerator) {
+    if (!output.step) output.step = data[0];
+    for (const [index, value] of Array.from(output.y.keys()).entries()) {
+      output.y.get(value).data.push(data[index + 1]);
+    }
+  }
+  for (const key of output.y.keys()) {
+    const y = output.y.get(key);
+    y.average = mathjs.mean(y.data);
+    y.stddev = mathjs.std(y.data);
+  }
+  output.y = _.fromPairs(Array.from(output.y.entries()));
+  return output;
+};
+
 const analyses = [
   {
     name: 'rgyr',
     pattern: /rgyr/,
-    process: fileContent => {
-      console.log(`rgyr file length: ${fileContent.length}`);
-      return fileContent.length;
-    },
+    process: processFunctionCreator('rgyr', 'rgyrx', 'rgyry', 'rgyrz'),
   },
   {
     name: 'rmsd',
     pattern: /rmsd/,
-    process: fileContent => {
-      console.log(`rmsd file length: ${fileContent.length}`);
-      return fileContent.length;
-    },
+    process: processFunctionCreator('rmsd'),
   },
   {
     name: 'fluctuation',
     pattern: /rmsf/,
-    process: fileContent => {
-      console.log(`fluctuation file length: ${fileContent.length}`);
-      return fileContent.length;
-    },
+    process: processFunctionCreator('rmsf'),
   },
 ];
+
+const WHITE_SPACE = /\s+/;
+const statFileLinesToDataLines = async function*(lines) {
+  for await (const line of lines) {
+    let processsedLine = line.trim();
+    if (!processsedLine) continue;
+    if (processsedLine.startsWith('#')) continue;
+    if (processsedLine.startsWith('@')) continue;
+    yield processsedLine.split(WHITE_SPACE).map(cell => +cell);
+  }
+};
 
 const loadAnalysis = async (folder, analysisFile) => {
   const { name, process } =
     analyses.find(({ pattern }) => pattern.test(analysisFile)) || {};
   if (!name) return;
-  console.log(`loading analysis files: ${analysisFile}`);
-  const fileContent = await readFile(folder + analysisFile);
-  return [name, process(fileContent)];
+  return [
+    name,
+    await process(
+      statFileLinesToDataLines(readFilePerLine(folder + analysisFile)),
+    ),
+  ];
 };
 
 // const filePatternToLoad = /\.(xtc|dcd|pdb)$/i;
