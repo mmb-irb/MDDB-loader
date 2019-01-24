@@ -13,6 +13,8 @@ const mathjs = require('mathjs');
 
 const readFilePerLine = require('../utils/read-file-per-line');
 
+const loadTrajectory = require('./load-trajectory');
+
 const NEW_LINES = /\s*\n+\s*/g;
 const SEPARATORS = /\s*,\s*/g;
 const loadMetadata = async folder =>
@@ -102,15 +104,22 @@ const loadAnalysis = async (folder, analysisFile) => {
 // const filePatternToLoad = /\.(xtc|dcd|pdb)$/i;
 const rawFilePatternToLoad = /\.(dcd|pdb)$/i;
 const analysisFilePatternToLoad = /\.xvg$/i;
+const trajectoryFilePatternToLoad = /\.trj$/i;
 
 const loadFolder = async (folder, bucket, dryRun) => {
   const allFiles = await readdir(folder);
   const rawFiles = allFiles.filter(filename =>
     rawFilePatternToLoad.test(filename),
   );
+  const trajectoryFile = allFiles.find(filename =>
+    trajectoryFilePatternToLoad.test(filename),
+  );
   const analysisFiles = allFiles.filter(filename =>
     analysisFilePatternToLoad.test(filename),
   );
+  const trajectory =
+    trajectoryFile &&
+    (await loadTrajectory(folder, trajectoryFile, bucket, dryRun));
   const metadata = await loadMetadata(folder);
   const storedFiles = await Promise.all(
     rawFiles.map(filename => loadFile(folder, filename, bucket, dryRun)),
@@ -120,7 +129,11 @@ const loadFolder = async (folder, bucket, dryRun) => {
       analysisFiles.map(filename => loadAnalysis(folder, filename)),
     )).filter(Boolean),
   );
-  return { metadata, files: storedFiles, analyses };
+  return {
+    metadata,
+    files: [...storedFiles, trajectory].filter(Boolean),
+    analyses,
+  };
 };
 
 const loadPdbInfo = pdbID =>
