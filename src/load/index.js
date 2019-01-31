@@ -186,7 +186,7 @@ const loadFolders = async ({ folders, dryRun = false, output }) => {
         const projects = db.collection('projects');
         const document = {
           pdbInfo: await loadPdbInfo(
-            (folder.match(/\/(\w{4})[^\/]+\/?$/i) || [])[1],
+            (folder.match(/\/(\w{4})[^/]+\/?$/i) || [])[1],
           ),
           ...(await loadFolder(folder, bucket, dryRun)),
           // do this last, in case something fails before doesn't trigger the
