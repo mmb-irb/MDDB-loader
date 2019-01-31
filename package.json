@@ -6,7 +6,8 @@
   "scripts": {
     "test": "jest",
     "lint": "eslint '**/*.js'",
-    "prettier": "prettier --write"
+    "prettier": "prettier --write",
+    "coverage": "npm run test -- --coverage --collectCoverageFrom='**/*.js' --collectCoverageFrom='!coverage/**'"
   },
   "repository": {
     "type": "git",
