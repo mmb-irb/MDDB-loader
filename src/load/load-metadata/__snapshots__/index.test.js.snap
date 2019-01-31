@@ -1,0 +1,27 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`loadMetadata basic 1`] = `
+Object {
+  "BOXSIZEX": 13.66313,
+  "BOXSIZEY": 13.66313,
+  "BOXSIZEZ": 14.49403,
+  "BOXTYPE": "Triclinic",
+  "CL": 263,
+  "DPPC": 601,
+  "ENSEMBLE": "NPT",
+  "FF": "gromos53a6",
+  "FREQUENCY": 100,
+  "LENGTH": 100,
+  "MEMBRANE": "DPPC",
+  "NA": 251,
+  "PCOUPLING": "Semiisotropic",
+  "PROT": 570,
+  "PROTATS": 6050,
+  "SNAPSHOTS": 1000,
+  "SOL": 61651,
+  "SYSTATS": 221567,
+  "TEMP": 300,
+  "TIMESTEP": 2,
+  "WAT": "TIP3P",
+}
+`;

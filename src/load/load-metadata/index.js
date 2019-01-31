@@ -9,7 +9,7 @@ const SEPARATORS = /\s*,\s*/g;
 
 const loadMetadata = async folder =>
   _.fromPairs(
-    (await readFile(folder + 'metadata', 'utf8'))
+    (await readFile(folder + '/metadata', 'utf8'))
       .split(NEW_LINES)
       .filter(Boolean)
       .map(line => {

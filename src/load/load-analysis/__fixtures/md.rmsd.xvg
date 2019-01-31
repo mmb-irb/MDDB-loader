@@ -1,0 +1,28 @@
+# This file was created Mon Oct  8 12:05:26 2018
+# Created by:
+#                    :-) GROMACS - gmx rms, VERSION 5.1.4 (-:
+# 
+# Executable:   /opt/gromacs-5.1.4/bin/gmx
+# Data prefix:  /opt/gromacs-5.1.4
+# Command line:
+#   gmx rms -s md.imaged.rot.dry.pdb -f md.imaged.rot.xtc -o md.rmsd.vs1stSnp.xvg -n md.ndx
+# gmx rms is part of G R O M A C S:
+#
+# Gravel Rubs Often Many Awfully Cauterized Sores
+#
+@    title "RMSD"
+@    xaxis  label "Time (ps)"
+@    yaxis  label "RMSD (nm)"
+@TYPE xy
+@ subtitle "Protein after lsq fit to Protein"
+   0.0000000    0.1963333
+  10.0000000    0.1727465
+  20.0000000    0.1555406
+  30.0000000    0.1403201
+  40.0000000    0.1393364
+  50.0000000    0.1345313
+  60.0000000    0.1372634
+  70.0000000    0.1293104
+  80.0000000    0.1127455
+  90.0000000    0.1041107
+ 100.0000000    0.0000013

@@ -1,6 +1,7 @@
 const fs = require('fs');
 
 const readFilePerLine = async function*(path) {
+  if (!path) return;
   const readStream = fs.createReadStream(path, {
     encoding: 'utf8',
     highWaterMark: 1024,

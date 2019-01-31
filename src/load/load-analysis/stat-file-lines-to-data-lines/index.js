@@ -1,6 +1,6 @@
 const WHITE_SPACE = /\s+/;
 const statFileLinesToDataLines = async function*(lines) {
-  for await (const line of lines) {
+  for await (const line of lines || []) {
     let processsedLine = line.trim();
     if (!processsedLine) continue;
     if (processsedLine.startsWith('#')) continue;

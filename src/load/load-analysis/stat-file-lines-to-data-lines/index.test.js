@@ -14,12 +14,22 @@ describe('statFileToDataLines', () => {
       [10, 2.66498, 2.31907, 2.11922, 2.0821],
     ];
     const asyncGenerator = statFileToDataLines(fileLines);
-    const firstLine = await asyncGenerator.next();
-    expect(firstLine.value).toEqual(expected[0]);
-    const secondLine = await asyncGenerator.next();
-    expect(secondLine.value).toEqual(expected[1]);
-    const end = await asyncGenerator.next();
-    expect(end.value).toBeUndefined();
-    expect(end.done).toBe(true);
+    let line = await asyncGenerator.next();
+    expect(line.value).toEqual(expected[0]);
+    line = await asyncGenerator.next();
+    expect(line.value).toEqual(expected[1]);
+    line = await asyncGenerator.next();
+    expect(line.value).toBeUndefined();
+    expect(line.done).toBe(true);
+  });
+
+  test('edge cases where no data', async () => {
+    const edgeCases = [undefined, null, [], [''], ['    '], ['@ comment']];
+    for (const edgeCase of edgeCases) {
+      const asyncGenerator = statFileToDataLines(edgeCase);
+      const end = await asyncGenerator.next();
+      expect(end.value).toBeUndefined();
+      expect(end.done).toBe(true);
+    }
   });
 });
