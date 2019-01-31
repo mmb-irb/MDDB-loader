@@ -1,34 +1,20 @@
-const promisify = require('util').promisify;
-const fs = require('fs');
 const fetch = require('node-fetch');
-
-// Promisify All the things
-const readdir = promisify(fs.readdir);
-
 const mongodb = require('mongodb');
 const _ = require('lodash');
 
+const categorizeFilesInFolder = require('./categorize-files-in-folder');
 const loadTrajectory = require('./load-trajectory');
 const loadMetadata = require('./load-metadata');
 const loadFile = require('./load-file');
 const loadAnalysis = require('./load-analysis');
 
-const rawFilePatternToLoad = /\.(dcd|pdb)$/i;
-const analysisFilePatternToLoad = /\.xvg$/i;
-const trajectoryFilePatternToLoad = /\.trj$/i;
-
 const loadFolder = async (folder, bucket, dryRun) => {
   // find files
-  const allFiles = await readdir(folder);
-  const rawFiles = allFiles.filter(filename =>
-    rawFilePatternToLoad.test(filename),
-  );
-  const trajectoryFile = allFiles.find(filename =>
-    trajectoryFilePatternToLoad.test(filename),
-  );
-  const analysisFiles = allFiles.filter(filename =>
-    analysisFilePatternToLoad.test(filename),
-  );
+  const {
+    rawFiles,
+    trajectoryFile,
+    analysisFiles,
+  } = await categorizeFilesInFolder(folder);
 
   // process files
   const trajectory =
