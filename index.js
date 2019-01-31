@@ -13,7 +13,7 @@ const resolve = (path, isFolder) => {
   }`.replace(MULTIPLE_SLASHES, '/');
 };
 
-const argv = yargs
+yargs
   .command(
     'load <folders...>',
     'load data from specified folder(s)',
