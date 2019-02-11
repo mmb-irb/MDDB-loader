@@ -1,5 +1,6 @@
 const promisify = require('util').promisify;
 const fs = require('fs');
+const chalk = require('yellow');
 
 const stat = promisify(fs.stat);
 const open = promisify(fs.open);
@@ -21,7 +22,9 @@ const outputWriter = async outputFile => {
       );
     } else if (fileStats.size) {
       console.log(
-        'It looks like this file already exists, are you sure you want to overwrite it?',
+        chalk.yellow(
+          'It looks like this file already exists, are you sure you want to overwrite it?',
+        ),
       );
       const prompt = require('prompt');
       prompt.start();
@@ -36,8 +39,10 @@ const outputWriter = async outputFile => {
       if (confirmation === 'N') {
         throw new Error('OK, bailing now!');
       } else {
-        console.log('OK, will overwrite output file.');
-        console.log('moving on in 5 seconds, last chance to cancel!');
+        console.log(chalk.yellow('OK, will overwrite output file.'));
+        console.log(
+          chalk.yellow('moving on in 5 seconds, last chance to cancel!'),
+        );
         await require('timing-functions').sleep(5000);
       }
     }

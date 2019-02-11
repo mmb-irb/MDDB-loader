@@ -1,6 +1,7 @@
 const fetch = require('node-fetch');
 const mongodb = require('mongodb');
-const _ = require('lodash');
+const chalk = require('chalk');
+const ora = require('ora');
 
 const categorizeFilesInFolder = require('./categorize-files-in-folder');
 const loadTrajectory = require('./load-trajectory');
@@ -20,14 +21,40 @@ const loadFolder = async (folder, bucket, dryRun) => {
   const trajectory =
     trajectoryFile &&
     (await loadTrajectory(folder, trajectoryFile, bucket, dryRun));
+
   const metadata = await loadMetadata(folder);
-  const storedFiles = await Promise.all(
-    rawFiles.map(filename => loadFile(folder, filename, bucket, dryRun)),
+
+  const storedFiles = [];
+  let spinner = ora().start(
+    `Loading ${rawFiles.length} file${rawFiles.length > 1 ? 's' : ''}`,
   );
-  const analyses = _.fromPairs(
-    (await Promise.all(
-      analysisFiles.map(filename => loadAnalysis(folder, filename)),
-    )).filter(Boolean),
+  spinner.start();
+  for (const [index, filename] of rawFiles.entries()) {
+    spinner.text = `Loading file ${index + 1} out of ${
+      rawFiles.length
+    } (${filename})`;
+    storedFiles.push(await loadFile(folder, filename, bucket, dryRun));
+  }
+  spinner.succeed(
+    `Loaded ${rawFiles.length} file${rawFiles.length > 1 ? 's' : ''}`,
+  );
+  const analyses = {};
+  spinner = ora().start(
+    `Loading ${analysisFiles.length} analys${
+      analysisFiles.length > 1 ? 'es' : 'is'
+    }`,
+  );
+  for (const [index, filename] of analysisFiles.entries()) {
+    spinner.text = `Loading analysis ${index + 1} out of ${
+      rawFiles.length
+    } (${filename})`;
+    const [analysisName, analysisData] = await loadAnalysis(folder, filename);
+    analyses[analysisName] = analysisData;
+  }
+  spinner.succeed(
+    `Loaded ${analysisFiles.length} analys${
+      analysisFiles.length > 1 ? 'es' : 'is'
+    }`,
   );
   return {
     metadata,
@@ -36,12 +63,20 @@ const loadFolder = async (folder, bucket, dryRun) => {
   };
 };
 
-const loadPdbInfo = pdbID =>
-  pdbID
-    ? fetch(`http://mmb.pcb.ub.es/api/pdb/${pdbID}/entry`).then(response =>
-        response.json(),
-      )
+const loadPdbInfo = pdbID => {
+  const spinner = ora().start(`Loading PDB Info for ${pdbID} from API`);
+  return pdbID
+    ? fetch(`http://mmb.pcb.ub.es/api/pdb/${pdbID}/entry`)
+        .then(response => response.json())
+        .then(data => {
+          spinner.succeed(`Loaded PDB Info for ${pdbID} from API`);
+          return data;
+        })
+        .catch(error => {
+          spinner.fail(error);
+        })
     : undefined;
+};
 
 const getNextId = async (counters, dryRun) => {
   const result = await counters.findOneAndUpdate(
@@ -55,6 +90,8 @@ const getNextId = async (counters, dryRun) => {
   );
   return `MCNS${`${result.value.count}`.padStart(5, '0')}`;
 };
+
+let session;
 
 const loadFolders = async ({ folders, dryRun = false, output }) => {
   let mongoConfig;
@@ -73,21 +110,28 @@ const loadFolders = async ({ folders, dryRun = false, output }) => {
       `mongodb://${server}:${port}`,
       config,
     );
+    session = client.startSession();
     const db = client.db(dbName);
     const bucket = new mongodb.GridFSBucket(db);
     if (dryRun) {
-      console.log('running in "dry-run" mode, won\'t affect the database');
+      console.log(
+        chalk.yellow('running in "dry-run" mode, won\'t affect the database'),
+      );
     }
     writer = output && (await require('./output-writer')(output));
     for (const [index, folder] of folders.entries()) {
       try {
-        console.log(`processing folder ${index + 1} out of ${folders.length}`);
-        console.log(`== starting load of '${folder}'`);
+        console.log(
+          chalk.blue(`processing folder ${index + 1} out of ${folders.length}`),
+        );
+        console.log(chalk.cyan(`== starting load of '${folder}'`));
+        session.startTransaction();
         const projects = db.collection('projects');
+        const pdbInfo = await loadPdbInfo(
+          (folder.match(/\/(\w{4})[^/]+\/?$/i) || [])[1],
+        );
         const document = {
-          pdbInfo: await loadPdbInfo(
-            (folder.match(/\/(\w{4})[^/]+\/?$/i) || [])[1],
-          ),
+          pdbInfo,
           ...(await loadFolder(folder, bucket, dryRun)),
           // do this last, in case something fails before doesn't trigger the
           // counter increment (side-effect)
@@ -98,18 +142,43 @@ const loadFolders = async ({ folders, dryRun = false, output }) => {
           !dryRun && projects.insertOne(document),
         ].filter(Boolean);
         await Promise.all(tasks);
-        console.log(`== finished loading '${folder}'`);
+        await session.commitTransaction();
+        console.log(
+          chalk.cyan(`== finished loading '${folder}' as '${document._id}'`),
+        );
       } catch (error) {
+        await session.abortTransaction();
         console.error(error);
-        console.error(`failed to load '${folder}'`);
+        console.error(chalk.bgRed(`failed to load '${folder}'`));
       }
     }
   } catch (error) {
     console.error(error);
   } finally {
+    if (session) session.endSession();
     if (client && 'close' in client) client.close();
     if (writer) await writer.closeOutput();
   }
 };
+
+// Handle pressing ctrl-c to exit script
+process.on('SIGINT', () => {
+  console.log(chalk.red('Caught interrupt signal'));
+  if (!(session && session.inTransaction())) {
+    process.exit(0);
+    return;
+  }
+  const spinner = ora().start('Cancelling current transaction');
+  session.abortTransaction().then(
+    () => {
+      spinner.succeed('Current transaction successfully cancelled');
+      process.exit(0);
+    },
+    () => {
+      spinner.fail("Didn't manage to cancel current transaction");
+      process.exit(1);
+    },
+  );
+});
 
 module.exports = loadFolders;

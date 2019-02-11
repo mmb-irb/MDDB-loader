@@ -1,11 +1,13 @@
 const devNull = require('dev-null');
+const ora = require('ora');
 
 const readFilePerLine = require('../../utils/read-file-per-line');
 
 const MULTIPLE_WHITE_SPACES = /\s+/;
 
-const loadTrajectory = (folder, filename, bucket, dryRun) =>
-  new Promise(async (resolve, reject) => {
+const loadTrajectory = (folder, filename, bucket, dryRun) => {
+  const spinner = ora().start(`Loading trajectory file "${filename}"`);
+  return new Promise(async (resolve, reject) => {
     const asyncLineGenerator = readFilePerLine(folder + filename);
     // skip first line (software comment);
     asyncLineGenerator.next();
@@ -13,8 +15,14 @@ const loadTrajectory = (folder, filename, bucket, dryRun) =>
     const uploadStream = dryRun
       ? devNull()
       : bucket.openUploadStream('trajectory.bin');
-    uploadStream.on('error', reject);
-    uploadStream.on('finish', resolve);
+    uploadStream.on('error', error => {
+      spinner.fail(error);
+      reject();
+    });
+    uploadStream.on('finish', () => {
+      spinner.succeed(`Loaded trajectory file '${filename}''`);
+      resolve();
+    });
 
     for await (const line of asyncLineGenerator) {
       const keepGoing = uploadStream.write(
@@ -30,5 +38,6 @@ const loadTrajectory = (folder, filename, bucket, dryRun) =>
 
     uploadStream.end();
   });
+};
 
 module.exports = loadTrajectory;
