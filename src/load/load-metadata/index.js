@@ -11,6 +11,7 @@ const SEPARATORS = /\s*,\s*/g;
 
 const loadMetadata = async folder => {
   const spinner = ora().start(`Loading metadata`);
+  spinner.time = Date.now();
   try {
     const fileContent = await readFile(folder + '/metadata', 'utf8');
     const output = _.fromPairs(
@@ -26,7 +27,9 @@ const loadMetadata = async folder => {
           ];
         }),
     );
-    spinner.succeed('Loaded metadata');
+    spinner.succeed(
+      `Loaded metadata (${Math.round((Date.now() - spinner.time) / 1000)}s)`,
+    );
     return output;
   } catch (error) {
     spinner.fail(error);

@@ -18,17 +18,17 @@ const loadFolder = async (folder, bucket, dryRun) => {
   } = await categorizeFilesInFolder(folder);
 
   // process files
+  const metadata = await loadMetadata(folder);
+
   const trajectory =
     trajectoryFile &&
     (await loadTrajectory(folder, trajectoryFile, bucket, dryRun));
-
-  const metadata = await loadMetadata(folder);
 
   const storedFiles = [];
   let spinner = ora().start(
     `Loading ${rawFiles.length} file${rawFiles.length > 1 ? 's' : ''}`,
   );
-  spinner.start();
+  spinner.time = Date.now();
   for (const [index, filename] of rawFiles.entries()) {
     spinner.text = `Loading file ${index + 1} out of ${
       rawFiles.length
@@ -36,7 +36,9 @@ const loadFolder = async (folder, bucket, dryRun) => {
     storedFiles.push(await loadFile(folder, filename, bucket, dryRun));
   }
   spinner.succeed(
-    `Loaded ${rawFiles.length} file${rawFiles.length > 1 ? 's' : ''}`,
+    `Loaded ${rawFiles.length} file${
+      rawFiles.length > 1 ? 's' : ''
+    } (${Math.round((Date.now() - spinner.time) / 1000)}s)`,
   );
   const analyses = {};
   spinner = ora().start(
@@ -44,6 +46,7 @@ const loadFolder = async (folder, bucket, dryRun) => {
       analysisFiles.length > 1 ? 'es' : 'is'
     }`,
   );
+  spinner.time = Date.now();
   for (const [index, filename] of analysisFiles.entries()) {
     spinner.text = `Loading analysis ${index + 1} out of ${
       rawFiles.length
@@ -54,7 +57,7 @@ const loadFolder = async (folder, bucket, dryRun) => {
   spinner.succeed(
     `Loaded ${analysisFiles.length} analys${
       analysisFiles.length > 1 ? 'es' : 'is'
-    }`,
+    } (${Math.round((Date.now() - spinner.time) / 1000)}s)`,
   );
   return {
     metadata,
@@ -65,11 +68,16 @@ const loadFolder = async (folder, bucket, dryRun) => {
 
 const loadPdbInfo = pdbID => {
   const spinner = ora().start(`Loading PDB Info for ${pdbID} from API`);
+  spinner.time = Date.now();
   return pdbID
     ? fetch(`http://mmb.pcb.ub.es/api/pdb/${pdbID}/entry`)
         .then(response => response.json())
         .then(data => {
-          spinner.succeed(`Loaded PDB Info for ${pdbID} from API`);
+          spinner.succeed(
+            `Loaded PDB Info for ${pdbID} from API (${Math.round(
+              (Date.now() - spinner.time) / 1000,
+            )}s)`,
+          );
           return data;
         })
         .catch(error => {
@@ -120,6 +128,7 @@ const loadFolders = async ({ folders, dryRun = false, output }) => {
     }
     writer = output && (await require('./output-writer')(output));
     for (const [index, folder] of folders.entries()) {
+      const startTime = Date.now();
       try {
         console.log(
           chalk.blue(`processing folder ${index + 1} out of ${folders.length}`),
@@ -137,14 +146,25 @@ const loadFolders = async ({ folders, dryRun = false, output }) => {
           // counter increment (side-effect)
           _id: await getNextId(db.collection('counters'), dryRun),
         };
+        const spinner = ora().start('Commiting to database');
+        spinner.time = Date.now();
         const tasks = [
           writer && writer.writeToOutput(document),
           !dryRun && projects.insertOne(document),
         ].filter(Boolean);
         await Promise.all(tasks);
         await session.commitTransaction();
+        spinner.succeed(
+          `Commited to database (${Math.round(
+            (Date.now() - spinner.time) / 1000,
+          )}s)`,
+        );
         console.log(
-          chalk.cyan(`== finished loading '${folder}' as '${document._id}'`),
+          chalk.cyan(
+            `== finished loading '${folder}' as '${document._id}' (${Math.round(
+              (Date.now() - startTime) / 1000,
+            )}s)`,
+          ),
         );
       } catch (error) {
         await session.abortTransaction();
@@ -169,9 +189,14 @@ process.on('SIGINT', () => {
     return;
   }
   const spinner = ora().start('Cancelling current transaction');
+  spinner.time = Date.now();
   session.abortTransaction().then(
     () => {
-      spinner.succeed('Current transaction successfully cancelled');
+      spinner.succeed(
+        `Current transaction successfully cancelled (${Math.round(
+          (Date.now() - spinner.time) / 1000,
+        )}s)`,
+      );
       process.exit(0);
     },
     () => {

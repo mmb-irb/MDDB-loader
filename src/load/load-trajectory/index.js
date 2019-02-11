@@ -6,7 +6,8 @@ const readFilePerLine = require('../../utils/read-file-per-line');
 const MULTIPLE_WHITE_SPACES = /\s+/;
 
 const loadTrajectory = (folder, filename, bucket, dryRun) => {
-  const spinner = ora().start(`Loading trajectory file "${filename}"`);
+  const spinner = ora().start(`Loading trajectory file '${filename}'`);
+  spinner.time = Date.now();
   return new Promise(async (resolve, reject) => {
     const asyncLineGenerator = readFilePerLine(folder + filename);
     // skip first line (software comment);
@@ -20,7 +21,11 @@ const loadTrajectory = (folder, filename, bucket, dryRun) => {
       reject();
     });
     uploadStream.on('finish', () => {
-      spinner.succeed(`Loaded trajectory file '${filename}''`);
+      spinner.succeed(
+        `Loaded trajectory file '${filename}' (${Math.round(
+          (Date.now() - spinner.time) / 1000,
+        )}s)`,
+      );
       resolve();
     });
 
