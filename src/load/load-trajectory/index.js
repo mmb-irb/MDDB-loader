@@ -3,6 +3,8 @@ const ora = require('ora');
 
 const executeCommandPerLine = require('../../utils/execute-command-per-line');
 
+const UNIT_CONVERSION_SCALE = 10;
+
 // example matches:
 // '      x[    0]={ 6.40500e+00,  7.53800e+00,  9.81800e+00}'
 // '      x[35999]={-8.50000e-02,  1.82000e+00,  7.23700e+00}'
@@ -41,19 +43,20 @@ const loadTrajectory = (folder, filename, gromacsCommand, bucket, dryRun) => {
     });
     // for each atom coordinates in the data
     for await (const line of asyncLineGenerator) {
-      if (FRAME_REGEXP.test(line)) {
-        frameCount++;
-        spinner.text = `Loading trajectory file '${filename}' (frame ${frameCount})`;
+      const match = line.match(COORDINATES_REGEXP);
+      if (!match) {
+        // try to check if it's a "frame number" line
+        if (FRAME_REGEXP.test(line)) {
+          frameCount++;
+          spinner.text = `Loading trajectory file '${filename}' (frame ${frameCount})`;
+        }
         continue;
       }
 
-      const match = line.match(COORDINATES_REGEXP);
-      if (!match) continue;
-
       // convert units
-      coordinatesBuffer.writeFloatLE(+match[1] * 10, 0); // x
-      coordinatesBuffer.writeFloatLE(+match[2] * 10, 4); // y
-      coordinatesBuffer.writeFloatLE(+match[3] * 10, 8); // z
+      coordinatesBuffer.writeFloatLE(+match[1] * UNIT_CONVERSION_SCALE, 0); // x
+      coordinatesBuffer.writeFloatLE(+match[2] * UNIT_CONVERSION_SCALE, 4); // y
+      coordinatesBuffer.writeFloatLE(+match[3] * UNIT_CONVERSION_SCALE, 8); // z
 
       const keepGoing = uploadStream.write(coordinatesBuffer);
 
