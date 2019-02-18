@@ -8,10 +8,13 @@ const loadFile = (folder, filename, bucket, dryRun) =>
       return reject(new Error('Need to pass a folder and a filename'));
     }
     try {
-      const stream = fs.createReadStream(folder + filename);
-      stream.on('error', reject);
-      stream.on('end', resolve);
-      stream.pipe(dryRun ? devNull() : bucket.openUploadStream(filename));
+      const readStream = fs.createReadStream(folder + filename);
+      const writeStream = dryRun
+        ? devNull()
+        : bucket.openUploadStream(filename);
+      readStream.on('error', reject);
+      writeStream.on('finish', resolve);
+      readStream.pipe(writeStream);
     } catch (error) {
       console.error(chalk.bgRed(error));
       reject(error);

@@ -4,9 +4,15 @@ describe('categorizeFilesInFolder', () => {
   test('basic', async () => {
     const files = await categorizeFilesInFolder(`${__dirname}/__fixtures`);
     expect(files).toEqual({
-      allFiles: ['md.dcd', 'md.pdb', 'md.trj', 'md.xvg', 'some-file'],
-      rawFiles: ['md.dcd', 'md.pdb'],
-      trajectoryFile: 'md.trj',
+      allFiles: [
+        'md.dcd',
+        'md.imaged.rot.xtc',
+        'md.pdb',
+        'md.xvg',
+        'some-file',
+      ],
+      rawFiles: ['md.pdb'],
+      trajectoryFile: 'md.imaged.rot.xtc',
       analysisFiles: ['md.xvg'],
     });
   });

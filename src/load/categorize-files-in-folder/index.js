@@ -1,11 +1,12 @@
-const promisify = require('util').promisify;
+const { promisify } = require('util');
 const fs = require('fs');
 
 const readdir = promisify(fs.readdir);
 
-const rawFilePatternToLoad = /\.(dcd|pdb)$/i;
+// const rawFilePatternToLoad = /\.(dcd|pdb)$/i;
+const rawFilePatternToLoad = /\.pdb$/i;
 const analysisFilePatternToLoad = /\.xvg$/i;
-const trajectoryFilePatternToLoad = /\.trj$/i;
+const trajectoryFilePatternToLoad = /^md.imaged.rot.xtc$/i;
 
 const categorizeFilesInFolder = async folder => {
   const allFiles = await readdir(folder);

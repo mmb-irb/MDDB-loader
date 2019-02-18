@@ -43,6 +43,12 @@ yargs
     }
     if (cleanedUpFolders.length) return cleanedUpFolders;
   })
+  .option('g', {
+    alias: 'gromacs-path',
+    default: 'gmx',
+    description: 'path to gromacs command-line tool',
+    type: 'string',
+  })
   .option('d', {
     alias: 'dry-run',
     default: false,

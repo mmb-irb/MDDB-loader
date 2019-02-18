@@ -9,7 +9,7 @@ const loadMetadata = require('./load-metadata');
 const loadFile = require('./load-file');
 const loadAnalysis = require('./load-analysis');
 
-const loadFolder = async (folder, bucket, dryRun) => {
+const loadFolder = async (folder, bucket, gromacsPath, dryRun) => {
   // find files
   const {
     rawFiles,
@@ -20,9 +20,13 @@ const loadFolder = async (folder, bucket, dryRun) => {
   // process files
   const metadata = await loadMetadata(folder);
 
-  const trajectory =
+  const { trajectoryFileDescriptor, frameCount } =
     trajectoryFile &&
-    (await loadTrajectory(folder, trajectoryFile, bucket, dryRun));
+    (await loadTrajectory(folder, trajectoryFile, gromacsPath, bucket, dryRun));
+
+  if (frameCount) {
+    metadata.frameCount = frameCount;
+  }
 
   const storedFiles = [];
   let spinner = ora().start(
@@ -61,7 +65,7 @@ const loadFolder = async (folder, bucket, dryRun) => {
   );
   return {
     metadata,
-    files: [...storedFiles, trajectory].filter(Boolean),
+    files: [...storedFiles, trajectoryFileDescriptor].filter(Boolean),
     analyses,
   };
 };
@@ -101,7 +105,12 @@ const getNextId = async (counters, dryRun) => {
 
 let session;
 
-const loadFolders = async ({ folders, dryRun = false, output }) => {
+const loadFolders = async ({
+  folders,
+  dryRun = false,
+  output,
+  gromacsPath,
+}) => {
   let mongoConfig;
   try {
     // mongo config file, can be json or js code
@@ -141,7 +150,7 @@ const loadFolders = async ({ folders, dryRun = false, output }) => {
         );
         const document = {
           pdbInfo,
-          ...(await loadFolder(folder, bucket, dryRun)),
+          ...(await loadFolder(folder, bucket, gromacsPath, dryRun)),
           // do this last, in case something fails before doesn't trigger the
           // counter increment (side-effect)
           _id: await getNextId(db.collection('counters'), dryRun),
