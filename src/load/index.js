@@ -9,7 +9,7 @@ const loadMetadata = require('./load-metadata');
 const loadFile = require('./load-file');
 const loadAnalysis = require('./load-analysis');
 
-const loadFolder = async (folder, bucket, gromacsPath, dryRun) => {
+const loadFolder = async (folder, bucket, files, gromacsPath, dryRun) => {
   // find files
   const {
     rawFiles,
@@ -20,12 +20,20 @@ const loadFolder = async (folder, bucket, gromacsPath, dryRun) => {
   // process files
   const metadata = await loadMetadata(folder);
 
-  const { trajectoryFileDescriptor, frameCount } =
+  const trajectoryFileDescriptor =
     trajectoryFile &&
-    (await loadTrajectory(folder, trajectoryFile, gromacsPath, bucket, dryRun));
+    (await loadTrajectory(
+      folder,
+      trajectoryFile,
+      bucket,
+      files,
+      gromacsPath,
+      dryRun,
+    ));
 
-  if (frameCount) {
-    metadata.frameCount = frameCount;
+  if (trajectoryFileDescriptor.metadata) {
+    metadata.frameCount = trajectoryFileDescriptor.metadata.frames;
+    metadata.atomCount = trajectoryFileDescriptor.metadata.atoms;
   }
 
   const storedFiles = [];
@@ -150,7 +158,13 @@ const loadFolders = async ({
         );
         const document = {
           pdbInfo,
-          ...(await loadFolder(folder, bucket, gromacsPath, dryRun)),
+          ...(await loadFolder(
+            folder,
+            bucket,
+            db.collection('fs.files'),
+            gromacsPath,
+            dryRun,
+          )),
           // do this last, in case something fails before doesn't trigger the
           // counter increment (side-effect)
           _id: await getNextId(db.collection('counters'), dryRun),

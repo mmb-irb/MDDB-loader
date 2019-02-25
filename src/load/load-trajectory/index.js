@@ -1,9 +1,11 @@
 const devNull = require('dev-null');
 const ora = require('ora');
+const { throttle } = require('lodash');
 
 const executeCommandPerLine = require('../../utils/execute-command-per-line');
 
 const UNIT_CONVERSION_SCALE = 10;
+const N_COORDINATES = 3;
 
 // example matches:
 // '      x[    0]={ 6.40500e+00,  7.53800e+00,  9.81800e+00}'
@@ -11,13 +13,30 @@ const UNIT_CONVERSION_SCALE = 10;
 const COORDINATES_REGEXP = /^\s*x\[\s*\d*]={\s*(-?\d+\.\d+e[+-]\d{2}),\s*(-?\d+\.\d+e[+-]\d{2}),\s*(-?\d+\.\d+e[+-]\d{2})\s*}\s*$/;
 const FRAME_REGEXP = / frame \d+:$/;
 
-const loadTrajectory = (folder, filename, gromacsCommand, bucket, dryRun) => {
+const THROTTLE_TIME = 1000;
+
+const loadTrajectory = (
+  folder,
+  filename,
+  bucket,
+  files,
+  gromacsCommand,
+  dryRun,
+) => {
   const spinner = ora().start(`Loading trajectory file '${filename}'`);
   spinner.time = Date.now();
+  let frameCount = 0;
+  const updateSpinner = throttle(
+    () =>
+      (spinner.text = `Loading trajectory file '${filename}' (frame ${frameCount})`),
+    THROTTLE_TIME,
+  );
+
   return new Promise(async (resolve, reject) => {
-    let frameCount = 0;
     // keep a buffer handy for reuse for every atoms in every frame
-    const coordinatesBuffer = Buffer.alloc(Float32Array.BYTES_PER_ELEMENT * 3);
+    const coordinatesBuffer = Buffer.alloc(
+      Float32Array.BYTES_PER_ELEMENT * N_COORDINATES,
+    );
 
     const asyncLineGenerator = executeCommandPerLine(gromacsCommand, [
       'dump',
@@ -27,20 +46,44 @@ const loadTrajectory = (folder, filename, gromacsCommand, bucket, dryRun) => {
 
     const uploadStream = dryRun
       ? devNull()
-      : bucket.openUploadStream('trajectory.bin');
+      : bucket.openUploadStream('trajectory.bin', {
+          contentType: 'application/octet-stream',
+        });
+
+    // error
     uploadStream.on('error', error => {
       spinner.fail(error);
       reject();
     });
-    uploadStream.on('finish', trajectoryFileDescriptor => {
+
+    // finish
+    uploadStream.on('finish', async ({ _id, length }) => {
+      updateSpinner.cancel();
       spinner.succeed(
         `Loaded trajectory file '${filename}' (${frameCount} frames in ${Math.round(
           (Date.now() - spinner.time) / 1000,
         )}s)`,
       );
+      const trajectoryFileDescriptor = (await files.findOneAndUpdate(
+        { _id },
+        {
+          $set: {
+            metadata: {
+              frames: frameCount,
+              atoms:
+                length /
+                frameCount /
+                Float32Array.BYTES_PER_ELEMENT /
+                N_COORDINATES,
+            },
+          },
+        },
+        { returnOriginal: false },
+      )).value;
       // resolve with number of frames
-      resolve({ trajectoryFileDescriptor, frameCount });
+      resolve(trajectoryFileDescriptor);
     });
+
     // for each atom coordinates in the data
     for await (const line of asyncLineGenerator) {
       const match = line.match(COORDINATES_REGEXP);
@@ -48,7 +91,7 @@ const loadTrajectory = (folder, filename, gromacsCommand, bucket, dryRun) => {
         // try to check if it's a "frame number" line
         if (FRAME_REGEXP.test(line)) {
           frameCount++;
-          spinner.text = `Loading trajectory file '${filename}' (frame ${frameCount})`;
+          updateSpinner();
         }
         continue;
       }
