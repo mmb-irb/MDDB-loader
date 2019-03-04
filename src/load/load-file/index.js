@@ -12,7 +12,7 @@ const getMimeTypeFromFilename = filename => {
   return 'application/octet-stream';
 };
 
-const loadFile = (folder, filename, bucket, dryRun) =>
+const loadFile = (folder, filename, bucket, projectID, dryRun) =>
   new Promise((resolve, reject) => {
     if (!(folder && filename)) {
       return reject(new Error('Need to pass a folder and a filename'));
@@ -23,6 +23,7 @@ const loadFile = (folder, filename, bucket, dryRun) =>
         ? devNull()
         : bucket.openUploadStream(filename, {
             contentType: getMimeTypeFromFilename(filename),
+            metadata: { project: projectID },
           });
       readStream.on('error', reject);
       writeStream.on('finish', resolve);

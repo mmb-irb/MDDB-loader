@@ -20,6 +20,7 @@ const loadTrajectory = (
   filename,
   bucket,
   files,
+  projectID,
   gromacsCommand,
   dryRun,
 ) => {
@@ -75,6 +76,7 @@ const loadTrajectory = (
                 frameCount /
                 Float32Array.BYTES_PER_ELEMENT /
                 N_COORDINATES,
+              project: projectID,
             },
           },
         },

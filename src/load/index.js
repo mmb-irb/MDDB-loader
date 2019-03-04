@@ -9,7 +9,14 @@ const loadMetadata = require('./load-metadata');
 const loadFile = require('./load-file');
 const loadAnalysis = require('./load-analysis');
 
-const loadFolder = async (folder, bucket, files, gromacsPath, dryRun) => {
+const loadFolder = async (
+  folder,
+  bucket,
+  files,
+  projectID,
+  gromacsPath,
+  dryRun,
+) => {
   // find files
   const {
     rawFiles,
@@ -27,6 +34,7 @@ const loadFolder = async (folder, bucket, files, gromacsPath, dryRun) => {
       trajectoryFile,
       bucket,
       files,
+      projectID,
       gromacsPath,
       dryRun,
     ));
@@ -45,7 +53,9 @@ const loadFolder = async (folder, bucket, files, gromacsPath, dryRun) => {
     spinner.text = `Loading file ${index + 1} out of ${
       rawFiles.length
     } (${filename})`;
-    storedFiles.push(await loadFile(folder, filename, bucket, dryRun));
+    storedFiles.push(
+      await loadFile(folder, filename, bucket, projectID, dryRun),
+    );
   }
   spinner.succeed(
     `Loaded ${rawFiles.length} file${
@@ -152,28 +162,36 @@ const loadFolders = async ({
         );
         console.log(chalk.cyan(`== starting load of '${folder}'`));
         session.startTransaction();
-        const projects = db.collection('projects');
         const pdbInfo = await loadPdbInfo(
           (folder.match(/\/(\w{4})[^/]+\/?$/i) || [])[1],
         );
-        const document = {
+        const projectID = await getNextId(db.collection('counters'), dryRun);
+        const project = {
           pdbInfo,
           ...(await loadFolder(
             folder,
             bucket,
             db.collection('fs.files'),
+            projectID,
             gromacsPath,
             dryRun,
           )),
-          // do this last, in case something fails before doesn't trigger the
-          // counter increment (side-effect)
-          _id: await getNextId(db.collection('counters'), dryRun),
+          _id: projectID,
         };
+        const analyses = Object.entries(project.analyses).map(
+          ([name, value]) => ({
+            name,
+            value,
+            project: projectID,
+          }),
+        );
+        project.analyses = Object.keys(project.analyses);
         const spinner = ora().start('Commiting to database');
         spinner.time = Date.now();
         const tasks = [
-          writer && writer.writeToOutput(document),
-          !dryRun && projects.insertOne(document),
+          writer && writer.writeToOutput(project, ...analyses),
+          !dryRun && db.collection('projects').insert(project),
+          !dryRun && db.collection('analyses').insert(analyses),
         ].filter(Boolean);
         await Promise.all(tasks);
         await session.commitTransaction();
@@ -184,7 +202,7 @@ const loadFolders = async ({
         );
         console.log(
           chalk.cyan(
-            `== finished loading '${folder}' as '${document._id}' (${Math.round(
+            `== finished loading '${folder}' as '${project._id}' (${Math.round(
               (Date.now() - startTime) / 1000,
             )}s)`,
           ),

@@ -50,8 +50,8 @@ const outputWriter = async outputFile => {
   // Ok, we're good to go
   return {
     fileDescriptor: null,
-    async writeToOutput(outputContent) {
-      const stringifiedContent = JSON.stringify(outputContent, null, 2);
+    async writeToOutput(...outputContents) {
+      const stringifiedContent = JSON.stringify(outputContents, null, 2);
       if (!this.fileDescriptor) {
         this.fileDescriptor = await open(outputFile, 'w');
         await write(this.fileDescriptor, '[');
