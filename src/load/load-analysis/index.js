@@ -17,6 +17,8 @@ const processFunctionCreator = (...keys) => async dataAsyncGenerator => {
   }
   for (const key of output.y.keys()) {
     const y = output.y.get(key);
+    y.min = mathjs.min(y.data);
+    y.max = mathjs.max(y.data);
     y.average = mathjs.mean(y.data);
     y.stddev = mathjs.std(y.data);
   }
