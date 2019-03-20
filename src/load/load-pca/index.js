@@ -1,5 +1,6 @@
 const _ = require('lodash');
 const ora = require('ora');
+const mathjs = require('mathjs');
 
 const readFilePerLine = require('../../utils/read-file-per-line');
 const statFileLinesToDataLines = require('../../utils/stat-file-lines-to-data-lines');
@@ -34,7 +35,6 @@ const loadPCA = async (folder, pcaFiles) => {
   let maxComponent = 0;
   let startedProcessing = true;
   let currentData;
-  // for await (const [index, value] of projectionGenerator) {
   for await (const yielded of projectionGenerator) {
     if (yielded === statFileLinesToDataLines.COMMENT_SYMBOL) {
       if (startedProcessing) {
@@ -52,6 +52,13 @@ const loadPCA = async (folder, pcaFiles) => {
     }
     if (!output.step) output.step = index;
     currentData.push(value);
+  }
+
+  for (const component of output.y.values()) {
+    if (component.data) {
+      component.min = mathjs.min(component.data);
+      component.max = mathjs.max(component.data);
+    }
   }
 
   output.y = _.fromPairs(Array.from(output.y.entries()));
