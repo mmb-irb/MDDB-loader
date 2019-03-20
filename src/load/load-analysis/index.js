@@ -2,7 +2,7 @@ const _ = require('lodash');
 const mathjs = require('mathjs');
 
 const readFilePerLine = require('../../utils/read-file-per-line');
-const statFileLinesToDataLines = require('./stat-file-lines-to-data-lines');
+const statFileLinesToDataLines = require('../../utils/stat-file-lines-to-data-lines');
 
 const processFunctionCreator = (...keys) => async dataAsyncGenerator => {
   const output = {

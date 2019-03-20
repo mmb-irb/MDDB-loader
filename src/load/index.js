@@ -7,6 +7,7 @@ const categorizeFilesInFolder = require('./categorize-files-in-folder');
 const loadTrajectory = require('./load-trajectory');
 const loadMetadata = require('./load-metadata');
 const loadFile = require('./load-file');
+const loadPCA = require('./load-pca');
 const loadAnalysis = require('./load-analysis');
 
 const loadFolder = async (
@@ -21,6 +22,7 @@ const loadFolder = async (
   const {
     rawFiles,
     trajectoryFile,
+    pcaFiles,
     analysisFiles,
   } = await categorizeFilesInFolder(folder);
 
@@ -44,6 +46,7 @@ const loadFolder = async (
     metadata.atomCount = trajectoryFileDescriptor.metadata.atoms;
   }
 
+  // Raw files
   const storedFiles = [];
   let spinner = ora().start(
     `Loading ${rawFiles.length} file${rawFiles.length > 1 ? 's' : ''}`,
@@ -62,7 +65,12 @@ const loadFolder = async (
       rawFiles.length > 1 ? 's' : ''
     } (${Math.round((Date.now() - spinner.time) / 1000)}s)`,
   );
+
+  // Analyses files
   const analyses = {};
+  // PCA
+  if (pcaFiles.length) analyses.pca = await loadPCA(folder, pcaFiles);
+  // Rest of analyses
   spinner = ora().start(
     `Loading ${analysisFiles.length} analys${
       analysisFiles.length > 1 ? 'es' : 'is'
@@ -81,6 +89,7 @@ const loadFolder = async (
       analysisFiles.length > 1 ? 'es' : 'is'
     } (${Math.round((Date.now() - spinner.time) / 1000)}s)`,
   );
+  //
   return {
     metadata,
     files: [...storedFiles, trajectoryFileDescriptor].filter(Boolean),

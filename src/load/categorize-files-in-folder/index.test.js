@@ -7,10 +7,12 @@ describe('categorizeFilesInFolder', () => {
       allFiles: [
         'md.dcd',
         'md.imaged.rot.xtc',
+        'md.pca.eigenval.xvg',
         'md.pdb',
         'md.xvg',
         'some-file',
       ],
+      pcaFiles: ['md.pca.eigenval.xvg'],
       rawFiles: ['md.pdb'],
       trajectoryFile: 'md.imaged.rot.xtc',
       analysisFiles: ['md.xvg'],
