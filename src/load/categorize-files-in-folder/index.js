@@ -4,7 +4,7 @@ const fs = require('fs');
 const readdir = promisify(fs.readdir);
 
 const rawFilePatternToLoad = /\.pdb$/i;
-const trajectoryFilePatternToLoad = /^md.imaged.rot.xtc$/i;
+const trajectoryFilePatternToLoad = /(^md.imaged.rot|pca-\d+).xtc$/i;
 const pcaFilePatternToLoad = /pca\./i;
 const analysisFilePatternToLoad = /\.xvg$/i;
 
@@ -13,7 +13,7 @@ const categorizeFilesInFolder = async folder => {
   const rawFiles = allFiles.filter(filename =>
     rawFilePatternToLoad.test(filename),
   );
-  const trajectoryFile = allFiles.find(filename =>
+  const trajectoryFiles = allFiles.filter(filename =>
     trajectoryFilePatternToLoad.test(filename),
   );
   const pcaFiles = allFiles.filter(filename =>
@@ -24,7 +24,7 @@ const categorizeFilesInFolder = async folder => {
       analysisFilePatternToLoad.test(filename) &&
       !pcaFilePatternToLoad.test(filename),
   );
-  return { allFiles, rawFiles, trajectoryFile, pcaFiles, analysisFiles };
+  return { allFiles, rawFiles, trajectoryFiles, pcaFiles, analysisFiles };
 };
 
 module.exports = categorizeFilesInFolder;

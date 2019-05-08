@@ -4,7 +4,7 @@ const chalk = require('chalk');
 const ora = require('ora');
 
 const categorizeFilesInFolder = require('./categorize-files-in-folder');
-const loadTrajectory = require('./load-trajectory');
+const loadTrajectories = require('./load-trajectory');
 const loadMetadata = require('./load-metadata');
 const loadFile = require('./load-file');
 const loadPCA = require('./load-pca');
@@ -21,7 +21,7 @@ const loadFolder = async (
   // find files
   const {
     rawFiles,
-    trajectoryFile,
+    trajectoryFiles,
     pcaFiles,
     analysisFiles,
   } = await categorizeFilesInFolder(folder);
@@ -29,11 +29,11 @@ const loadFolder = async (
   // process files
   const metadata = await loadMetadata(folder);
 
-  const trajectoryFileDescriptor =
-    trajectoryFile &&
-    (await loadTrajectory(
+  const trajectoryFileDescriptors =
+    trajectoryFiles.length &&
+    (await loadTrajectories(
       folder,
-      trajectoryFile,
+      trajectoryFiles,
       bucket,
       files,
       projectID,
@@ -41,9 +41,14 @@ const loadFolder = async (
       dryRun,
     ));
 
-  if (trajectoryFileDescriptor.metadata) {
-    metadata.frameCount = trajectoryFileDescriptor.metadata.frames;
-    metadata.atomCount = trajectoryFileDescriptor.metadata.atoms;
+  if (trajectoryFileDescriptors) {
+    for (const d of trajectoryFileDescriptors) {
+      if (!d.filename.includes('pca') && d.metadata) {
+        metadata.frameCount = d.metadata.frames;
+        metadata.atomCount = d.metadata.atoms;
+        break;
+      }
+    }
   }
 
   // Raw files
@@ -73,8 +78,8 @@ const loadFolder = async (
   // Rest of analyses
   spinner = ora().start(
     `Loading ${analysisFiles.length} analys${
-      analysisFiles.length > 1 ? 'es' : 'is'
-    }`,
+      analysisFiles.length > 1 ? 'e' : 'i'
+    }s`,
   );
   spinner.time = Date.now();
   for (const [index, filename] of analysisFiles.entries()) {
@@ -86,13 +91,13 @@ const loadFolder = async (
   }
   spinner.succeed(
     `Loaded ${analysisFiles.length} analys${
-      analysisFiles.length > 1 ? 'es' : 'is'
-    } (${Math.round((Date.now() - spinner.time) / 1000)}s)`,
+      analysisFiles.length > 1 ? 'e' : 'i'
+    }s (${Math.round((Date.now() - spinner.time) / 1000)}s)`,
   );
   //
   return {
     metadata,
-    files: [...storedFiles, trajectoryFileDescriptor].filter(Boolean),
+    files: [...storedFiles, ...trajectoryFileDescriptors].filter(Boolean),
     analyses,
   };
 };

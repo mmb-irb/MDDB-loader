@@ -1,4 +1,3 @@
-const _ = require('lodash');
 const ora = require('ora');
 const mathjs = require('mathjs');
 
@@ -11,7 +10,7 @@ const loadPCA = async (folder, pcaFiles) => {
 
   const output = {
     step: 0,
-    y: new Map(),
+    y: [],
   };
 
   const eigenvaluesFile = pcaFiles.find(filename =>
@@ -22,7 +21,7 @@ const loadPCA = async (folder, pcaFiles) => {
   );
   let maxIndex = 0;
   for await (const [index, eigenvalue] of eigenvalueGenerator) {
-    output.y.set(`component-${index}`, { eigenvalue });
+    output.y.push({ eigenvalue });
     maxIndex = index;
   }
 
@@ -47,21 +46,19 @@ const loadPCA = async (folder, pcaFiles) => {
     const [index, value] = yielded;
     if (!startedProcessing) {
       startedProcessing = true;
-      currentData = output.y.get(`component-${currentComponent}`).data = [];
+      currentData = output.y[currentComponent - 1].data = [];
       maxComponent = currentComponent;
     }
     if (!output.step) output.step = index;
     currentData.push(value);
   }
 
-  for (const component of output.y.values()) {
+  for (const component of output.y) {
     if (component.data) {
       component.min = mathjs.min(component.data);
       component.max = mathjs.max(component.data);
     }
   }
-
-  output.y = _.fromPairs(Array.from(output.y.entries()));
 
   spinner.succeed(
     `Loaded PCA analysis, ${maxIndex} components, ${maxComponent} projections (${Math.round(

@@ -1,4 +1,4 @@
-const _ = require('lodash');
+const fromPairs = require('lodash.frompairs');
 const mathjs = require('mathjs');
 
 const readFilePerLine = require('../../utils/read-file-per-line');
@@ -22,7 +22,7 @@ const processFunctionCreator = (...keys) => async dataAsyncGenerator => {
     y.average = mathjs.mean(y.data);
     y.stddev = mathjs.std(y.data);
   }
-  output.y = _.fromPairs(Array.from(output.y.entries()));
+  output.y = fromPairs(Array.from(output.y.entries()));
   return output;
 };
 

@@ -1,7 +1,7 @@
 const { promisify } = require('util');
 const fs = require('fs');
 
-const _ = require('lodash');
+const fromPairs = require('lodash.frompairs');
 const ora = require('ora');
 
 const readFile = promisify(fs.readFile);
@@ -14,7 +14,7 @@ const loadMetadata = async folder => {
   spinner.time = Date.now();
   try {
     const fileContent = await readFile(folder + '/metadata', 'utf8');
-    const output = _.fromPairs(
+    const output = fromPairs(
       fileContent
         .split(NEW_LINES)
         .filter(Boolean)

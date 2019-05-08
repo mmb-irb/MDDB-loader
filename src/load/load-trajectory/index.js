@@ -1,6 +1,6 @@
 const devNull = require('dev-null');
 const ora = require('ora');
-const { throttle } = require('lodash');
+const throttle = require('lodash.throttle');
 
 const executeCommandPerLine = require('../../utils/execute-command-per-line');
 
@@ -14,6 +14,14 @@ const COORDINATES_REGEXP = /^\s*x\[\s*\d*]={\s*(-?\d+\.\d+e[+-]\d{2}),\s*(-?\d+\
 const FRAME_REGEXP = / frame \d+:$/;
 
 const THROTTLE_TIME = 1000;
+
+const loadTrajectories = async (folder, filenames, ...args) => {
+  const output = [];
+  for (const filename of filenames) {
+    output.push(await loadTrajectory(folder, filename, ...args));
+  }
+  return output;
+};
 
 const loadTrajectory = (
   folder,
@@ -45,9 +53,13 @@ const loadTrajectory = (
       folder + filename,
     ]);
 
+    let dbFilename = 'trajectory.bin';
+    const pcaMatch = filename.match(/\.(pca-\d+)\./i);
+    if (pcaMatch) dbFilename = `trajectory.${pcaMatch[1]}.bin`;
+
     const uploadStream = dryRun
       ? devNull()
-      : bucket.openUploadStream('trajectory.bin', {
+      : bucket.openUploadStream(dbFilename, {
           contentType: 'application/octet-stream',
         });
 
@@ -114,4 +126,4 @@ const loadTrajectory = (
   });
 };
 
-module.exports = loadTrajectory;
+module.exports = loadTrajectories;
