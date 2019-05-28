@@ -19,22 +19,22 @@
     "dev-null": "0.1.1",
     "lodash.frompairs": "4.0.1",
     "lodash.throttle": "4.1.1",
-    "mathjs": "5.9.0",
-    "mongodb": "3.2.3",
-    "node-fetch": "2.5.0",
+    "mathjs": "5.10.3",
+    "mongodb": "3.2.6",
+    "node-fetch": "2.6.0",
     "prompt": "1.0.0",
     "timing-functions": "0.2.2",
-    "yargs": "13.2.2"
+    "yargs": "13.2.4"
   },
   "devDependencies": {
     "chalk": "2.4.2",
     "eslint": "5.16.0",
-    "eslint-config-prettier": "4.2.0",
-    "husky": "2.2.0",
+    "eslint-config-prettier": "4.3.0",
+    "husky": "2.3.0",
     "jest": "24.8.0",
-    "lint-staged": "8.1.6",
+    "lint-staged": "8.1.7",
     "ora": "3.4.0",
-    "prettier": "1.17.0"
+    "prettier": "1.17.1"
   },
   "lint-staged": {
     "*.{md,json}": [
