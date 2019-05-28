@@ -1,5 +1,6 @@
 const ora = require('ora');
 const mathjs = require('mathjs');
+const prettyMs = require('pretty-ms');
 
 const readFilePerLine = require('../../utils/read-file-per-line');
 const statFileLinesToDataLines = require('../../utils/stat-file-lines-to-data-lines');
@@ -61,9 +62,9 @@ const loadPCA = async (folder, pcaFiles) => {
   }
 
   spinner.succeed(
-    `Loaded PCA analysis, ${maxIndex} components, ${maxComponent} projections (${Math.round(
-      (Date.now() - spinner.time) / 1000,
-    )}s)`,
+    `Loaded PCA analysis, ${maxIndex} components, ${maxComponent} projections (${prettyMs(
+      Date.now() - spinner.time,
+    )})`,
   );
 
   return output;

@@ -2,6 +2,7 @@ const fetch = require('node-fetch');
 const mongodb = require('mongodb');
 const chalk = require('chalk');
 const ora = require('ora');
+const prettyMs = require('pretty-ms');
 
 const categorizeFilesInFolder = require('./categorize-files-in-folder');
 const loadTrajectories = require('./load-trajectory');
@@ -68,7 +69,7 @@ const loadFolder = async (
   spinner.succeed(
     `Loaded ${rawFiles.length} file${
       rawFiles.length > 1 ? 's' : ''
-    } (${Math.round((Date.now() - spinner.time) / 1000)}s)`,
+    } (${prettyMs(Date.now() - spinner.time)})`,
   );
 
   // Analyses files
@@ -92,7 +93,7 @@ const loadFolder = async (
   spinner.succeed(
     `Loaded ${analysisFiles.length} analys${
       analysisFiles.length > 1 ? 'e' : 'i'
-    }s (${Math.round((Date.now() - spinner.time) / 1000)}s)`,
+    }s (${prettyMs(Date.now() - spinner.time)})`,
   );
   //
   return {
@@ -110,9 +111,9 @@ const loadPdbInfo = pdbID => {
         .then(response => response.json())
         .then(data => {
           spinner.succeed(
-            `Loaded PDB Info for ${pdbID} from API (${Math.round(
-              (Date.now() - spinner.time) / 1000,
-            )}s)`,
+            `Loaded PDB Info for ${pdbID} from API (${prettyMs(
+              Date.now() - spinner.time,
+            )})`,
           );
           return data;
         })
@@ -210,15 +211,13 @@ const loadFolders = async ({
         await Promise.all(tasks);
         await session.commitTransaction();
         spinner.succeed(
-          `Commited to database (${Math.round(
-            (Date.now() - spinner.time) / 1000,
-          )}s)`,
+          `Commited to database (${prettyMs(Date.now() - spinner.time)})`,
         );
         console.log(
           chalk.cyan(
-            `== finished loading '${folder}' as '${project._id}' (${Math.round(
-              (Date.now() - startTime) / 1000,
-            )}s)`,
+            `== finished loading '${folder}' as '${project._id}' (${prettyMs(
+              Date.now() - startTime,
+            )})`,
           ),
         );
       } catch (error) {
@@ -248,9 +247,9 @@ process.on('SIGINT', () => {
   session.abortTransaction().then(
     () => {
       spinner.succeed(
-        `Current transaction successfully cancelled (${Math.round(
-          (Date.now() - spinner.time) / 1000,
-        )}s)`,
+        `Current transaction successfully cancelled (${prettyMs(
+          Date.now() - spinner.time,
+        )})`,
       );
       process.exit(0);
     },

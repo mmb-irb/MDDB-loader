@@ -1,6 +1,7 @@
 const devNull = require('dev-null');
 const ora = require('ora');
 const throttle = require('lodash.throttle');
+const prettyMs = require('pretty-ms');
 
 const executeCommandPerLine = require('../../utils/execute-command-per-line');
 
@@ -73,9 +74,9 @@ const loadTrajectory = (
     uploadStream.on('finish', async ({ _id, length }) => {
       updateSpinner.cancel();
       spinner.succeed(
-        `Loaded trajectory file '${filename}' (${frameCount} frames in ${Math.round(
-          (Date.now() - spinner.time) / 1000,
-        )}s)`,
+        `Loaded trajectory file '${filename}' (${frameCount} frames in ${prettyMs(
+          Date.now() - spinner.time,
+        )})`,
       );
       const trajectoryFileDescriptor = (await files.findOneAndUpdate(
         { _id },

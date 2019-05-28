@@ -3,6 +3,7 @@ const fs = require('fs');
 
 const fromPairs = require('lodash.frompairs');
 const ora = require('ora');
+const prettyMs = require('pretty-ms');
 
 const readFile = promisify(fs.readFile);
 
@@ -27,9 +28,7 @@ const loadMetadata = async folder => {
           ];
         }),
     );
-    spinner.succeed(
-      `Loaded metadata (${Math.round((Date.now() - spinner.time) / 1000)}s)`,
-    );
+    spinner.succeed(`Loaded metadata (${prettyMs(Date.now() - spinner.time)})`);
     return output;
   } catch (error) {
     spinner.fail(error);

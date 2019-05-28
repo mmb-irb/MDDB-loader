@@ -14,7 +14,7 @@ describe('categorizeFilesInFolder', () => {
       ],
       pcaFiles: ['md.pca.eigenval.xvg'],
       rawFiles: ['md.pdb'],
-      trajectoryFile: 'md.imaged.rot.xtc',
+      trajectoryFiles: ['md.imaged.rot.xtc'],
       analysisFiles: ['md.xvg'],
     });
   });
