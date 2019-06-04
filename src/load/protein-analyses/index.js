@@ -114,7 +114,7 @@ const analyzeProteins = async (folder, pdbFile) => {
     const retrieve = Promise.all([
       retrieveIPS(IPSJobID),
       retrieveHMMER(HMMERJob),
-    ]).then(([interproscan, hmmer]) => ({ interproscan, hmmer }));
+    ]).then(([interproscan, hmmer]) => ({ interproscan, hmmer, sequence }));
 
     // we don't await here, it's on purpose!
     const retrievalTask = Promise.race([retrieve, timeOut(MAX_TIME)]);
