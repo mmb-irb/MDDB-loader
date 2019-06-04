@@ -3,8 +3,10 @@ const mongodb = require('mongodb');
 const chalk = require('chalk');
 const ora = require('ora');
 const prettyMs = require('pretty-ms');
+const fromPairs = require('lodash.frompairs');
 
 const categorizeFilesInFolder = require('./categorize-files-in-folder');
+const analyzeProteins = require('./protein-analyses');
 const loadTrajectories = require('./load-trajectory');
 const loadMetadata = require('./load-metadata');
 const loadFile = require('./load-file');
@@ -19,6 +21,7 @@ const loadFolder = async (
   gromacsPath,
   dryRun,
 ) => {
+  let spinner;
   // find files
   const {
     rawFiles,
@@ -26,6 +29,13 @@ const loadFolder = async (
     pcaFiles,
     analysisFiles,
   } = await categorizeFilesInFolder(folder);
+
+  const pdbFile = rawFiles.find(file => /^md\..+\.pdb$/i.test(file));
+  let EBIJobs;
+  if (pdbFile) {
+    // submit to InterProScan
+    EBIJobs = await analyzeProteins(folder, pdbFile);
+  }
 
   // process files
   const metadata = await loadMetadata(folder);
@@ -54,7 +64,7 @@ const loadFolder = async (
 
   // Raw files
   const storedFiles = [];
-  let spinner = ora().start(
+  spinner = ora().start(
     `Loading ${rawFiles.length} file${rawFiles.length > 1 ? 's' : ''}`,
   );
   spinner.time = Date.now();
@@ -95,12 +105,47 @@ const loadFolder = async (
       analysisFiles.length > 1 ? 'e' : 'i'
     }s (${prettyMs(Date.now() - spinner.time)})`,
   );
-  //
-  return {
+
+  let proteinAnalyses;
+  if (EBIJobs) {
+    // retrieve jobs from InterProScan
+    spinner = ora().start(
+      `Retrieving ${EBIJobs.size} job${
+        EBIJobs.size > 1 ? 's' : ''
+      } from InterProScan and HMMER`,
+    );
+    spinner.time = Date.now();
+
+    let finished = 0;
+    proteinAnalyses = fromPairs(
+      await Promise.all(
+        Array.from(EBIJobs.entries()).map(([chain, job]) =>
+          job.then(document => {
+            finished++;
+            spinner.text = `Retrieved ${finished} job${
+              finished > 1 ? 's' : ''
+            } out of ${EBIJobs.size} from InterProScan and HMMER`;
+            return [chain, document];
+          }),
+        ),
+      ),
+    );
+    spinner.succeed(
+      `Retrieved ${finished} jobs from InterProScan and HMMER (${prettyMs(
+        Date.now() - spinner.time,
+      )})`,
+    );
+  }
+
+  const output = {
     metadata,
     files: [...storedFiles, ...trajectoryFileDescriptors].filter(Boolean),
     analyses,
   };
+
+  if (proteinAnalyses) output.proteinAnalyses = proteinAnalyses;
+
+  return output;
 };
 
 const loadPdbInfo = pdbID => {
