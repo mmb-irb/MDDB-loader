@@ -28,7 +28,7 @@ const commonHandler = commandName => async argv => {
       process.exit(0);
     } catch (_) {
       spinnerRef.current.fail(
-        "Didn't manage to abort current transaction. Try to have alook inside the DB to see if everything is fine or if it needs manual clean-up",
+        "Didn't manage to abort current transaction. Try to have a look inside the DB to see if everything is fine or if it needs manual clean-up",
       );
       process.exit(1);
     }
