@@ -27,7 +27,9 @@ const commonHandler = commandName => async argv => {
       spinnerRef.current.succeed('Aborted current transaction');
       process.exit(0);
     } catch (_) {
-      spinnerRef.current.fail("Didn't manage to abort current transaction");
+      spinnerRef.current.fail(
+        "Didn't manage to abort current transaction. Try to have alook inside the DB to see if everything is fine or if it needs manual clean-up",
+      );
       process.exit(1);
     }
   });
@@ -67,7 +69,7 @@ const commonHandler = commandName => async argv => {
     const command = require(`./${commandName}`);
     // call the requested command with
     await command(
-      // normal object passed from yargs
+      // normal object passed from the yargs library
       argv,
       // extra stuff useful across all scripts
       { db, bucket: new mongodb.GridFSBucket(db), spinnerRef },
