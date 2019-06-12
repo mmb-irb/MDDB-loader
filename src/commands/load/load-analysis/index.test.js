@@ -5,12 +5,12 @@ const analyses = [['rgyr', 'rgyr'], ['rmsd', 'rmsd'], ['rmsf', 'fluctuation']];
 describe('loadAnalysis', () => {
   for (const [type, name] of analyses) {
     test(name, async () => {
-      const [extractedName, extractedData] = await loadAnalysis(
+      const analysis = await loadAnalysis(
         `${__dirname}/__fixtures/`,
         `md.${type}.xvg`,
       );
-      expect(extractedName).toBe(name);
-      expect(extractedData).toMatchSnapshot();
+      expect(analysis.name).toBe(name);
+      expect(analysis.value).toMatchSnapshot();
     });
   }
   test('unsupported analysis', () => {

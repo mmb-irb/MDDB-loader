@@ -1,64 +1,130 @@
 #!/usr/bin/env node
 const fs = require('fs');
-const process = require('process');
 
 const yargs = require('yargs');
+const { ObjectId } = require('mongodb');
 
-const MULTIPLE_SLASHES = /\/+/g;
+const commonHandler = require('./src/commands');
+const resolvePath = require('./src/utils/resolve-path');
 
-const resolve = (path, isFolder) => {
-  const workingDirectory = process.cwd();
-  return `${path.startsWith('/') ? '' : `${workingDirectory}/`}${path}${
-    isFolder ? '/' : ''
-  }`.replace(MULTIPLE_SLASHES, '/');
+const folderCoerce = folder => {
+  const cleanedUpFolder = resolvePath(folder, true);
+  console.log(cleanedUpFolder);
+  try {
+    fs.accessSync(cleanedUpFolder, fs.constants.X_OK);
+  } catch (_) {
+    throw new Error(`unable to use folder '${folder}'`);
+  }
+  return cleanedUpFolder;
+};
+
+const idCoerce = id => ObjectId(id);
+
+const accessionFormat = /^MCNS\d{5}$/;
+const accessionCoerce = accession => {
+  const output = accession.trim().toUpperCase();
+  if (!accessionFormat.test(output)) throw new Error('Not a valid accession');
+  return output;
+};
+
+const idOrAccessionCoerce = idOrAccession => {
+  let output;
+  try {
+    output = idCoerce(idOrAccession);
+  } catch (_) {
+    try {
+      output = accessionCoerce(idOrAccession);
+    } catch (_) {
+      /**/
+    }
+  }
+
+  if (output) return output;
+
+  throw new Error('Invalid ID or accession');
 };
 
 yargs
-  .command(
-    'load <folders...>',
-    'load data from specified folder(s)',
-    yargs =>
-      yargs.positional('folders', {
-        describe: 'Folder(s) containing a project to load',
+  // load
+  .command({
+    command: 'load <folder>',
+    desc: 'load data from specified folder(s)',
+    builder: yargs =>
+      yargs
+        // --gromacs-path
+        .option('g', {
+          alias: 'gromacs-path',
+          default: 'gmx',
+          description: 'path to gromacs command-line tool',
+          type: 'string',
+        })
+        // --dry-run
+        .option('d', {
+          alias: 'dry-run',
+          default: false,
+          description: "Doesn't write to database",
+          type: 'boolean',
+        })
+        // folders
+        .positional('folder', {
+          describe: 'Folder containing a project to load',
+          type: 'string',
+          coerce: folderCoerce,
+        }),
+    handler: commonHandler('load'),
+  })
+  // publish
+  .command({
+    command: 'publish <id>',
+    desc:
+      'publish and assign an accession (if not already existing) to the specified id(s)',
+    builder: yargs =>
+      yargs
+        // id
+        .positional('id', {
+          describe: 'ID to process',
+          type: 'string',
+          coerce: idCoerce,
+        }),
+    handler: commonHandler('publish'),
+  })
+  // unpublish
+  .command({
+    command: 'unpublish <id|accession>',
+    desc:
+      'publish and assign an accession to the specified id, or re-publish an existing accession',
+    builder: yargs =>
+      // id
+      yargs.positional('id', {
+        describe: 'ID or accession to unpublish',
         type: 'string',
+        coerce: idOrAccessionCoerce,
       }),
-    require('./src/load'),
-  )
+    handler: commonHandler('unpublish'),
+  })
+  // cleanup
+  // NOTE: ask user to unpublish before cleaning up, to make them think twice
+  // NOTE: about what they're about to do since there is no going back from that
+  .command({
+    command: 'cleanup [id]',
+    aliases: ['clean', 'drop', 'clear', 'delete', 'remove'],
+    desc:
+      'clean-up project and related files and documents from database. To clean up a published project, you must first unpublish it',
+    builder: yargs =>
+      yargs
+        // --dry-run
+        .option('delete-all-orphans', {
+          description: 'Delete all orphan documents and files',
+          type: 'boolean',
+        })
+        // id
+        .positional('id', {
+          describe: 'ID to clean up',
+          type: 'string',
+          coerce: idCoerce,
+        })
+        .conflicts('id', 'delete-all-orphans'),
+    handler: commonHandler('cleanup'),
+  })
   .demandCommand()
-  .coerce('folders', folders => {
-    const folderSet = new Set(folders);
-    const erroredFolders = [];
-    const cleanedUpFolders = [];
-    for (const folder of folderSet) {
-      const cleanedUpFolder = resolve(folder, true);
-      try {
-        fs.accessSync(cleanedUpFolder, fs.constants.X_OK);
-        cleanedUpFolders.push(cleanedUpFolder);
-      } catch (_) {
-        erroredFolders.push(folder);
-      }
-    }
-    if (erroredFolders.length) {
-      console.warn(`will skip: ${erroredFolders.join(', ')}.`);
-    }
-    if (cleanedUpFolders.length) return cleanedUpFolders;
-  })
-  .option('g', {
-    alias: 'gromacs-path',
-    default: 'gmx',
-    description: 'path to gromacs command-line tool',
-    type: 'string',
-  })
-  .option('d', {
-    alias: 'dry-run',
-    default: false,
-    description: "Doesn't write to database",
-    type: 'boolean',
-  })
-  .option('o', {
-    alias: 'output',
-    description: 'File output to save documents to (debugging purposes)',
-    type: 'string',
-  })
-  .coerce('o', output => resolve(output, false))
   .help().argv;

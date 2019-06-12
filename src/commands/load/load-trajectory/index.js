@@ -1,9 +1,9 @@
 const devNull = require('dev-null');
-const ora = require('ora');
 const throttle = require('lodash.throttle');
 const prettyMs = require('pretty-ms');
 
-const executeCommandPerLine = require('../../utils/execute-command-per-line');
+const getSpinner = require('../../../utils/get-spinner');
+const executeCommandPerLine = require('../../../utils/execute-command-per-line');
 
 const UNIT_CONVERSION_SCALE = 10;
 const N_COORDINATES = 3;
@@ -33,12 +33,14 @@ const loadTrajectory = (
   gromacsCommand,
   dryRun,
 ) => {
-  const spinner = ora().start(`Loading trajectory file '${filename}'`);
-  spinner.time = Date.now();
+  const spinner = getSpinner().start(`Loading trajectory file '${filename}'`);
+
   let frameCount = 0;
   const updateSpinner = throttle(
     () =>
-      (spinner.text = `Loading trajectory file '${filename}' (frame ${frameCount})`),
+      (spinner.text = `Loading trajectory file '${filename}' (frame ${frameCount} in ${prettyMs(
+        Date.now() - spinner.time,
+      )})`),
     THROTTLE_TIME,
   );
 
@@ -74,9 +76,7 @@ const loadTrajectory = (
     uploadStream.on('finish', async ({ _id, length }) => {
       updateSpinner.cancel();
       spinner.succeed(
-        `Loaded trajectory file '${filename}' (${frameCount} frames in ${prettyMs(
-          Date.now() - spinner.time,
-        )})`,
+        `Loaded trajectory file '${filename}' (${frameCount} frames)`,
       );
       const trajectoryFileDescriptor = (await files.findOneAndUpdate(
         { _id },

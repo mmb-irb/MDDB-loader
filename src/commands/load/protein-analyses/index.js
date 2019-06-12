@@ -2,14 +2,13 @@
 const fs = require('fs');
 const { URLSearchParams } = require('url');
 const { promisify } = require('util');
-
-const ora = require('ora');
-const prettyMs = require('pretty-ms');
 const { sleep } = require('timing-functions');
 
-const ngl = require('../../utils/ngl');
-const fetchAndFail = require('../../utils/fetch-and-fail');
-const { interProScanURL, hmmerURL } = require('../../constants');
+const getSpinner = require('../../../utils/get-spinner');
+const ngl = require('../../../utils/ngl');
+const plural = require('../../../utils/plural');
+const fetchAndFail = require('../../../utils/fetch-and-fail');
+const { interProScanURL, hmmerURL } = require('../../../constants');
 
 // See InterProScan and HMMER Web documentations for expected objects from
 // these external APIs
@@ -49,9 +48,9 @@ const retrieveIPS = async jobID => {
 };
 
 const retrieveHMMER = async job => {
-  // stayed interactive
+  // stayed interactive, so we can return the result directly
   if (job.status !== 'PEND') return job;
-  // switched to batch job
+  // switched to batch job, so we have to poll the results
   let status;
   while (status !== 'DONE') {
     // if status is defined, means we already tried so we wait a bit
@@ -67,8 +66,10 @@ const retrieveHMMER = async job => {
 };
 
 const analyzeProteins = async (folder, pdbFile) => {
-  const spinner = ora().start('Submitting sequences to InterProScan and HMMER');
-  spinner.time = Date.now();
+  const spinner = getSpinner().start(
+    'Submitting sequences to InterProScan and HMMER',
+  );
+
   const fileContent = await readFile(`${folder}/${pdbFile}`, 'utf8');
   const blob = new global.Blob([fileContent], { type: 'text/plain' });
   const structure = await ngl.autoLoad(blob, { ext: 'pdb' });
@@ -122,17 +123,12 @@ const analyzeProteins = async (folder, pdbFile) => {
     // just pass the task so that we can await for it later
     jobs.set(chain, retrievalTask);
 
-    i++;
-    spinner.text = `Submitted ${i} sequence${i > 1 ? 's' : ''} out of ${
+    spinner.text = `Submitted ${plural('sequence', ++i, true)} out of ${
       chains.size
     } to InterProScan and HMMER`;
   }
 
-  spinner.succeed(
-    `Submitted ${i} sequence${i > 1 ? 's' : ''} to InterProScan (${prettyMs(
-      Date.now() - spinner.time,
-    )})`,
-  );
+  spinner.succeed(`Submitted ${plural('sequence', i, true)} to InterProScan`);
 
   return jobs;
 };

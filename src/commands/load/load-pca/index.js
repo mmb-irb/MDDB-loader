@@ -1,13 +1,11 @@
-const ora = require('ora');
 const mathjs = require('mathjs');
-const prettyMs = require('pretty-ms');
 
-const readFilePerLine = require('../../utils/read-file-per-line');
-const statFileLinesToDataLines = require('../../utils/stat-file-lines-to-data-lines');
+const getSpinner = require('../../../utils/get-spinner');
+const readFilePerLine = require('../../../utils/read-file-per-line');
+const statFileLinesToDataLines = require('../../../utils/stat-file-lines-to-data-lines');
 
 const loadPCA = async (folder, pcaFiles) => {
-  const spinner = ora().start('Loading PCA analysis');
-  spinner.time = Date.now();
+  const spinner = getSpinner().start('Loading PCA analysis');
 
   const output = {
     step: 0,
@@ -62,9 +60,7 @@ const loadPCA = async (folder, pcaFiles) => {
   }
 
   spinner.succeed(
-    `Loaded PCA analysis, ${maxIndex} components, ${maxComponent} projections (${prettyMs(
-      Date.now() - spinner.time,
-    )})`,
+    `Loaded PCA analysis, ${maxIndex} components, ${maxComponent} projections`,
   );
 
   return output;

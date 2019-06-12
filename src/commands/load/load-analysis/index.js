@@ -1,8 +1,8 @@
 const fromPairs = require('lodash.frompairs');
 const mathjs = require('mathjs');
 
-const readFilePerLine = require('../../utils/read-file-per-line');
-const statFileLinesToDataLines = require('../../utils/stat-file-lines-to-data-lines');
+const readFilePerLine = require('../../../utils/read-file-per-line');
+const statFileLinesToDataLines = require('../../../utils/stat-file-lines-to-data-lines');
 
 const processFunctionCreator = (...keys) => async dataAsyncGenerator => {
   const output = {
@@ -48,12 +48,10 @@ const loadAnalysis = async (folder, analysisFile) => {
   const { name, process } =
     analyses.find(({ pattern }) => pattern.test(analysisFile)) || {};
   if (!name) return;
-  return [
-    name,
-    await process(
-      statFileLinesToDataLines(readFilePerLine(folder + analysisFile)),
-    ),
-  ];
+  const value = await process(
+    statFileLinesToDataLines(readFilePerLine(folder + analysisFile)),
+  );
+  return { name, value };
 };
 
 module.exports = loadAnalysis;
