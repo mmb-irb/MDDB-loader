@@ -30,6 +30,9 @@ const getSpinner = () => {
       instance.running = false;
       return this;
     },
+    get running() {
+      return instance.running;
+    },
     get text() {
       return instance.text;
     },

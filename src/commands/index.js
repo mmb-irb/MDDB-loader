@@ -21,6 +21,13 @@ const commonHandler = commandName => async argv => {
       process.exit(0);
       return;
     }
+    // in case of any error happening
+    // stop spinner
+    if (spinnerRef.current && spinnerRef.current.running) {
+      spinnerRef.current.fail(
+        `Interrupted while doing: ${spinnerRef.current.text}`,
+      );
+    }
     spinnerRef.current = getSpinner().start('Aborting current transaction');
     try {
       await session.abortTransaction();
@@ -56,13 +63,10 @@ const commonHandler = commandName => async argv => {
       session.startTransaction();
 
       db = client.db(dbName);
-    } catch (_) {
+    } catch (error) {
+      console.error(error);
       // throw custom error
-      throw new Error(
-        `Unable to connect to mongo instance or to '${
-          mongoConfig.dbName
-        }' database`,
-      );
+      throw new Error(`Unable to connect to mongo instance or to database`);
     }
 
     /* specific handler */
