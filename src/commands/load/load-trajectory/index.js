@@ -1,6 +1,7 @@
 const devNull = require('dev-null');
 const throttle = require('lodash.throttle');
 const prettyMs = require('pretty-ms');
+const chalk = require('chalk');
 
 const getSpinner = require('../../../utils/get-spinner');
 const executeCommandPerLine = require('../../../utils/execute-command-per-line');
@@ -14,7 +15,8 @@ const N_COORDINATES = 3;
 const COORDINATES_REGEXP = /^\s*x\[\s*\d*]={\s*(-?\d+\.\d+e[+-]\d{2}),\s*(-?\d+\.\d+e[+-]\d{2}),\s*(-?\d+\.\d+e[+-]\d{2})\s*}\s*$/;
 const FRAME_REGEXP = / frame \d+:$/;
 
-const THROTTLE_TIME = 1000;
+const THROTTLE_TIME = 1000; // 1 second
+const TIMEOUT_WARNING = 30000; // 30 seconds
 
 const loadTrajectories = async (folder, filenames, ...args) => {
   const output = [];
@@ -32,17 +34,28 @@ const loadTrajectory = (
   projectID,
   gromacsCommand,
   dryRun,
+  spinnerRef,
 ) => {
-  const spinner = getSpinner().start(`Loading trajectory file '${filename}'`);
+  spinnerRef.current = getSpinner().start(
+    `Loading trajectory file '${filename}'`,
+  );
 
   let frameCount = 0;
-  const updateSpinner = throttle(
-    () =>
-      (spinner.text = `Loading trajectory file '${filename}' (frame ${frameCount} in ${prettyMs(
-        Date.now() - spinner.time,
-      )})`),
-    THROTTLE_TIME,
-  );
+  let timeoutID;
+  const updateSpinner = throttle(() => {
+    spinnerRef.current.text = `Loading trajectory file '${filename}' (frame ${frameCount} in ${prettyMs(
+      Date.now() - spinnerRef.current.time,
+    )})`;
+    // logic to warn user if something seems to be getting stuck
+    if (timeoutID) clearTimeout(timeoutID);
+    timeoutID = setTimeout(() => {
+      spinnerRef.current.text = `Loading trajectory file '${filename}' (frame ${frameCount} in ${prettyMs(
+        Date.now() - spinnerRef.current.time,
+      )}) ${chalk.yellow(
+        '⚠️ Timeout warning: nothing happened in the last 30 seconds',
+      )}`;
+    }, TIMEOUT_WARNING);
+  }, THROTTLE_TIME);
 
   return new Promise(async (resolve, reject) => {
     // keep a buffer handy for reuse for every atoms in every frame
@@ -64,18 +77,20 @@ const loadTrajectory = (
       ? devNull()
       : bucket.openUploadStream(dbFilename, {
           contentType: 'application/octet-stream',
+          chunkSizeBytes: 4 * 1024 * 1024, // 4 MiB
         });
 
     // error
     uploadStream.on('error', error => {
-      spinner.fail(error);
+      spinnerRef.current.fail(error);
       reject();
     });
 
     // finish
     uploadStream.on('finish', async ({ _id, length }) => {
       updateSpinner.cancel();
-      spinner.succeed(
+      if (timeoutID) clearTimeout(timeoutID);
+      spinnerRef.current.succeed(
         `Loaded trajectory file '${filename}' (${frameCount} frames)`,
       );
       const trajectoryFileDescriptor = (await files.findOneAndUpdate(

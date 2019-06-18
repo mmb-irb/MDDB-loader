@@ -48,20 +48,22 @@ const publish = async ({ id: idOrAccession }, { db }, unpublish = false) => {
     { $set: { accession, published: !unpublish } }, // update
   );
 
-  if (unpublish) {
-    console.log(
-      chalk.cyan(
-        `== finished unpublishing project with accession '${accession}' and id '${
-          result._id
-        }'`,
-      ),
-    );
-  } else {
-    console.log(
-      chalk.cyan(`== finished publishing project with id '${result._id}' as:`),
-    );
-    printHighlight(accession);
-  }
+  return () => {
+    if (unpublish) {
+      console.log(
+        chalk.cyan(
+          `== finished unpublishing project with accession '${accession}' and id '${result._id}'`,
+        ),
+      );
+    } else {
+      console.log(
+        chalk.cyan(
+          `== finished publishing project with id '${result._id}' as:`,
+        ),
+      );
+      printHighlight(accession);
+    }
+  };
 };
 
 module.exports = publish;

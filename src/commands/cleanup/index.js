@@ -15,15 +15,35 @@ const findFilesToDelete = async (id, db) => {
       {
         $lookup: {
           from: 'projects',
-          as: 'projectDocument',
+          as: 'foreign',
           localField: 'metadata.project',
           foreignField: '_id',
         },
       },
-      { $match: { projectDocument: { $size: 0 } } },
+      { $match: { foreign: { $size: 0 } } },
     ]);
   }
   return (await cursor.toArray()).map(({ _id }) => _id);
+};
+
+const findChunksToDelete = async db => {
+  const cursor = db.collection('fs.chunks').aggregate([
+    {
+      $lookup: {
+        from: 'fs.files',
+        as: 'foreign',
+        localField: 'files_id',
+        foreignField: '_id',
+      },
+    },
+    { $match: { foreign: { $size: 0 } } },
+    { $count: 'orphans' },
+  ]);
+  console.log(await cursor.toArray());
+  // console.log(await cursor.count());
+  // await cursor.forEach();
+  return [];
+  // return (await cursor.toArray()).map(({ _id }) => _id);
 };
 
 const findRelatedDocumentsToDelete = async (id, db, collection) => {
@@ -36,12 +56,12 @@ const findRelatedDocumentsToDelete = async (id, db, collection) => {
       {
         $lookup: {
           from: 'projects',
-          as: 'projectDocument',
+          as: 'foreign',
           localField: 'project',
           foreignField: '_id',
         },
       },
-      { $match: { projectDocument: { $size: 0 } } },
+      { $match: { foreign: { $size: 0 } } },
     ]);
   }
   return (await cursor.toArray()).map(({ _id }) => _id);
@@ -89,7 +109,8 @@ const cleanup = async (
     if (!result || !result._id) {
       throw new Error(`No project found for ID '${id}'`);
     }
-    // project published? => Bail!
+    // project published? => Bail! Need to unpublish first
+    // This is on purpose, more steps to avoid deleting something important
     if (result.published) {
       throw new Error("This project cannot be removed because it's published");
     }
@@ -99,6 +120,7 @@ const cleanup = async (
   spinnerRef.current = getSpinner().start('Finding data to delete');
   const toBeDeleted = {
     files: await findFilesToDelete(id, db),
+    chunks: deleteAllOrphans ? await findChunksToDelete(db) : [],
     analyses: await findRelatedDocumentsToDelete(id, db, 'analyses'),
     chains: await findRelatedDocumentsToDelete(id, db, 'chains'),
   };

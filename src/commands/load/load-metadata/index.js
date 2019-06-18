@@ -10,8 +10,8 @@ const readFile = promisify(fs.readFile);
 const NEW_LINES = /\s*\n+\s*/g;
 const SEPARATORS = /\s*,\s*/g;
 
-const loadMetadata = async folder => {
-  const spinner = getSpinner().start('Loading metadata');
+const loadMetadata = async (folder, spinnerRef) => {
+  spinnerRef.current = getSpinner().start('Loading metadata');
 
   try {
     const fileContent = await readFile(folder + '/metadata', 'utf8');
@@ -29,11 +29,11 @@ const loadMetadata = async folder => {
         }),
     );
 
-    spinner.succeed('Loaded metadata');
+    spinnerRef.current.succeed('Loaded metadata');
 
     return output;
   } catch (error) {
-    spinner.fail(error);
+    spinnerRef.current.fail(error);
   }
 };
 

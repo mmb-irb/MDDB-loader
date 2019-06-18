@@ -24,6 +24,7 @@ const loadFile = (folder, filename, bucket, projectID, dryRun) =>
         : bucket.openUploadStream(filename, {
             contentType: getMimeTypeFromFilename(filename),
             metadata: { project: projectID },
+            chunkSizeBytes: 4 * 1024 * 1024, // 4 MiB
           });
       readStream.on('error', reject);
       writeStream.on('finish', resolve);

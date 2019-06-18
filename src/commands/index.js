@@ -5,15 +5,24 @@ const mongodb = require('mongodb');
 
 const getSpinner = require('../utils/get-spinner');
 
+// common logic for all commands
+// set up database accesses and transactions
+// clean-up afterwards and commit or abort transactions
+// handle errors thrown from the commands and pass them to the user
+// NOTE: transaction logic is just being ignored for now
+// NOTE: it's there so that eventually it will become useful (MongoDB >=4)
 const commonHandler = commandName => async argv => {
   let mongoConfig;
   let client;
   let session;
   let db;
+
   // copy React's idea of references
   // so we can pass the reference to inner commands, and still catch errors and
   // interrupt spinner from here
   const spinnerRef = Object.seal({ current: null });
+  // keep reference to project ID in case we need to roll back
+  const projectIdRef = Object.seal({ current: null });
 
   process.on('SIGINT', async () => {
     console.log(chalk.red('Caught interrupt signal'));
@@ -32,6 +41,15 @@ const commonHandler = commandName => async argv => {
     try {
       await session.abortTransaction();
       spinnerRef.current.succeed('Aborted current transaction');
+      // warn user to run clean up
+      if (projectIdRef.current) {
+        console.error(
+          chalk.bgRed('Please run the following command to clean up:'),
+        );
+        console.error(
+          chalk.bgRed(`"${argv.$0} cleanup ${projectIdRef.current}"`),
+        );
+      }
       process.exit(0);
     } catch (_) {
       spinnerRef.current.fail(
@@ -72,11 +90,11 @@ const commonHandler = commandName => async argv => {
     /* specific handler */
     const command = require(`./${commandName}`);
     // call the requested command with
-    await command(
+    const finalMessage = await command(
       // normal object passed from the yargs library
       argv,
       // extra stuff useful across all scripts
-      { db, bucket: new mongodb.GridFSBucket(db), spinnerRef },
+      { db, bucket: new mongodb.GridFSBucket(db), spinnerRef, projectIdRef },
     );
     /**/
 
@@ -84,6 +102,8 @@ const commonHandler = commandName => async argv => {
     spinnerRef.current = getSpinner().start('Committing to database');
     await session.commitTransaction();
     spinnerRef.current.succeed('Committed to database');
+
+    if (finalMessage) finalMessage();
   } catch (error) {
     // in case of any error happening
     // stop spinner
@@ -99,11 +119,22 @@ const commonHandler = commandName => async argv => {
       spinnerRef.current.succeed('Aborted current transaction');
     }
 
-    console.error(chalk.bgRed(error.stack));
+    if (error) console.error(chalk.bgRed(error.stack));
+
+    // warn user to run clean up
+    if (projectIdRef.current) {
+      console.error(
+        chalk.bgRed('Please run the following command to clean up:'),
+      );
+      console.error(
+        chalk.bgRed(`"${argv.$0} cleanup ${projectIdRef.current}"`),
+      );
+    }
   } finally {
     // in any case, error or not, clean up session and client
     if (session) session.endSession();
     if (client && client.close) client.close();
+    process.exit(0);
   }
 };
 

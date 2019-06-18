@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 const fs = require('fs');
+const process = require('process');
 
 const yargs = require('yargs');
 const { ObjectId } = require('mongodb');
@@ -9,7 +10,6 @@ const resolvePath = require('./src/utils/resolve-path');
 
 const folderCoerce = folder => {
   const cleanedUpFolder = resolvePath(folder, true);
-  console.log(cleanedUpFolder);
   try {
     fs.accessSync(cleanedUpFolder, fs.constants.X_OK);
   } catch (_) {
@@ -102,6 +102,12 @@ yargs
       }),
     handler: commonHandler('unpublish'),
   })
+  // list
+  .command({
+    command: 'list',
+    desc: 'list all projects and their status',
+    handler: commonHandler('list'),
+  })
   // cleanup
   // NOTE: ask user to unpublish before cleaning up, to make them think twice
   // NOTE: about what they're about to do since there is no going back from that
@@ -128,3 +134,9 @@ yargs
   })
   .demandCommand()
   .help().argv;
+
+// in case an exception manages to escape us
+process.on('unhandledRejection', error => {
+  console.error('Unhandled rejection');
+  console.error(error);
+});

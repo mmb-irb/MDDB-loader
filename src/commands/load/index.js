@@ -1,7 +1,6 @@
 const fetch = require('node-fetch');
 const chalk = require('chalk');
 const prettyMs = require('pretty-ms');
-const fromPairs = require('lodash.frompairs');
 
 const getSpinner = require('../../utils/get-spinner');
 const plural = require('../../utils/plural');
@@ -15,8 +14,6 @@ const loadFile = require('./load-file');
 const loadPCA = require('./load-pca');
 const loadAnalysis = require('./load-analysis');
 
-let spinner;
-
 const loadFolder = async (
   folder,
   bucket,
@@ -24,8 +21,8 @@ const loadFolder = async (
   projectID,
   gromacsPath,
   dryRun,
+  spinnerRef,
 ) => {
-  let spinner;
   // find files
   const {
     rawFiles,
@@ -38,11 +35,11 @@ const loadFolder = async (
   let EBIJobs;
   if (pdbFile) {
     // submit to InterProScan
-    EBIJobs = await analyzeProteins(folder, pdbFile);
+    EBIJobs = await analyzeProteins(folder, pdbFile, spinnerRef);
   }
 
   // process files
-  const metadata = await loadMetadata(folder);
+  const metadata = await loadMetadata(folder, spinnerRef);
 
   const trajectoryFileDescriptors =
     trajectoryFiles.length &&
@@ -54,6 +51,7 @@ const loadFolder = async (
       projectID,
       gromacsPath,
       dryRun,
+      spinnerRef,
     ));
 
   if (trajectoryFileDescriptors) {
@@ -68,74 +66,78 @@ const loadFolder = async (
 
   // Raw files
   const storedFiles = [];
-  spinner = getSpinner().start(
+  spinnerRef.current = getSpinner().start(
     `Loading ${plural('file', rawFiles.length, true)}`,
   );
 
   for (const [index, filename] of rawFiles.entries()) {
-    spinner.text = `Loading file ${index + 1} out of ${
+    spinnerRef.current.text = `Loading file ${index + 1} out of ${
       rawFiles.length
     } (${filename})`;
     storedFiles.push(
       await loadFile(folder, filename, bucket, projectID, dryRun),
     );
   }
-  spinner.succeed(
+  spinnerRef.current.succeed(
     `Loaded ${plural('file', rawFiles.length, true)} (${prettyMs(
-      Date.now() - spinner.time,
+      Date.now() - spinnerRef.current.time,
     )})`,
   );
 
   // Analyses files
   const analyses = {};
   // PCA
-  if (pcaFiles.length) analyses.pca = await loadPCA(folder, pcaFiles);
+  if (pcaFiles.length)
+    analyses.pca = await loadPCA(folder, pcaFiles, spinnerRef);
 
   // Rest of analyses
-  spinner = getSpinner().start(
+  spinnerRef.current = getSpinner().start(
     `Loading ${plural('analysis', analysisFiles.length, true)}`,
   );
 
   for (const [index, filename] of analysisFiles.entries()) {
-    spinner.text = `Loading analysis ${index + 1} out of ${
+    spinnerRef.current.text = `Loading analysis ${index + 1} out of ${
       rawFiles.length
     } (${filename})`;
-    const { name, value } = await loadAnalysis(folder, filename);
+    const { name, value } = await loadAnalysis(folder, filename, spinnerRef);
     analyses[name] = value;
   }
-  spinner.succeed(`Loaded ${plural('analysis', analysisFiles.length, true)}`);
+  spinnerRef.current.succeed(
+    `Loaded ${plural('analysis', analysisFiles.length, true)}`,
+  );
 
   let chains;
-  if (EBIJobs) {
+  if (EBIJobs && EBIJobs.length) {
     // retrieve jobs from InterProScan
-    spinner = getSpinner().start(
+    spinnerRef.current = getSpinner().start(
       `Retrieving ${plural(
-        'job',
-        EBIJobs.size,
+        'analysis',
+        EBIJobs.length,
         true,
-      )} from InterProScan and HMMER`,
+      )} for sequences, including from InterProScan and HMMER`,
     );
 
     let finished = 0;
-    chains = fromPairs(
-      await Promise.all(
-        Array.from(EBIJobs.entries()).map(([chain, job]) =>
-          job.then(document => {
-            finished++;
-            spinner.text = `Retrieved ${plural('job', finished, true)} out of ${
-              EBIJobs.size
-            } from InterProScan and HMMER`;
-            return [chain, document];
-          }),
-        ),
+    chains = await Promise.all(
+      EBIJobs.map(([chain, job]) =>
+        job.then(document => {
+          spinnerRef.current.text = `Retrieved ${plural(
+            'analysis',
+            ++finished,
+            true,
+          )} out of ${
+            EBIJobs.length
+          } for sequences, including from InterProScan and HMMER`;
+          return [chain, document];
+        }),
       ),
     );
-    spinner.succeed(
+    spinnerRef.current.succeed(
       `Retrieved ${plural(
-        'job',
+        'analysis',
         finished,
         true,
-      )} jobs from InterProScan and HMMER`,
+      )} for sequences, including from InterProScan and HMMER`,
     );
   }
 
@@ -150,25 +152,27 @@ const loadFolder = async (
   return output;
 };
 
-const loadPdbInfo = pdbID => {
-  const spinner = getSpinner().start(`Loading PDB Info for ${pdbID} from API`);
+const loadPdbInfo = (pdbID, spinnerRef) => {
+  spinnerRef.current = getSpinner().start(
+    `Loading PDB Info for ${pdbID} from API`,
+  );
 
   return pdbID
     ? fetch(`http://mmb.pcb.ub.es/api/pdb/${pdbID}/entry`)
         .then(response => response.json())
         .then(data => {
-          spinner.succeed(`Loaded PDB Info for ${pdbID} from API`);
+          spinnerRef.current.succeed(`Loaded PDB Info for ${pdbID} from API`);
           return data;
         })
         .catch(error => {
-          spinner.fail(error);
+          spinnerRef.current.fail(error);
         })
     : undefined;
 };
 
-const loadFolders = async (
+const load = async (
   { folder, dryRun = false, gromacsPath },
-  { db, bucket },
+  { db, bucket, spinnerRef, projectIdRef },
 ) => {
   if (dryRun) {
     console.log(
@@ -184,9 +188,11 @@ const loadFolders = async (
       accession: null,
       published: false,
     });
+    projectIdRef.current = insertedId;
 
     const pdbInfo = await loadPdbInfo(
       (folder.match(/\/(\w{4})[^/]+\/?$/i) || [])[1],
+      spinnerRef,
     );
 
     const project = {
@@ -198,10 +204,11 @@ const loadFolders = async (
         insertedId,
         gromacsPath,
         dryRun,
+        spinnerRef,
       )),
     };
 
-    spinner = getSpinner().start('Adding to database');
+    spinnerRef.current = getSpinner().start('Adding to database');
 
     // separate analyses for insertion in other collection
     let analyses = project.analyses;
@@ -211,38 +218,50 @@ const loadFolders = async (
     // separate chains for insertion in other collection
     const chains = project.chains;
     // keep an array of chain names
-    project.chains = Object.keys(project.chains);
+    project.chains = chains.map(([chain]) => chain);
 
     if (!dryRun) {
-      // insert trimmed project into collection
-      // and keep automatically generated UUID for data consistency
+      // update project into collection (trimmed off of analyses and chains)
       await db
         .collection('projects')
         .findOneAndUpdate({ _id: insertedId }, { $set: project });
+
       // link each analysis back to their original project and insert
-      await db.collection('analyses').insert(
-        Object.entries(analyses).map((name, value) => ({
-          name,
-          value,
-          project: insertedId,
-        })),
-      );
-      // link chain information back to its original project and insert
-      await db
-        .collection('chains')
-        .insertOne({ ...chains, project: insertedId });
+      const analysisEntries = Object.entries(analyses || {});
+      if (analysisEntries.length) {
+        await db.collection('analyses').insertMany(
+          analysisEntries.map(([name, value]) => ({
+            name,
+            value,
+            project: insertedId,
+          })),
+        );
+      }
+
+      // link chain information back to their original project and insert
+      if (chains.length) {
+        await db.collection('chains').insertMany(
+          chains.map(([name, value]) => ({
+            name,
+            ...value,
+            project: insertedId,
+          })),
+        );
+      }
     }
 
-    spinner.succeed('Added to database');
+    spinnerRef.current.succeed('Added to database');
 
-    console.log(
-      chalk.cyan(
-        `== finished loading '${folder}' in ${prettyMs(
-          Date.now() - startTime,
-        )} with id:`,
-      ),
-    );
-    printHighlight(insertedId);
+    return () => {
+      console.log(
+        chalk.cyan(
+          `== finished loading '${folder}' in ${prettyMs(
+            Date.now() - startTime,
+          )} with id:`,
+        ),
+      );
+      printHighlight(insertedId);
+    };
   } catch (error) {
     console.error(chalk.bgRed(`failed to load '${folder}'`));
 
@@ -250,4 +269,4 @@ const loadFolders = async (
   }
 };
 
-module.exports = loadFolders;
+module.exports = load;

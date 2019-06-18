@@ -4,8 +4,8 @@ const getSpinner = require('../../../utils/get-spinner');
 const readFilePerLine = require('../../../utils/read-file-per-line');
 const statFileLinesToDataLines = require('../../../utils/stat-file-lines-to-data-lines');
 
-const loadPCA = async (folder, pcaFiles) => {
-  const spinner = getSpinner().start('Loading PCA analysis');
+const loadPCA = async (folder, pcaFiles, spinnerRef) => {
+  spinnerRef.current = getSpinner().start('Loading PCA analysis');
 
   const output = {
     step: 0,
@@ -38,7 +38,7 @@ const loadPCA = async (folder, pcaFiles) => {
       if (startedProcessing) {
         currentComponent++;
         startedProcessing = false;
-        spinner.text = `Loading PCA analysis (projection ${currentComponent} out of ${maxIndex} possible)`;
+        spinnerRef.current.text = `Loading PCA analysis (projection ${currentComponent} out of ${maxIndex} possible)`;
       }
       continue;
     }
@@ -59,7 +59,7 @@ const loadPCA = async (folder, pcaFiles) => {
     }
   }
 
-  spinner.succeed(
+  spinnerRef.current.succeed(
     `Loaded PCA analysis, ${maxIndex} components, ${maxComponent} projections`,
   );
 

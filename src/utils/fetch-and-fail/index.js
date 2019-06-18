@@ -1,6 +1,6 @@
 const fetch = require('node-fetch');
 
-// fails if response is not OK
+// augment default behaviour of fetch to fail if response is not OK
 const fetchAndFail = async (...args) => {
   const response = await fetch(...args);
 
