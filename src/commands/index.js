@@ -99,9 +99,9 @@ const commonHandler = commandName => async argv => {
     /**/
 
     // commit transaction
-    spinnerRef.current = getSpinner().start('Committing to database');
+    // spinnerRef.current = getSpinner().start('Committing to database');
     await session.commitTransaction();
-    spinnerRef.current.succeed('Committed to database');
+    // spinnerRef.current.succeed('Committed to database');
 
     if (finalMessage) finalMessage();
   } catch (error) {
