@@ -3,7 +3,7 @@ const fs = require('fs');
 
 const readdir = promisify(fs.readdir);
 
-const rawFilePatternToLoad = /\.pdb$/i;
+const rawFilePatternToLoad = /\.(pdb|xtc)$/i;
 const trajectoryFilePatternToLoad = /(^md.imaged.rot|pca-\d+).xtc$/i;
 const pcaFilePatternToLoad = /pca\./i;
 const analysisFilePatternToLoad = /\.xvg$/i;

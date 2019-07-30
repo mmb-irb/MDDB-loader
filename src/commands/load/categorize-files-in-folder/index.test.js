@@ -13,7 +13,7 @@ describe('categorizeFilesInFolder', () => {
         'some-file',
       ],
       pcaFiles: ['md.pca.eigenval.xvg'],
-      rawFiles: ['md.pdb'],
+      rawFiles: ['md.imaged.rot.xtc', 'md.pdb'],
       trajectoryFiles: ['md.imaged.rot.xtc'],
       analysisFiles: ['md.xvg'],
     });

@@ -39,7 +39,7 @@ const loadFolder = async (
   }
 
   // process files
-  const metadata = await loadMetadata(folder, spinnerRef);
+  const metadata = (await loadMetadata(folder, spinnerRef)) || {};
 
   const trajectoryFileDescriptors =
     trajectoryFiles.length &&
@@ -143,7 +143,9 @@ const loadFolder = async (
 
   const output = {
     metadata,
-    files: [...storedFiles, ...trajectoryFileDescriptors].filter(Boolean),
+    files: [...storedFiles, ...(trajectoryFileDescriptors || [])].filter(
+      Boolean,
+    ),
     analyses,
   };
 
@@ -216,7 +218,7 @@ const load = async (
     project.analyses = Object.keys(project.analyses);
 
     // separate chains for insertion in other collection
-    const chains = project.chains;
+    const chains = project.chains || [];
     // keep an array of chain names
     project.chains = chains.map(([chain]) => chain);
 
