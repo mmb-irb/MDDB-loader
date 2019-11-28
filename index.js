@@ -2,6 +2,10 @@
 const fs = require('fs');
 const process = require('process');
 
+const dotenvLoad = require('dotenv').config();
+
+if (dotenvLoad.error) throw dotenvLoad.error;
+
 const yargs = require('yargs');
 const { ObjectId } = require('mongodb');
 

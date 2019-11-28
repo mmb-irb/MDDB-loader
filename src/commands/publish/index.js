@@ -12,7 +12,9 @@ const getNextAccession = async counters => {
       returnOriginal: false,
     },
   );
-  return `MCNS${result.value.count.toString().padStart(5, '0')}`;
+  return `${
+    process.env.ACCESSION_PREFIX
+  }${result.value.count.toString().padStart(5, '0')}`;
 };
 
 const publish = async ({ id: idOrAccession }, { db }, unpublish = false) => {

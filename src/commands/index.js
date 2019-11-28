@@ -12,7 +12,6 @@ const getSpinner = require('../utils/get-spinner');
 // NOTE: transaction logic is just being ignored for now
 // NOTE: it's there so that eventually it will become useful (MongoDB >=4)
 const commonHandler = commandName => async argv => {
-  let mongoConfig;
   let client;
   let session;
   let db;
@@ -60,27 +59,25 @@ const commonHandler = commandName => async argv => {
   });
 
   try {
-    // Mongo config
-    try {
-      // Mongo config file, can be json or js code
-      mongoConfig = require('../../configs/mongo');
-    } catch (_) {
-      // throw custom error
-      throw new Error("Couldn't find mongo config file");
-    }
-
     // Mongo client
     try {
-      const { server, port, db: dbName, ...config } = mongoConfig;
       client = await mongodb.MongoClient.connect(
-        `mongodb://${server}:${port}`,
-        config,
+        `mongodb://${process.env.DB_SERVER}:${process.env.DB_PORT}`,
+        {
+          auth: {
+            user: process.env.DB_AUTH_USER,
+            password: process.env.DB_AUTH_PASSWORD,
+          },
+          authSource: process.env.DB_AUTHSOURCE,
+          useNewUrlParser: true,
+          useUnifiedTopology: true,
+        },
       );
 
       session = client.startSession();
       session.startTransaction();
 
-      db = client.db(dbName);
+      db = client.db(process.env.DB_NAME);
     } catch (error) {
       console.error(error);
       // throw custom error
