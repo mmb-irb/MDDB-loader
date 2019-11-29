@@ -1,3 +1,6 @@
+// This script is called when the standard NGL library is needed (https://www.npmjs.com/package/ngl)
+// This script executes a few logic before returning the required library
+
 // if we hadn't done so before...
 if (!global.window) {
   // get a fake DOM from jsdom

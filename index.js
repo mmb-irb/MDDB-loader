@@ -1,32 +1,55 @@
 #!/usr/bin/env node
+
+// Allow reading local files
 const fs = require('fs');
+// Allow reading to the current working directory
 const process = require('process');
 
+// "yargs" is a library used to manage script calls from unix console
 const yargs = require('yargs');
+// ObjectId return
 const { ObjectId } = require('mongodb');
 
+//
 const commonHandler = require('./src/commands');
+// Convert a local path into a "fs" library valid global path
 const resolvePath = require('./src/utils/resolve-path');
 
+// -----------------------------------------------------------------------------------------
+
+// Convert the input local folder path into a "fs" library valid global folder path
 const folderCoerce = folder => {
+  // Path conversion
   const cleanedUpFolder = resolvePath(folder, true);
   try {
-    fs.accessSync(cleanedUpFolder, fs.constants.X_OK);
+    // Check if folder is accessible and executable. "X_OK" means folder must be executable.
+    fs.accessSync(cleanedUpFolder, fs.constants.X_OK); // UN FOLDER ES EJECUTABLE ??
   } catch (_) {
     throw new Error(`unable to use folder '${folder}'`);
   }
   return cleanedUpFolder;
 };
 
+//console.log(typeof cleanedUpFolder);
+//console.log(typeof folder);
+
+// Sabe the object from mongo whcih is associated to the provided id
 const idCoerce = id => ObjectId(id);
 
+// RegExp formula to check if a string is in accession format
 const accessionFormat = /^MCNS\d{5}$/;
+
+// Convert the input accession string into a valid accession format
 const accessionCoerce = accession => {
+  // Remove spaces from the accession argument and make all characters upper case
   const output = accession.trim().toUpperCase();
+  // Check if the new accession (output) is a valid accession format. If not, send an error
   if (!accessionFormat.test(output)) throw new Error('Not a valid accession');
   return output;
 };
 
+// Try to coerce the input argument as a mongo id
+// If fails, try it as an accession
 const idOrAccessionCoerce = idOrAccession => {
   let output;
   try {
@@ -44,18 +67,23 @@ const idOrAccessionCoerce = idOrAccession => {
   throw new Error('Invalid ID or accession');
 };
 
+// Execute different functions and scripts according to the input commands and options
+// Display help info when this script is called with no commands or with a "--help" commands
+// yargs API: https://github.com/yargs/yargs/blob/HEAD/docs/api.md
 yargs
   // load
   .command({
-    command: 'load <folder>',
-    desc: 'load data from specified folder(s)',
+    command: 'load <folder>', // Command name. Useful for the help
+    desc: 'load data from specified folder(s)', // Command description. Useful for the help
     builder: yargs =>
       yargs
+        // All values from options and positionals are saved at the "argv" object (explained below)
+        // The order of declaration in these options and positionals is important (exemplified below)
         // --gromacs-path
         .option('g', {
-          alias: 'gromacs-path',
+          alias: 'gromacs-path', // Option name. Useful for the help
           default: 'gmx',
-          description: 'path to gromacs command-line tool',
+          description: 'path to gromacs command-line tool', // Option description. Useful for the help
           type: 'string',
         })
         // --dry-run
@@ -69,9 +97,9 @@ yargs
         .positional('folder', {
           describe: 'Folder containing a project to load',
           type: 'string',
-          coerce: folderCoerce,
+          coerce: folderCoerce, // Apply this function over the parsed value from the command line
         }),
-    handler: commonHandler('load'),
+    handler: commonHandler('load'), // Call the command script with the command name as argument
   })
   // publish
   .command({
@@ -132,8 +160,11 @@ yargs
         .conflicts('id', 'delete-all-orphans'),
     handler: commonHandler('cleanup'),
   })
-  .demandCommand()
-  .help().argv;
+  .demandCommand() // Demand a minimmum of 1 command
+  // Display all descriptions when the command --help is asked or there is no command
+  .help().argv; // "argv" is a normal object passed from yargs library
+// This object contains the input values of options and positionals from the command
+// e.g. in load command, argv contains the values of {folder, dry-run, gromacs-path}
 
 // in case an exception manages to escape us
 process.on('unhandledRejection', error => {
