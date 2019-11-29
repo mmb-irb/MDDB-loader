@@ -19,7 +19,6 @@ const getSpinner = require('../utils/get-spinner');
 // This object contains the input values of options and positionals from the command
 // e.g. in load command, argv contains the values of {folder, dry-run, gromacs-path}
 const commonHandler = commandName => async argv => {
-  let mongoConfig;
   let client;
   let session;
   let db;
@@ -78,27 +77,25 @@ const commonHandler = commandName => async argv => {
   });
 
   try {
-    // Mongo config
-    try {
-      // Mongo configuration file is necessary to access the mongo data base. It can be json or js code
-      // This file is not found in the repository by default. If you need it contact the administrator
-      mongoConfig = require('../../configs/mongo');
-    } catch (_) {
-      throw new Error("Couldn't find mongo config file");
-    }
-
     // Try to connect to mongo as client and get the data base
     try {
-      const { server, port, db: dbName, ...config } = mongoConfig;
-      // Connect to Mongo
       client = await mongodb.MongoClient.connect(
-        `mongodb://${server}:${port}`,
-        config,
+        `mongodb://${process.env.DB_SERVER}:${process.env.DB_PORT}`,
+        {
+          auth: {
+            user: process.env.DB_AUTH_USER,
+            password: process.env.DB_AUTH_PASSWORD,
+          },
+          authSource: process.env.DB_AUTHSOURCE,
+          useNewUrlParser: true,
+          useUnifiedTopology: true,
+        },
       );
       session = client.startSession();
       session.startTransaction();
+
       // Get the data base
-      db = client.db(dbName);
+      db = client.db(process.env.DB_NAME);
     } catch (error) {
       console.error(error);
       throw new Error(`Unable to connect to mongo instance or to database`);
