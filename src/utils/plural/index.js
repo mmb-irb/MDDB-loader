@@ -8,7 +8,8 @@ const exceptions = new Map([
 // A few exceptional word will be not modified. They are listed above.
 const plural = (word, count = 1, prepend = false) => {
   let output;
-  if (count <= 1) {
+  // Note that count == 0 also retuns plural
+  if (count == 1) {
     // Singular
     output = word;
   } else {

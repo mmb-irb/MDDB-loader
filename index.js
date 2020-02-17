@@ -36,7 +36,8 @@ const folderCoerce = folder => {
 //console.log(typeof cleanedUpFolder);
 //console.log(typeof folder);
 
-// Sabe the object from mongo whcih is associated to the provided id
+// Save the object from mongo which is associated to the provided id
+// WARNING: If the argument passed to this function is null a new ObjectId is generated
 const idCoerce = id => ObjectId(id);
 
 // RegExp formula to check if a string is in accession format
@@ -55,6 +56,8 @@ const accessionCoerce = accession => {
 // If fails, try it as an accession
 const idOrAccessionCoerce = idOrAccession => {
   let output;
+  // This is to prevent idCoerce() to generate a new ObjectId if the passed argument is null
+  if (!idOrAccession) return null;
   try {
     output = idCoerce(idOrAccession);
   } catch (_) {
@@ -64,9 +67,7 @@ const idOrAccessionCoerce = idOrAccession => {
       /**/
     }
   }
-
   if (output) return output;
-
   throw new Error('Invalid ID or accession');
 };
 
@@ -94,6 +95,22 @@ yargs
           alias: 'dry-run',
           default: false,
           description: "Doesn't write to database",
+          type: 'boolean',
+        })
+        // --append
+        .option('a', {
+          alias: 'append',
+          default: null,
+          description: 'Append new data to an existing project',
+          type: 'string',
+          coerce: idOrAccessionCoerce,
+        })
+        // --forced
+        .option('f', {
+          alias: 'forced',
+          default: false,
+          description:
+            'Force the data append so the user is never asked and data is overwritten',
           type: 'boolean',
         })
         // folders
@@ -149,7 +166,7 @@ yargs
       'clean-up project and related files and documents from database. To clean up a published project, you must first unpublish it',
     builder: yargs =>
       yargs
-        // --dry-run
+        // --delete-all-orphans
         .option('delete-all-orphans', {
           description: 'Delete all orphan documents and files',
           type: 'boolean',

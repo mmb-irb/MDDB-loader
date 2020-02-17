@@ -2,283 +2,588 @@
 const fetch = require('node-fetch');
 // Visual tool which allows to add colors in console
 const chalk = require('chalk');
+// Allows asking user for confirmation
+const prompts = require('prompts');
 // This tool converts miliseconds (ms) to a more human friendly string
 // (e.g. 1337000000 -> 15d 11h 23m 20s)
 const prettyMs = require('pretty-ms');
 // This utility displays in console a dynamic loading status
 const getSpinner = require('../../utils/get-spinner');
-
+// Allows to call a unix command or run another script
+// The execution of this code keeps running
+const { exec } = require('child_process');
+// Return a word's plural when the numeric argument is bigger than 1
 const plural = require('../../utils/plural');
-
+// Displays data in console inside a big colorful rectangle
 const printHighlight = require('../../utils/print-highlight');
-// Local scripts
+// A function for just wait
+const { sleep } = require('timing-functions');
+
+// Local scripts listed in order of execution
 const categorizeFilesInFolder = require('./categorize-files-in-folder');
 const analyzeProteins = require('./protein-analyses');
-const loadTrajectories = require('./load-trajectory');
+const loadTrajectory = require('./load-trajectory');
 const loadMetadata = require('./load-metadata');
 const loadFile = require('./load-file');
 const loadPCA = require('./load-pca');
-const loadAnalysis = require('./load-analysis');
+const { loadAnalysis, nameAnalysis } = require('./load-analysis');
 
-const loadFolder = async (
-  folder, // Path to the folder with the files to load. It is provided by the user
-  bucket,
-  files, // Mongo db collection "fs.files"
-  projectID, // ID of the current ptoject
-  gromacsPath, // It is provided by the user optionally
-  dryRun, // It is provided by the user optionally
-  spinnerRef, // Reference which allows to use the spinner
-) => {
-  // Find all files in the "folder" argument path and classify them
-  // Classification is performed according to the file names
-  const {
-    rawFiles,
-    trajectoryFiles,
-    pcaFiles,
-    analysisFiles,
-  } = await categorizeFilesInFolder(folder);
+// In case of load abort we need to clean up
+const cleanup = require('../cleanup');
 
-  // Save in a new group only files which end in ".pdb"
-  // NO SERÍA LO SUYO METER ESTA CLASFICIACION DENTRO DEL categorizeFilesInFolder ???
-  const pdbFile = rawFiles.find(file => /^md\..+\.pdb$/i.test(file));
-
-  // Send data to the IPS and HMMER web pages to get it analized and retrieve the results
-  let EBIJobs;
-  if (pdbFile) {
-    EBIJobs = await analyzeProteins(folder, pdbFile, spinnerRef);
-  }
-
-  // Process metadata files
-  const metadata = (await loadMetadata(folder, spinnerRef)) || {};
-
-  const trajectoryFileDescriptors =
-    trajectoryFiles.length &&
-    (await loadTrajectories(
-      folder,
-      trajectoryFiles,
-      bucket,
-      files,
-      projectID,
-      gromacsPath,
-      dryRun,
-      spinnerRef,
-    ));
-
-  if (trajectoryFileDescriptors) {
-    for (const d of trajectoryFileDescriptors) {
-      if (!d.filename.includes('pca') && d.metadata) {
-        metadata.frameCount = d.metadata.frames;
-        metadata.atomCount = d.metadata.atoms;
-        break;
-      }
-    }
-  }
-
-  // Raw files
-  const storedFiles = [];
-  spinnerRef.current = getSpinner().start(
-    `Loading ${plural('file', rawFiles.length, true)}`,
-  );
-
-  for (const [index, filename] of rawFiles.entries()) {
-    spinnerRef.current.text = `Loading file ${index + 1} out of ${
-      rawFiles.length
-    } (${filename})`;
-    storedFiles.push(
-      await loadFile(folder, filename, bucket, projectID, dryRun),
-    );
-  }
-  spinnerRef.current.succeed(
-    `Loaded ${plural('file', rawFiles.length, true)} (${prettyMs(
-      Date.now() - spinnerRef.current.time,
-    )})`,
-  );
-
-  // Analyses files
-  const analyses = {};
-  // PCA
-  if (pcaFiles.length)
-    analyses.pca = await loadPCA(folder, pcaFiles, spinnerRef);
-
-  // Rest of analyses
-  spinnerRef.current = getSpinner().start(
-    `Loading ${plural('analysis', analysisFiles.length, true)}`,
-  );
-
-  for (const [index, filename] of analysisFiles.entries()) {
-    spinnerRef.current.text = `Loading analysis ${index + 1} out of ${
-      rawFiles.length
-    } (${filename})`;
-    const { name, value } = await loadAnalysis(folder, filename, spinnerRef);
-    analyses[name] = value;
-  }
-  spinnerRef.current.succeed(
-    `Loaded ${plural('analysis', analysisFiles.length, true)}`,
-  );
-
-  let chains;
-  if (EBIJobs && EBIJobs.length) {
-    // retrieve jobs from InterProScan
-    spinnerRef.current = getSpinner().start(
-      `Retrieving ${plural(
-        'analysis',
-        EBIJobs.length,
-        true,
-      )} for sequences, including from InterProScan and HMMER`,
-    );
-
-    let finished = 0;
-    chains = await Promise.all(
-      EBIJobs.map(([chain, job]) =>
-        job.then(document => {
-          spinnerRef.current.text = `Retrieved ${plural(
-            'analysis',
-            ++finished,
-            true,
-          )} out of ${
-            EBIJobs.length
-          } for sequences, including from InterProScan and HMMER`;
-          return [chain, document];
-        }),
-      ),
-    );
-    spinnerRef.current.succeed(
-      `Retrieved ${plural(
-        'analysis',
-        finished,
-        true,
-      )} for sequences, including from InterProScan and HMMER`,
-    );
-  }
-
-  const output = {
-    metadata,
-    files: [...storedFiles, ...(trajectoryFileDescriptors || [])].filter(
-      Boolean,
-    ),
-    analyses,
-  };
-
-  if (chains) output.chains = chains;
-
-  return output;
+// Throw a question for the user trough the console
+// Await for the user to confirm
+const userConfirm = async question => {
+  const response = await prompts({
+    type: 'text',
+    name: 'confirm',
+    message: question,
+  });
+  if (response.confirm) return response.confirm;
+  return null;
 };
 
-// This function extracts data from the PDB section of the MMB web page in json format
-const loadPdbInfo = (pdbID, spinnerRef) => {
-  // Display the start of this action in the console
-  spinnerRef.current = getSpinner().start(
-    `Loading PDB Info for ${pdbID} from API`,
-  );
-  // pdbID is true when a valid folder path is provided
-  // If the provided folder path is not valid then return undefined
-  return pdbID
-    ? // Extract data from the PDB section of the MMB web page
-      fetch(`http://mmb.pcb.ub.es/api/pdb/${pdbID}/entry`)
-        // Retrieve data in json format
-        .then(response => response.json())
-        .then(data => {
-          // Display the succeed of this action in the console and return data
-          spinnerRef.current.succeed(`Loaded PDB Info for ${pdbID} from API`);
-          return data;
-        })
-        .catch(error => {
-          // Display the failure of this action in the console
-          spinnerRef.current.fail(error);
-        })
-    : undefined;
-};
-
+// Load data from the specified folder into mongo
 const load = async (
-  // dryRun YA ES FALSE EN EL DEFAULT DEL ROOT, ESTO ODRÍA SER REDUNDANTE
-  { folder, dryRun = false, gromacsPath }, // These variables belong to the "argv" object
+  { folder, forced, append, dryRun = false, gromacsPath }, // These variables belong to the "argv" object
   { db, bucket, spinnerRef, projectIdRef }, // These variables are extra stuff from the handler
 ) => {
+  // Check that Gromacs is installed in the system
+  // WARNING: "error" is not used, but it must be declared in order to obtain the output
+  exec('command -v gmx', (error, output) => {
+    // If there is no output it means Gromacs is not installed in the system
+    // In this case warn the user and stop here
+    if (!output) {
+      console.error(
+        chalk.bgRed('Gromacs is not installed or its source is not in $PATH'),
+      );
+      console.log(
+        'In order to install Gromacs type the following command:\n' +
+          'sudo apt-get install gromacs',
+      );
+      process.exit(0);
+    }
+  });
   // If the dry-run option is set as true, send a console message
   if (dryRun) {
     console.log(
       chalk.yellow("running in 'dry-run' mode, won't affect the database"),
     );
   }
+  // Check if load has been aborted
+  // If so, exit the load function and ask the user permission to clean the already loaded data
+  const checkLoadAborted = async () => {
+    // Return here if there is no abort
+    if (!process.env.abort) return false;
+    const confirm = await userConfirm(
+      `Load has been interrupted. Confirm further instructions:
+      C - Abort load and conserve already loaded data
+      D - Abort load and delete already loaded data
+      * - Resume load`,
+    );
+    if (confirm === 'C') {
+      return true;
+    } else if (confirm === 'D') {
+      // Delete the current project
+      await cleanup(
+        { id: projectIdRef.current, deleteAllOrphans: false },
+        { db, bucket, spinnerRef },
+      );
+      return true;
+    } else {
+      // Reverse the 'abort' environmental variable and restart the spinner
+      process.env.abort = '';
+      spinnerRef.current = getSpinner().start();
+      return false;
+    }
+  };
+
+  // Mongo management and asking the user requieres an await promise format
+  const updateAnticipation = async (command, updater) => {
+    // If the dryRun option is set as true, let it go
+    // The loading process will be runned but later in the code nothing is loaded in mongo
+    // Thus, there is no need to check if there are duplicates
+    if (dryRun) {
+      return true;
+    }
+    // In case it is forced, skip this part
+    // This is equal to always choosing the '*' option
+    if (forced) {
+      return true;
+    }
+    // Get the name of the first (and only) key in the updater
+    const updaterKey = Object.keys(updater)[0];
+    // Set the name to refer this data when asking the user
+    let name;
+    // Set the a path object to find the updater fields
+    let finder = {};
+    // If the command is set it means the document must be directly in the project
+    if (command === 'set') {
+      name = updaterKey;
+      finder[updaterKey] = { $exists: true };
+    }
+    // If the command is push it means the value or document must be part of an array
+    else if (command === 'push') {
+      // In case of 'analyses' and 'chains'
+      if (typeof updater[updaterKey] === 'string') {
+        name = updater[updaterKey];
+        finder = updater;
+      }
+      // In case of 'files'
+      // Here, the updater format is { files: { filename: name }}
+      // In order to access the filename, we access the first key inside the first key
+      else {
+        name = updater[updaterKey].filename;
+        finder = { [updaterKey]: { $elemMatch: updater[updaterKey] } };
+      }
+    } else console.error('wrong call');
+    // Check if the path to the updater already exists in the database
+    const exist = await db.collection('projects').findOne(
+      // *** WARNING: Do not use '...updater' instead of '...finder'
+      // This would make the filter sensible to the whole document
+      // (i.e. it would filter by each name and value of each field inside the document)
+      // Thus, it would only ask the user when documents are identical, which is useless
+      { _id: projectIdRef.current, ...finder },
+    );
+    // In case it does
+    if (exist) {
+      // The 'set' command would overwrite the existing data
+      // This is applied to pdbInfo and metadata
+      if (command === 'set') {
+        const confirm = await userConfirm(
+          `'${name}' already exists in the project. Confirm data loading:
+        C - Conserve current data and discard new data
+        * - Overwrite current data with new data `,
+        );
+        // Abort the process
+        if (confirm === 'C') {
+          console.log(chalk.yellow('New data will be discarded'));
+          return false;
+        } else {
+          console.log(chalk.yellow('Current data will be overwritten'));
+        }
+      }
+      // The 'push' command would NOT override the existing data and just add new data
+      // This is applied to trajectories, files, analyses and chains
+      else if (command === 'push') {
+        const confirm = await userConfirm(
+          `'${name}' already exists in the project. Confirm data loading:
+        C - Conserve current data and discard new data
+        D - Delete current data (all duplicates) and load new data
+        * - Conserve both current and new data`,
+        );
+        // Abort the process
+        if (confirm === 'C') {
+          console.log(chalk.yellow('New data will be discarded'));
+          return false;
+        }
+        // Continue the process but first delete current data
+        else if (confirm === 'D') {
+          console.log(chalk.yellow('Current data will be deleted'));
+          spinnerRef.current = getSpinner().start('   Deleting current data');
+          // Delete the 'projects' associated data
+          await new Promise(resolve => {
+            db.collection('projects').findOneAndUpdate(
+              { _id: projectIdRef.current },
+              { $pull: updater },
+              err => {
+                if (err)
+                  spinnerRef.current.fail(
+                    '   Error while deleting current data:' + err,
+                  );
+                resolve();
+              },
+            );
+          });
+          // Delete the current document
+          let collection = updaterKey;
+          if (collection === 'files') collection = 'fs.files';
+          await new Promise(resolve => {
+            db.collection(collection).deleteMany(
+              {
+                $or: [
+                  // 'analyses' and 'chains'
+                  { project: projectIdRef.current, name: name },
+                  // 'fs.files'
+                  {
+                    metadata: { project: projectIdRef.current },
+                    filename: name,
+                  },
+                ],
+              },
+              // Callback function
+              err => {
+                if (err)
+                  spinnerRef.current.fail(
+                    '   Error while deleting current data:' + err,
+                  );
+                else spinnerRef.current.succeed('   Deleted current data');
+                resolve();
+              },
+            );
+          });
+          // Continue the loading process
+          return true;
+        } else {
+          console.log(
+            chalk.yellow('Both current and new data will be conserved'),
+          );
+        }
+      }
+    }
+    // If does not exist then there is no problem
+    return true;
+  };
+
+  // Set a general handler to update the 'projects' collection
+  // It is sensible to uploading things with the same name, in which case asks the user
+  // The 'command' argument stands for the command to be executed by mongo
+  // The 'command' argument expects 'set' or 'push' as string
+  // The 'updater' argument stands for the changes to be performed in mongo
+  // The 'updater' argument expects an object with a single key (e.g. { metadata })
+  const updateProject = async (command, updater) => {
+    // If the dryRun option is set as true, do nothing
+    if (dryRun) return 'abort';
+    // Mongo upload must be done in 'await Promise' format. Otherwise, it is prone to fail
+    return new Promise((resolve, reject) => {
+      db.collection('projects').findOneAndUpdate(
+        { _id: projectIdRef.current },
+        { ['$' + command]: updater },
+        // Callback function
+        err => {
+          // In case the load fails
+          if (err) {
+            console.error(err);
+            reject();
+          }
+          // In case the load is successfull
+          else resolve();
+        },
+      );
+    });
+  };
+
+  // Set a general handler to update 'analyses' and 'chains' collections
+  // Previously, update the 'projects' collection through the updateProject function
+  // The 'collection' argument stands for the mongo collection to be selected
+  // The 'collection' argument expects 'analyses' or 'chains' as string
+  // The 'updater' argument stands for the data to be uploaded to mongo
+  // The 'updater' argument expects an object (e.g. { name, value, projectId })
+  // Some key of the updater must be named 'name'
+  const updateCollection = async (collection, updater) => {
+    const previous = await updateProject('push', {
+      [collection]: updater.name,
+    });
+    // Previous may abort in case of dryRun
+    if (previous === 'abort') return;
+    // Mongo upload must be done in 'await Promise' format. Otherwise, it is prone to fail
+    return new Promise((resolve, reject) => {
+      db.collection(collection).insertOne(
+        updater,
+        // Callback function
+        err => {
+          // In case the load fails
+          if (err) {
+            console.error(err);
+            reject();
+          }
+          // In case the load is successfull
+          else resolve();
+        },
+      );
+    });
+  };
 
   // Save the current time
   const startTime = Date.now();
+  console.log(chalk.cyan(`== starting load of '${folder}'`));
+
   try {
-    console.log(chalk.cyan(`== starting load of '${folder}'`));
-    // Create a new document in mongo
-    const { insertedId } = await db.collection('projects').insertOne({
-      accession: null,
-      published: false,
-    });
-    // Save it to the projectIdRef so the command index.js can access the document
-    projectIdRef.current = insertedId;
+    // Find all files in the "folder" argument path and classify them
+    // Classification is performed according to the file names
+    const {
+      rawFiles,
+      pdbFile,
+      metadataFile,
+      trajectoryFiles,
+      pcaFiles,
+      analysisFiles,
+    } = await categorizeFilesInFolder(folder);
 
-    // Save data from the PDB section in the MMB web page
-    const pdbInfo = await loadPdbInfo(
-      // Find all valid files in the provided folder and pick the second match value
-      (folder.match(/\/(\w{4})[^/]+\/?$/i) || [])[1], // Y ESTE [1] ???
-      // Send the spinnerRef to allow this function to call the spinner
-      spinnerRef,
-    );
+    let EBIJobs;
 
-    // Save all data returned from loadPdbInfo and loadFolder functions in a unique object
-    const project = {
-      pdbInfo, // Data already returned from loadPdbInfo function
-      // Call loadFolder function
-      ...(await loadFolder(
+    // If the append option is passed, look for the already existing project
+    if (append) {
+      // Find the already existing project in mongo
+      const selectedProject = await db.collection('projects').findOne(append);
+      if (!selectedProject)
+        return console.error(
+          chalk.bgRed(`No project found for ID '${append}'`),
+        );
+      projectIdRef.current = selectedProject._id;
+      // Display the project id. It may be useful if the load is abruptly interrupted to clean
+      console.log(
+        chalk.cyan(
+          `== new data will be added to project '${projectIdRef.current}'`,
+        ),
+      );
+    }
+    // If the append option is NOT passed, create a new project
+    else {
+      // Create a new document in mongo
+      // 'insertedId' is a standarized name inside the returned object. Do not change it.
+      const newProject = await db.collection('projects').insertOne({
+        accession: null,
+        published: false,
+      });
+      // Save it to the projectIdRef so the command index.js can access the document
+      projectIdRef.current = newProject.insertedId;
+      // Display the project id. It may be useful if the load is abruptly interrupted to clean
+      console.log(
+        chalk.cyan(
+          `== project will be stored with the id '${projectIdRef.current}'`,
+        ),
+      );
+    }
+    // Save data from the PDB section in the MMB web page and store it into mongo
+    // First check for duplicates and ask user in case of duplication
+    if (await updateAnticipation('set', { pdbInfo: {} })) {
+      // Get the pdb code for this protein (e.g. 3oe0)
+      const pdbID = (folder.match(/\/(\w{4})[^/]+\/?$/i) || [])[1];
+      if (pdbID) {
+        // Display the start of this action in the console
+        spinnerRef.current = getSpinner().start(
+          `Loading PDB Info for ${pdbID} from API`,
+        );
+        // Extract data from the PDB section of the MMB web page
+        const pdbInfo = await fetch(
+          `http://mmb.pcb.ub.es/api/pdb/${pdbID}/entry`,
+        )
+          // Retrieve data in json format
+          .then(response => response.json())
+          // Display the succeed of this action in the console and return data
+          .then(data => {
+            spinnerRef.current.succeed(`Loaded PDB Info for ${pdbID} from API`);
+            return data;
+          })
+          // In case of error, display the failure of this action in the console
+          .catch(error => {
+            spinnerRef.current.fail(error);
+          });
+        // Update project in mongo
+        await updateProject('set', { pdbInfo });
+      }
+    }
+    // Check if the load has been aborted at this point
+    if (await checkLoadAborted()) return;
+
+    // Send data to the IPS and HMMER web pages to get it analized and retrieve the results
+    // One analysis is performed for each protein chain
+    // Results are not awaited, but the code keeps running
+    // The resulting 'EBIJobs' is used later but it is not uploaded to mongo directly
+    // This analysis may be skipped by user if we are appending data to an existing proyect
+    if (pdbFile && (await updateAnticipation('set', { chains: [] }))) {
+      EBIJobs = await analyzeProteins(
         folder,
+        pdbFile,
+        spinnerRef,
+        checkLoadAborted,
+      );
+      if (EBIJobs === 'abort') return;
+    }
+
+    // Process metadata files
+    // The resulting 'metadata' is modified later so it must not be uploaded to mongo yet
+    let metadata;
+    if (metadataFile) {
+      metadata = (await loadMetadata(folder, spinnerRef)) || {};
+    }
+
+    // Load trajectories into mongo
+    for (const filename of trajectoryFiles) {
+      //break; // Use this 'break' to skip loading trajectories
+      // Get the expected name for this file according to the 'loadTrajectory' function logic
+      const pcaMatch = filename.match(/\.(pca-\d+)\./i);
+      let expectedName;
+      if (pcaMatch) expectedName = `trajectory.${pcaMatch[1]}.bin`;
+      else expectedName = `trajectory.bin`;
+      // Check duplicates
+      const confirm = await updateAnticipation('push', {
+        files: { filename: expectedName },
+      });
+      if (!confirm) continue;
+      // Load the trajectory
+      const loadedTrajectory = await loadTrajectory(
+        folder,
+        filename,
         bucket,
         db.collection('fs.files'),
-        insertedId,
+        projectIdRef.current,
         gromacsPath,
         dryRun,
         spinnerRef,
-      )),
-    };
-
-    spinnerRef.current = getSpinner().start('Adding to database');
-
-    // separate analyses for insertion in other collection
-    let analyses = project.analyses;
-    // keep an array of analysis names
-    project.analyses = Object.keys(project.analyses);
-
-    // separate chains for insertion in other collection
-    const chains = project.chains || [];
-    // keep an array of chain names
-    project.chains = chains.map(([chain]) => chain);
-
-    if (!dryRun) {
-      // update project into collection (trimmed off of analyses and chains)
-      await db
-        .collection('projects')
-        .findOneAndUpdate({ _id: insertedId }, { $set: project });
-
-      // link each analysis back to their original project and insert
-      const analysisEntries = Object.entries(analyses || {});
-      if (analysisEntries.length) {
-        await db.collection('analyses').insertMany(
-          analysisEntries.map(([name, value]) => ({
-            name,
-            value,
-            project: insertedId,
-          })),
-        );
-      }
-
-      // link chain information back to their original project and insert
-      if (chains.length) {
-        await db.collection('chains').insertMany(
-          chains.map(([name, value]) => ({
-            name,
-            ...value,
-            project: insertedId,
-          })),
-        );
+        checkLoadAborted,
+      );
+      // If there are no results, we continue to the next iteration
+      if (!loadedTrajectory) continue;
+      // If process was aborted
+      else if (loadedTrajectory === 'abort') return;
+      // If there are results, update the project in mongodb
+      await updateProject('push', { files: loadedTrajectory });
+      // Modify the metadata with data from a trajectory which includes 'pca' on its filename
+      if (
+        metadata &&
+        !loadedTrajectory.filename.includes('pca') &&
+        loadedTrajectory.metadata
+      ) {
+        metadata.frameCount = loadedTrajectory.metadata.frames;
+        metadata.atomCount = loadedTrajectory.metadata.atoms;
       }
     }
 
-    spinnerRef.current.succeed('Added to database');
+    // At this point, the metadata will be no loner modified
+    // It is ready to be uploaded into mongo
+    if (metadata && (await updateAnticipation('set', { metadata }))) {
+      await updateProject('set', { metadata });
+    }
+
+    // Load files into mongo
+    for (const [index, filename] of rawFiles.entries()) {
+      //break; // Use this 'break' to skip loading files
+      // Check duplicates
+      if (
+        !(await updateAnticipation('push', { files: { filename: filename } }))
+      )
+        continue;
+      // 'loadFile' is the main function which opens the stream from the file and mongo
+      // The spinner is sent for this function to output its status to the console
+      const loadedFile = await loadFile(
+        folder,
+        filename,
+        bucket,
+        db.collection('fs.files'),
+        projectIdRef.current,
+        dryRun,
+        spinnerRef,
+        index + 1,
+        rawFiles.length,
+        checkLoadAborted,
+      );
+      // If there are no results, we continue to the next iteration
+      if (!loadedFile) continue;
+      // If process was aborted
+      else if (loadedFile === 'abort') return;
+      // If there are results, update the project in mongodb
+      await updateProject('push', { files: loadedFile });
+    }
+
+    // Check if the load has been aborted at this point
+    if (await checkLoadAborted()) return;
+
+    // PCA analysis
+    if (
+      pcaFiles.length &&
+      (await updateAnticipation('push', { analyses: 'pca' }))
+    ) {
+      const { name, value } = await loadPCA(folder, pcaFiles, spinnerRef);
+      if (value) {
+        // Update the project with the new PCA analysis
+        await updateCollection('analyses', {
+          name,
+          value,
+          project: projectIdRef.current,
+        });
+      }
+    }
+
+    // The rest of analyses
+    for (const [index, filename] of analysisFiles.entries()) {
+      // Check if the load has been aborted before each analysis load
+      if (await checkLoadAborted()) return;
+      // Get the name of the analysis type
+      const name = nameAnalysis(filename);
+      // Check if name exists and ask for duplicates
+      if (!name || !(await updateAnticipation('push', { analyses: name })))
+        continue;
+      // Load the analysis
+      const { value } = await loadAnalysis(
+        folder,
+        filename,
+        spinnerRef,
+        index,
+        analysisFiles.length,
+      );
+      // If there are no results, go to the next iteration
+      if (!value) continue;
+      // Update the database with the new analysis
+      await updateCollection('analyses', {
+        name,
+        value,
+        project: projectIdRef.current,
+      });
+    }
+
+    // Load the chains as soon as they are retrieved from the EBI
+    if (EBIJobs && EBIJobs.length) {
+      spinnerRef.current = getSpinner().start(
+        `Retrieving ${plural(
+          'chain',
+          EBIJobs.length,
+          true,
+        )}, including from InterProScan and HMMER`,
+      );
+
+      // Track the number of finished 'chains'
+      let finished = 0;
+      // Done is true when the 'jobs' promise is returned and aborted is used to store a promise
+      let done = false;
+      let aborted;
+      await Promise.race([
+        Promise.all(
+          EBIJobs.map(([chain, job]) =>
+            job.then(async document => {
+              spinnerRef.current.text = `Retrieved ${plural(
+                'chain',
+                ++finished,
+                true,
+              )} out of ${
+                EBIJobs.length
+              }, including from InterProScan and HMMER`;
+              // Update the database with the new analysis
+              await updateCollection('chains', {
+                name: chain,
+                ...document,
+                project: projectIdRef.current,
+              });
+              return [chain, document];
+            }),
+          ),
+        ),
+        // Alternative promise for the Promise.race: A vigilant abort promise
+        // Check if the load has been aborted once per second
+        (aborted = new Promise(async resolve => {
+          // Stay vigilant until the 'jobs' promise is resolved
+          while (!done) {
+            await sleep(1000);
+            if (await checkLoadAborted()) return resolve('abort');
+          }
+          resolve();
+        })),
+      ]);
+      // The 'done' / 'aborted' workaround is useful to manage some situations
+      // e.g. The user has canceled the load during the last promise but not answered to confirm
+      done = true;
+      // Check if the load has been aborted
+      if ((await aborted) === 'abort') return;
+      // Finish the spinner
+      spinnerRef.current.succeed(
+        `Retrieved ${plural(
+          'chain',
+          finished,
+          true,
+        )}, including from InterProScan and HMMER`,
+      );
+    }
 
     return () => {
       console.log(
@@ -288,10 +593,10 @@ const load = async (
           )} with id:`,
         ),
       );
-      printHighlight(insertedId);
+      printHighlight(projectIdRef.current);
     };
   } catch (error) {
-    console.error(chalk.bgRed(`failed to load '${folder}'`));
+    console.error(chalk.bgRed(`\n failed to load '${folder}'`));
 
     throw error;
   }

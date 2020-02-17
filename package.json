@@ -22,7 +22,7 @@
     "lodash.frompairs": "4.0.1",
     "lodash.throttle": "4.1.1",
     "mathjs": "5.10.3",
-    "mongodb": "3.2.7",
+    "mongodb": "^3.2.7",
     "node-fetch": "2.6.0",
     "prompt": "1.0.0",
     "timeago.js": "4.0.0-beta.2",

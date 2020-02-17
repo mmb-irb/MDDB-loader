@@ -20,24 +20,20 @@ const FRAME_REGEXP = / frame \d+:$/;
 const THROTTLE_TIME = 1000; // 1 second
 const TIMEOUT_WARNING = 30000; // 30 seconds
 
-// Call fe function "loadTrajectory" fo each filename in "filenames"
-const loadTrajectories = async (folder, filenames, ...args) => {
-  const output = [];
-  for (const filename of filenames) {
-    output.push(await loadTrajectory(folder, filename, ...args));
-  }
-  return output;
-};
-
+// This function converts the trajectory data through Gromacs by streaming
+// The converted data is uploaded into mongo also by streaming
+// When the streaming has finished, some extra metadata is added to mongo
+// Keep track of the process and display in console the current frame at any moment
 const loadTrajectory = (
   folder,
   filename,
   bucket,
   files,
   projectID,
-  gromacsCommand, // It is the gromacs-path from the spinner
+  gromacsCommand, // It is the gromacs-path ('gmx')
   dryRun,
   spinnerRef,
+  abort, // Load aborting function
 ) => {
   // Display the start of this process in console
   spinnerRef.current = getSpinner().start(
@@ -49,16 +45,22 @@ const loadTrajectory = (
   // This throttle calls the specified function every "THROTTLE_TIME" seconds (1 second)
   const updateSpinner = throttle(() => {
     // Update the spiner periodically to show the user the time taken for the running process
-    spinnerRef.current.text = `Loading trajectory file '${filename}' (frame ${frameCount} in ${prettyMs(
+    spinnerRef.current.text = `Loading trajectory file [${filename} -> ${
+      process.env.currentUploadId
+    }]\n(frame ${frameCount} in ${prettyMs(
       Date.now() - spinnerRef.current.time,
     )})`;
-    // logic to warn user if something seems to be getting stuck
-    if (timeoutID) clearTimeout(timeoutID); // Cancel the last timeout if exist
+    // Warn user if the process is stuck
+    // "setTimeout" and "clearTimeout" are node built-in functions
+    // "clearTimeout" cancels the timeout (only if is is already set, in this case)
+    if (timeoutID) clearTimeout(timeoutID);
+    // "setTimeout" executes a function after a specific amount of time
+    // First argument is the function to be executed and the second argument is the time
+    // In this case, a warning message is added to the spinner after 30 seconds
     timeoutID = setTimeout(() => {
-      spinnerRef.current.text = `Loading trajectory file '${filename}' (frame ${frameCount} in ${prettyMs(
-        Date.now() - spinnerRef.current.time,
-      )}) ${chalk.yellow(
-        '⚠️ Timeout warning: nothing happened in the last 30 seconds',
+      spinnerRef.current.text = `${spinnerRef.current.text} ${chalk.yellow(
+        ' ⚠️  Timeout warning: nothing happened in the last 30 seconds. ' +
+          'Load will be resumed by force in 15 seconds.',
       )}`;
     }, TIMEOUT_WARNING);
   }, THROTTLE_TIME);
@@ -70,13 +72,15 @@ const loadTrajectory = (
     const coordinatesBuffer = Buffer.alloc(
       Float32Array.BYTES_PER_ELEMENT * N_COORDINATES,
     );
+    // This function is equivalent to openning a new terinal and typing this:
+    // gmx dump -f path/to/trajectory
     // This assembly runs Gromacs as a paralel process which returns an output in string chunks
     // These strings are converted in standarized "lines"
     const asyncLineGenerator = executeCommandPerLine(gromacsCommand, [
       // Arguments sent to Gromacs
-      'dump',
-      '-f',
-      folder + filename,
+      'dump', // Gromacs command: Make binary files human readable
+      '-f', // "dump" option which stands for specific input files: xtc trr cpt gro g96 pdb tng
+      folder + filename, // Path to file
     ]);
     // Set the name for the new file stored in mongo
     let dbFilename = 'trajectory.bin';
@@ -84,13 +88,18 @@ const loadTrajectory = (
     if (pcaMatch) dbFilename = `trajectory.${pcaMatch[1]}.bin`;
     // Manage the dryRun option
     const uploadStream = dryRun
-      ? devNull() // If dryRun is true then interrupt the stream flow
+      ? // If dryRun is true then interrupt the stream flow
+        devNull()
       : // Else, open an upload stream to mongo
+        // All data uploaded to mongo by this way is stored in fs.chunks
+        // fs.chunks is a default collection of mongo which is managed internally
         bucket.openUploadStream(dbFilename, {
           contentType: 'application/octet-stream',
           chunkSizeBytes: 4 * 1024 * 1024, // 4 MiB
         });
-
+    // The resulting id of the current upload stream is saved as an environment variable
+    // In case of abort, this id is used by the automatic cleanup to find orphan chunks
+    process.env.currentUploadId = uploadStream.id;
     // error
     uploadStream.on('error', error => {
       // Display the end of this process as failure in console
@@ -98,44 +107,25 @@ const loadTrajectory = (
       reject();
     });
 
-    // finish
-    uploadStream.on('finish', async ({ _id, length }) => {
-      updateSpinner.cancel();
-      if (timeoutID) clearTimeout(timeoutID);
-      // Display the end of this process as success in console
-      spinnerRef.current.succeed(
-        `Loaded trajectory file '${filename}' (${frameCount} frames)`,
-      );
-      const trajectoryFileDescriptor = (await files.findOneAndUpdate(
-        { _id },
-        {
-          $set: {
-            metadata: {
-              frames: frameCount,
-              atoms:
-                length /
-                frameCount /
-                Float32Array.BYTES_PER_ELEMENT /
-                N_COORDINATES,
-              project: projectID,
-            },
-          },
-        },
-        { returnOriginal: false },
-      )).value;
-      // resolve with number of frames
-      resolve(trajectoryFileDescriptor);
-    });
-
+    let timeout;
+    // Track the last time we checked if the load was aborted
+    let lastCheck = Date.now();
     // for each atom coordinates in the data
     for await (const line of asyncLineGenerator) {
+      // Check once per second if the process has been aborted
+      const now = Date.now();
+      if (now > lastCheck + 1000) {
+        if (await abort()) return resolve('abort');
+        lastCheck = now;
+      }
+
       // Save matches with a long RegExp pattern defined above
       const match = line.match(COORDINATES_REGEXP);
       if (!match) {
         // try to check if it's a "frame number" line
         if (FRAME_REGEXP.test(line)) {
           frameCount++;
-          updateSpinner(); // NO ACABO DE COMPRENDER COMO FUNCIONA ESTO
+          updateSpinner(); // Update the current frame in the spinner
         }
         continue; // Next line
       }
@@ -148,12 +138,96 @@ const loadTrajectory = (
       // In case of overload stop writing streams and wait until the drain is resolved
       const keepGoing = uploadStream.write(coordinatesBuffer);
       if (!keepGoing) {
-        await new Promise(resolve => uploadStream.once('drain', resolve));
+        // dataSent is resolved when one of these 2 promises is resolved:
+        const dataSent = Promise.race([
+          // First promise (canonical): We receive the callback from uploadStream.write
+          new Promise(next => uploadStream.once('drain', next)),
+          // Second promise (something happend), there is no callback after a wide time
+          // Force the loop to be resumed
+          // It will stop in the next iteration if there is really a connection problem
+          new Promise(
+            next =>
+              (timeout = setTimeout(() => {
+                next();
+              }, 45000)),
+          ),
+        ]);
+        // Stop the loop here until one of the previous promises is resolved
+        await dataSent;
+        // Once passed, we remove the timeout
+        if (timeout) clearTimeout(timeout);
       }
     }
+    // Warn the user we have to wait here
+    updateSpinner.cancel();
+    if (timeoutID) clearTimeout(timeoutID);
+    spinnerRef.current.text = `All trajectory frames loaded (${frameCount}). Waiting for Mongo...`;
+    // Try to end the end the uploadStream with the canoncial end() function
+    // If it fails, create the fs.files' document manually and go on (necessary fudge)
+    // Closing the stream may fail sometimes (e.g. as long as the upload resuming was forced)
+    const streamFinished = Promise.race([
+      // First promise (canonical): We receive the callback from uploadStream.end
+      new Promise(resolve => uploadStream.end(resolve)),
+      // Second promise (something happend), there is no callback after a wide time
+      // Create the manual fs.files' document
+      // DANI: Since I ignore how the md5 is set, the manual md5 is just the internal id
+      new Promise(
+        next =>
+          (timeout = setTimeout(async () => {
+            await files.insertOne({
+              _id: uploadStream.id,
+              length: uploadStream.length,
+              chunkSize: uploadStream.chunkSizeBytes,
+              uploadDate: new Date(),
+              filename: uploadStream.filename,
+              md5: uploadStream.id.toString(),
+              contentType: 'application/octet-stream',
+            });
+            next();
+          }, 45000)),
+      ),
+    ]);
 
-    uploadStream.end();
+    // Wait until one of the endings has ended and stop any reamining timeout
+    await streamFinished;
+    if (timeout) clearTimeout(timeout);
+
+    // Display the end of this process as success in console
+    spinnerRef.current.succeed(
+      `Loaded trajectory file [${filename} -> ${process.env.currentUploadId}]\n(${frameCount} frames)`,
+    );
+    // Find the new uploaded document and add a few metadata (frames, atoms and project id)
+    // findOneAndUpdate() is a mongo function
+    // This function finds a document and applies an update to this document
+    const trajectoryFileDescriptor = (await files.findOneAndUpdate(
+      // The object id of the document to find
+      { _id: uploadStream.id },
+      // The update to be applied after the document has been found
+      {
+        $set: {
+          metadata: {
+            frames: frameCount,
+            // The number of atoms is calculated
+            atoms:
+              uploadStream.length /
+              frameCount /
+              Float32Array.BYTES_PER_ELEMENT /
+              N_COORDINATES,
+            project: projectID,
+          },
+        },
+      },
+      // By default findOneAndUpdate() returns the original doc (i.e. before the update)
+      { returnOriginal: false }, // This makes findOneAndUpdate() return the updated doc
+    )).value;
+    // Save this id as a reference for cleanup
+    if (process.env.uploaded)
+      process.env.uploaded.push(process.env.currentUploadId);
+    // Remove this id from the current upload id
+    process.env.currentUploadId = '';
+    // resolve with number of frames
+    resolve(trajectoryFileDescriptor);
   });
 };
 
-module.exports = loadTrajectories;
+module.exports = loadTrajectory;

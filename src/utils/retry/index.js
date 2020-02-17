@@ -10,7 +10,7 @@ const retry = async (
   // - delay: Time to wait after a failure before trying again
   // - backoff: true: the delay time is increased with every failure // false: it remains the same
   // - revertFunction: A function which is called after every failure
-  { maxRetries = 1, delay = 1000, backoff = false, revertFunction } = {},
+  { maxRetries = 5, delay = 1000, backoff = false, revertFunction } = {},
 ) => {
   // Check that the maxRetries option is integer and positive
   if (!(Number.isInteger(maxRetries) && maxRetries >= 0)) {
@@ -30,7 +30,10 @@ const retry = async (
       // if a revert function was provided, run it
       if (revertFunction) await revertFunction();
       // if we failed too many times, abort
-      if (errorCount >= maxRetries) throw error;
+      if (errorCount >= maxRetries) {
+        console.error(`Failed after ${maxRetries} retries: `);
+        throw error;
+      }
       // wait a bit before retrying
       // if backoff flag is on, wait more and more with every error
       await sleep((backoff ? errorCount : 1) * delay);
