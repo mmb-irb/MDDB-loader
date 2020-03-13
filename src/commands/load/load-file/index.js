@@ -29,6 +29,7 @@ const loadFile = (
   files,
   projectID,
   dryRun,
+  appended,
   spinnerRef,
   index,
   rawFilesLength,
@@ -65,6 +66,8 @@ const loadFile = (
       // The resulting id of the current upload stream is saved as an environment variable
       // In case of abort, this id is used by the automatic cleanup to find orphan chunks
       process.env.currentUploadId = uploadStream.id;
+      // If we are appending, save the id into the append array
+      if (appended) appended.push(uploadStream.id);
       // Promise is resolved when the upload stream is finished
       const finishUpload = async () => {
         // Try to end the end the uploadStream with the canoncial end() function

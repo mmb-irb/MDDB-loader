@@ -1,4 +1,4 @@
-const loadAnalysis = require(__dirname);
+const { loadAnalysis } = require(__dirname);
 
 const analyses = [['rgyr', 'rgyr'], ['rmsd', 'rmsd'], ['rmsf', 'fluctuation']];
 
@@ -9,7 +9,6 @@ describe('loadAnalysis', () => {
         `${__dirname}/__fixtures/`,
         `md.${type}.xvg`,
       );
-      expect(analysis.name).toBe(name);
       expect(analysis.value).toMatchSnapshot();
     });
   }

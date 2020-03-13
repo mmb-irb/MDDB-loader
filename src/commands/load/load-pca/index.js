@@ -28,14 +28,12 @@ const loadPCA = async (folder, pcaFiles, spinnerRef) => {
     false,
   );
 
-  // Save in a single array (output.y) all values and keep the last index
+  // Save in a single array (output.y) all values and keep the last index number
   let maxIndex = 0;
   for await (const [index, eigenvalue] of eigenvalueGenerator) {
     output.y.push({ eigenvalue });
     maxIndex = index;
   }
-  // From the array with all 'pca.' files, find the first which has 'proj' on its name
-  //const projectionFile = pcaFiles.find(filename => filename.includes('proj'));
 
   // From the array with all 'pca.' files, find all projection ('proj') files
   // Add the folder path to all of them
@@ -45,10 +43,9 @@ const loadPCA = async (folder, pcaFiles, spinnerRef) => {
 
   // Read the projection files and mine their data in lines of arrays
   // The 'true' argument stands for return comment 'Symbol' class in case of commented line
-  // These arrays are meant to have 2 values: the index and the value
+  // These arrays are meant to have 2 fields: the index and the value
   // (e.g.) [ 0 , -7.1438 ] , [ 100 , -6.36336 ] , [ 200 , -6.53322 ] ...
   const projectionGenerator = statFileLinesToDataLines(
-    //readFilePerLine(folder + projectionFile), true,
     readFilePerLine(projectionFiles),
     true,
   );

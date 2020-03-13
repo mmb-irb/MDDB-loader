@@ -70,6 +70,8 @@ const load = async (
       chalk.yellow("running in 'dry-run' mode, won't affect the database"),
     );
   }
+  // Track list of appended data
+  var appended = [];
   // Check if load has been aborted
   // If so, exit the load function and ask the user permission to clean the already loaded data
   const checkLoadAborted = async () => {
@@ -84,11 +86,21 @@ const load = async (
     if (confirm === 'C') {
       return true;
     } else if (confirm === 'D') {
-      // Delete the current project
-      await cleanup(
-        { id: projectIdRef.current, deleteAllOrphans: false },
-        { db, bucket, spinnerRef },
-      );
+      // Delete the current uploaded data
+      if (append) {
+        for await (const doc of appended) {
+          await cleanup(
+            { id: doc, deleteAllOrphans: false },
+            { db, bucket, spinnerRef },
+          );
+        }
+      }
+      // If this is not an append, delete the current project
+      else
+        await cleanup(
+          { id: projectIdRef.current, deleteAllOrphans: false },
+          { db, bucket, spinnerRef },
+        );
       return true;
     } else {
       // Reverse the 'abort' environmental variable and restart the spinner
@@ -281,14 +293,17 @@ const load = async (
       db.collection(collection).insertOne(
         updater,
         // Callback function
-        err => {
+        (error, result) => {
           // In case the load fails
-          if (err) {
-            console.error(err);
+          if (error) {
+            console.error(error);
             reject();
           }
           // In case the load is successfull
-          else resolve();
+          else {
+            if (append) appended.push(result.insertedId);
+            resolve();
+          }
         },
       );
     });
@@ -311,7 +326,6 @@ const load = async (
     } = await categorizeFilesInFolder(folder);
 
     let EBIJobs;
-
     // If the append option is passed, look for the already existing project
     if (append) {
       // Find the already existing project in mongo
@@ -320,6 +334,7 @@ const load = async (
         return console.error(
           chalk.bgRed(`No project found for ID '${append}'`),
         );
+
       projectIdRef.current = selectedProject._id;
       // Display the project id. It may be useful if the load is abruptly interrupted to clean
       console.log(
@@ -341,7 +356,7 @@ const load = async (
       // Display the project id. It may be useful if the load is abruptly interrupted to clean
       console.log(
         chalk.cyan(
-          `== project will be stored with the id '${projectIdRef.current}'`,
+          `== new project will be stored with the id '${projectIdRef.current}'`,
         ),
       );
     }
@@ -394,9 +409,13 @@ const load = async (
 
     // Process metadata files
     // The resulting 'metadata' is modified later so it must not be uploaded to mongo yet
-    let metadata;
+    let metadata = {};
     if (metadataFile) {
       metadata = (await loadMetadata(folder, spinnerRef)) || {};
+      // Check duplicates and load the metadata into mongo
+      if (metadata && (await updateAnticipation('set', { metadata }))) {
+        await updateProject('set', { metadata });
+      }
     }
 
     // Load trajectories into mongo
@@ -421,6 +440,7 @@ const load = async (
         projectIdRef.current,
         gromacsPath,
         dryRun,
+        appended,
         spinnerRef,
         checkLoadAborted,
       );
@@ -430,21 +450,18 @@ const load = async (
       else if (loadedTrajectory === 'abort') return;
       // If there are results, update the project in mongodb
       await updateProject('push', { files: loadedTrajectory });
-      // Modify the metadata with data from a trajectory which includes 'pca' on its filename
+      // Modify the metadata with data from the trajectory (no pca)
       if (
-        metadata &&
         !loadedTrajectory.filename.includes('pca') &&
         loadedTrajectory.metadata
       ) {
         metadata.frameCount = loadedTrajectory.metadata.frames;
         metadata.atomCount = loadedTrajectory.metadata.atoms;
+        await updateProject('set', {
+          'metadata.frameCount': metadata.frameCount,
+          'metadata.atomCount': metadata.atomCount,
+        });
       }
-    }
-
-    // At this point, the metadata will be no loner modified
-    // It is ready to be uploaded into mongo
-    if (metadata && (await updateAnticipation('set', { metadata }))) {
-      await updateProject('set', { metadata });
     }
 
     // Load files into mongo
@@ -464,6 +481,7 @@ const load = async (
         db.collection('fs.files'),
         projectIdRef.current,
         dryRun,
+        appended,
         spinnerRef,
         index + 1,
         rawFiles.length,

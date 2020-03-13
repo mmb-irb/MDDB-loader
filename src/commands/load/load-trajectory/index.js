@@ -32,6 +32,7 @@ const loadTrajectory = (
   projectID,
   gromacsCommand, // It is the gromacs-path ('gmx')
   dryRun,
+  appended,
   spinnerRef,
   abort, // Load aborting function
 ) => {
@@ -79,7 +80,7 @@ const loadTrajectory = (
     const asyncLineGenerator = executeCommandPerLine(gromacsCommand, [
       // Arguments sent to Gromacs
       'dump', // Gromacs command: Make binary files human readable
-      '-f', // "dump" option which stands for specific input files: xtc trr cpt gro g96 pdb tng
+      '-f', // '-f' stands for the following input to be a file to read
       folder + filename, // Path to file
     ]);
     // Set the name for the new file stored in mongo
@@ -100,6 +101,8 @@ const loadTrajectory = (
     // The resulting id of the current upload stream is saved as an environment variable
     // In case of abort, this id is used by the automatic cleanup to find orphan chunks
     process.env.currentUploadId = uploadStream.id;
+    // If we are appending, save the id into the append array
+    if (appended) appended.push(uploadStream.id);
     // error
     uploadStream.on('error', error => {
       // Display the end of this process as failure in console

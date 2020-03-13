@@ -86,9 +86,10 @@ const loadAnalysis = async (
   analysisLenght,
 ) => {
   // Rest of analyses
-  spinnerRef.current = getSpinner().start(
-    `Loading analysis ${index} out of ${analysisLenght} [${analysisFile}]`,
-  );
+  if (spinnerRef)
+    spinnerRef.current = getSpinner().start(
+      `Loading analysis ${index} out of ${analysisLenght} [${analysisFile}]`,
+    );
   // Retrieve the 'process' function
   const { process } =
     acceptedAnalyses.find(({ pattern }) => pattern.test(analysisFile)) || {};
@@ -99,7 +100,8 @@ const loadAnalysis = async (
   // If mining was unsuccessful return undefined value
   if (!value) return { undefined };
   // When everything was fine
-  spinnerRef.current.succeed(`Loaded analysis [${analysisFile}]`);
+  if (spinnerRef)
+    spinnerRef.current.succeed(`Loaded analysis [${analysisFile}]`);
   return { value };
 };
 
