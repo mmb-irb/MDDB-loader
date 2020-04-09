@@ -411,7 +411,8 @@ const load = async (
     // The resulting 'metadata' is modified later so it must not be uploaded to mongo yet
     let metadata = {};
     if (metadataFile) {
-      metadata = (await loadMetadata(folder, spinnerRef)) || {};
+      // Harvest metadata
+      metadata = (await loadMetadata(metadataFile, folder, spinnerRef)) || {};
       // Check duplicates and load the metadata into mongo
       if (metadata && (await updateAnticipation('set', { metadata }))) {
         await updateProject('set', { metadata });

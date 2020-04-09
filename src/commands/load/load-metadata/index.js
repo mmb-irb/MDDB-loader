@@ -13,13 +13,13 @@ const getSpinner = require('../../../utils/get-spinner');
 const NEW_LINES = /\s*\n+\s*/g;
 const SEPARATORS = /\s*,\s*/g;
 
-// This function extracts metadata from a local file and process it and returns it
-const loadMetadata = async (folder, spinnerRef) => {
+// This function extracts metadata from a local file
+const loadMetadata = async (filename, folder, spinnerRef) => {
   // Display the start of this action in the console
-  spinnerRef.current = getSpinner().start('Loading metadata');
+  spinnerRef.current = getSpinner().start('Loading ' + filename);
   try {
     // Read metadata from local file
-    const fileContent = await readFile(folder + '/metadata', 'utf8');
+    const fileContent = await readFile(folder + '/' + filename, 'utf8');
     // Process metadata by splitting, transforming and joining back again data as a unique object
     const output = fromPairs(
       fileContent
@@ -27,6 +27,7 @@ const loadMetadata = async (folder, spinnerRef) => {
         .filter(Boolean) // Discard empty strings
         .map(line => {
           const split = line.split(SEPARATORS); // Split again by a different RegExp pattern
+          console.log(split[0] + ' / ' + split[1]);
           const numberMaybe = +split[1]; // Get the second splitted fragment as an integer
           return [
             split[0], // Return first fragment as a string
@@ -36,7 +37,7 @@ const loadMetadata = async (folder, spinnerRef) => {
         }),
     );
     // Display the end of this action as a success in the console
-    spinnerRef.current.succeed('Loaded metadata');
+    spinnerRef.current.succeed('Loaded ' + filename);
 
     return output;
   } catch (error) {

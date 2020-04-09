@@ -4,7 +4,7 @@ describe('loadMetadata', () => {
   const spinnerRef = { current: null };
   test('basic', async () => {
     expect(
-      await loadMetadata(`${__dirname}/__fixtures`, spinnerRef),
+      await loadMetadata('metadata', `${__dirname}/__fixtures`, spinnerRef),
     ).toMatchSnapshot();
   });
 });
