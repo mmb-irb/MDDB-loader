@@ -27,13 +27,17 @@ const loadMetadata = async (filename, folder, spinnerRef) => {
         .filter(Boolean) // Discard empty strings
         .map(line => {
           const split = line.split(SEPARATORS); // Split again by a different RegExp pattern
-          console.log(split[1]);
+          let value;
+          if (split[1] === '') value = null;
+          else if (Number.isFinite(+split[1])) value = +split[1];
+          else value = split[1];
+          console.log(value);
           //const numberMaybe = +split[1]; // Get the second splitted fragment as an integer
           return [
             split[0], // Return first fragment as a string
             // Second fragment is returned as an integer or as string depending on if it is a number
             //Number.isFinite(numberMaybe) ? numberMaybe : split[1],
-            split[1],
+            value,
           ];
         }),
     );

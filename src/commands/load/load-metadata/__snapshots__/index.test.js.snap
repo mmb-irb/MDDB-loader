@@ -7,7 +7,7 @@ Object {
   "BOXSIZEZ": 14.49403,
   "BOXTYPE": "Triclinic",
   "CL": 263,
-  "DPPC": 601,
+  "DPPC": 0,
   "ENSEMBLE": "NPT",
   "FF": "gromos53a6",
   "FREQUENCY": 100,
@@ -22,6 +22,6 @@ Object {
   "SYSTATS": 221567,
   "TEMP": 300,
   "TIMESTEP": 2,
-  "WAT": "TIP3P",
+  "WAT": null,
 }
 `;
