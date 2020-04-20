@@ -11,7 +11,7 @@ const fromPairs = require('lodash.frompairs');
 const getSpinner = require('../../../utils/get-spinner');
 // RegExp patterns
 const NEW_LINES = /\s*\n+\s*/g;
-const SEPARATORS = /\s*,\s*/g;
+const SEPARATORS = /\s*->\s*/g;
 
 // This function extracts metadata from a local file
 const loadMetadata = async (filename, folder, spinnerRef) => {
