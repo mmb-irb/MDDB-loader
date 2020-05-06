@@ -13,6 +13,7 @@ const getNextAccession = async counters => {
     },
   );
   return `${
+    // This may be 'MCNS' or 'MCV19' and it is set from the '.env' file
     process.env.ACCESSION_PREFIX
   }${result.value.count.toString().padStart(5, '0')}`;
 };
@@ -50,6 +51,7 @@ const publish = async ({ id: idOrAccession }, { db }, unpublish = false) => {
     { $set: { accession, published: !unpublish } }, // update
   );
 
+  // Return feedback of what we just did
   return () => {
     if (unpublish) {
       console.log(

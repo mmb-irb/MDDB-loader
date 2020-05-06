@@ -8,7 +8,7 @@ const COMMENT_SYMBOL = Symbol('comment');
 // If the emitCommentSymbol is passed as true, return a comment 'Symbol' class
 const statFileLinesToDataLines = async function*(
   lines,
-  emitCommentSymbol = false, // NO ENTIENDO
+  emitCommentSymbol = false,
 ) {
   // 'lines' are expected to come from a readFilePerLine()
   for await (const line of lines || []) {
