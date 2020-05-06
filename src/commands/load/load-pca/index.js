@@ -5,6 +5,8 @@ const getSpinner = require('../../../utils/get-spinner');
 const readFilePerLine = require('../../../utils/read-file-per-line');
 // Process data
 const statFileLinesToDataLines = require('../../../utils/stat-file-lines-to-data-lines');
+// Lines which start by #, @ or &
+const COMMENT_LINE = statFileLinesToDataLines.COMMENT_LINE;
 
 // This function mines all pca files and returns data to load() in a standarized format
 const loadPCA = async (folder, pcaFiles, spinnerRef) => {
@@ -25,7 +27,6 @@ const loadPCA = async (folder, pcaFiles, spinnerRef) => {
   // (e.g.) [ 1 , 45.4333 ] , [ 2 , 30.3418 ] , [ 3 , 11.011 ] ...
   const eigenvalueGenerator = statFileLinesToDataLines(
     readFilePerLine(folder + eigenvaluesFile),
-    false,
   );
 
   // Save in a single array (output.y) all values and keep the last index number
@@ -47,7 +48,6 @@ const loadPCA = async (folder, pcaFiles, spinnerRef) => {
   // (e.g.) [ 0 , -7.1438 ] , [ 100 , -6.36336 ] , [ 200 , -6.53322 ] ...
   const projectionGenerator = statFileLinesToDataLines(
     readFilePerLine(projectionFiles),
-    true,
   );
   // Add the new yielded data to the output in a specific standarized format
   let currentProjection = 0;
@@ -55,7 +55,7 @@ const loadPCA = async (folder, pcaFiles, spinnerRef) => {
   let currentData;
   for await (const yielded of projectionGenerator) {
     // When a comment 'Symbol' class is yielded
-    if (yielded === statFileLinesToDataLines.COMMENT_SYMBOL) {
+    if (COMMENT_LINE.test(yielded)) {
       // Add +1 to 'currentProjection', which is a component counter
       // Switch the 'startedProcessing' to false so the counter does not increase
       // This switch is reverted to true when normal data is yielded
