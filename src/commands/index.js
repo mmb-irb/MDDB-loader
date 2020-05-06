@@ -4,6 +4,8 @@ const process = require('process');
 const chalk = require('chalk');
 // The main database
 const mongodb = require('mongodb');
+// A way to connect to a fake mongodb for testing
+const mongoMemory = require('../testing/index');
 
 // This handler calls the requested command
 // Also contains common logic for all commands which is runned before and after the main command:
@@ -65,20 +67,22 @@ const commonHandler = commandName => async argv => {
   try {
     // Try to connect to mongo as client and get the data base
     try {
-      client = await mongodb.MongoClient.connect(
-        `mongodb://${process.env.DB_SERVER}:${process.env.DB_PORT}`,
-        {
-          auth: {
-            user: process.env.DB_AUTH_USER,
-            password: process.env.DB_AUTH_PASSWORD,
+      if (process.env.MODE === 'testing') client = await mongoMemory;
+      else
+        client = await mongodb.MongoClient.connect(
+          `mongodb://${process.env.DB_SERVER}:${process.env.DB_PORT}`,
+          {
+            auth: {
+              user: process.env.DB_AUTH_USER,
+              password: process.env.DB_AUTH_PASSWORD,
+            },
+            authSource: process.env.DB_AUTHSOURCE,
+            useNewUrlParser: true,
+            useUnifiedTopology: true,
+            connectTimeoutMS: 0,
+            socketTimeoutMS: 0, // In order to avoid Mongo connection time out
           },
-          authSource: process.env.DB_AUTHSOURCE,
-          useNewUrlParser: true,
-          useUnifiedTopology: true,
-          connectTimeoutMS: 0,
-          socketTimeoutMS: 0, // In order to avoid Mongo connection time out
-        },
-      );
+        );
       //session = client.startSession();
       // NOTE: transaction logic is just being ignored for now
       // NOTE: it's there so that eventually it will become useful (MongoDB >=4)
