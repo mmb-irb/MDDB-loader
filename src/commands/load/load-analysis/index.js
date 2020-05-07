@@ -20,6 +20,7 @@ const processFunctionCreator = (...keys) => async dataAsyncGenerator => {
   // Keys define the number of data arrays and their names
   const output = {
     step: 0,
+    y: new Map(),
   };
   // Keys may be harvested from the analysis file comments
   const autoKeys = keys[0] === 'auto';
@@ -31,12 +32,11 @@ const processFunctionCreator = (...keys) => async dataAsyncGenerator => {
       // Harvest the keys if we are meant to
       if (autoKeys) {
         const key = KEY_MINER.exec(data);
-        if (key) keys.push(key[1]);
+        // Set the key
+        if (key) output.y.set(key[1], { average: 0, stddev: 0, data: [] });
       }
       continue;
     }
-    // Set the keys
-    output.y = new Map(keys.map(y => [y, { average: 0, stddev: 0, data: [] }]));
     // Define the time step
     if (!output.step) output.step = data[0];
     // Append the main data to each key array
