@@ -19,7 +19,8 @@ const processFunctionCreator = (...keys) => async dataAsyncGenerator => {
   // The 'keys' are defined below. They change through each analysis
   // Keys define the number of data arrays and their names
   const output = {
-    step: 0,
+    start: null,
+    step: null,
     y: new Map(),
   };
   // Keys may be harvested from the analysis file comments
@@ -37,8 +38,11 @@ const processFunctionCreator = (...keys) => async dataAsyncGenerator => {
       }
       continue;
     }
-    // Define the time step
-    if (!output.step) output.step = data[0];
+    // Define the time step as the diference bwetween the first and the second values
+    if (output.start !== null && output.step === null)
+      output.step = data[0] - output.start;
+    // Save the first value as start
+    if (output.start === null) output.start = data[0];
     // Append the main data to each key array
     for (const [index, value] of Array.from(output.y.keys()).entries()) {
       output.y.get(value).data.push(data[index + 1]);
