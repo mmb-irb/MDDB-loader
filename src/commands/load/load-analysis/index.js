@@ -144,6 +144,11 @@ const acceptedAnalyses = [
     process: processAutoKeys(),
   },
   {
+    name: 'rmsd-pairwise',
+    pattern: /rmsd.pairwise.xvg/,
+    process: processMatrix(),
+  },
+  {
     name: 'fluctuation',
     pattern: /rmsf.xvg/,
     process: processByKeys('rmsf'),
