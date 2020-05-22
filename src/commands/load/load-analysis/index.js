@@ -149,6 +149,11 @@ const acceptedAnalyses = [
     process: processMatrix(),
   },
   {
+    name: 'rmsd-pairwise-interface',
+    pattern: /rmsd.pairwise.interface.xvg/,
+    process: processMatrix(),
+  },
+  {
     name: 'fluctuation',
     pattern: /rmsf.xvg/,
     process: processByKeys('rmsf'),
