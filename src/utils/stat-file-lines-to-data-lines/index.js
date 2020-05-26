@@ -18,7 +18,10 @@ const statFileLinesToDataLines = async function*(lines) {
     } else {
       // If line is not commented, return it as an array of words (in this case, numbers)
       // (e.g.) 5517   0.1287 -> [ 5517 , 0.1287 ]
-      yield processedLine.split(WHITE_SPACE).map(cell => +cell);
+      yield processedLine.split(WHITE_SPACE).map(cell => {
+        if (+cell) return +cell;
+        else return cell;
+      });
     }
   }
 };

@@ -51,8 +51,9 @@ const processByKeys = (...keys) => async dataAsyncGenerator => {
 
 // Set the analysis in a standarized format for mongo
 // Data is harvested according to a provided list of keys
-// If 'getStats' is passed as true then it calculates data minimum, maximum, average and standard deviation
-const processAutoKeys = getStats => async dataAsyncGenerator => {
+// Keys are declared in file comments as '@ key ...'
+// The first data column is ignored and it is mean to be a regularly stepped 'x' edge
+const processAutoKeys = () => async dataAsyncGenerator => {
   // The 'keys' are defined below. They change through each analysis
   // Keys define the number of data arrays and their names
   const output = {
@@ -77,21 +78,19 @@ const processAutoKeys = getStats => async dataAsyncGenerator => {
     if (output.start === null) output.start = data[0];
     // Append the main data to each key array
     for (const [index, value] of Array.from(output.y.keys()).entries()) {
+      // The '+ 1' makes the first file column to be ignored
       output.y.get(value).data.push(data[index + 1]);
     }
   }
   // Harvest some metadata and include it in the object
-  if (getStats) {
-    for (const key of output.y.keys()) {
-      const y = output.y.get(key);
-      y.min = mathjs.min(y.data);
-      y.max = mathjs.max(y.data);
-      y.average = mathjs.mean(y.data);
-      y.stddev = mathjs.std(y.data);
-    }
-    output.y = fromPairs(Array.from(output.y.entries()));
+  for (const key of output.y.keys()) {
+    const y = output.y.get(key);
+    y.min = mathjs.min(y.data);
+    y.max = mathjs.max(y.data);
+    y.average = mathjs.mean(y.data);
+    y.stddev = mathjs.std(y.data);
   }
-
+  output.y = fromPairs(Array.from(output.y.entries()));
   return output;
 };
 
@@ -110,6 +109,31 @@ const processMatrix = () => async dataAsyncGenerator => {
     // Append the main data to the output.y array
     output.y.push(data);
   }
+  return output;
+};
+
+// Keys are automatically harvested to tag each column
+const processColumns = () => async dataAsyncGenerator => {
+  // The 'keys' are defined below. They change through each analysis
+  // Keys define the number of data arrays and their names
+  const output = new Map();
+  // Read the main data, which comes from the generator
+  for await (const data of dataAsyncGenerator) {
+    // The comments go first
+    if (COMMENT_LINE.test(data)) {
+      // Harvest the keys if we are meant to
+      const key = KEY_MINER.exec(data);
+      // Set the key
+      if (key) output.set(key[1], []);
+      continue;
+    }
+    // Append the main data to each key array
+    for (const [index, value] of Array.from(output.keys()).entries()) {
+      // The '+ 1' makes the first file column to be ignored
+      output.get(value).push(data[index]);
+    }
+  }
+  console.log(output);
   return output;
 };
 
@@ -145,7 +169,7 @@ const acceptedAnalyses = [
   {
     name: 'rmsd-perres',
     pattern: /rmsd.perres.xvg/,
-    process: processAutoKeys(true),
+    process: processAutoKeys(),
   },
   {
     name: 'rmsd-pairwise',
@@ -165,7 +189,7 @@ const acceptedAnalyses = [
   {
     name: 'hbonds',
     pattern: /hbonds.xvg/,
-    process: processAutoKeys(false),
+    process: processColumns(),
   },
 ];
 
