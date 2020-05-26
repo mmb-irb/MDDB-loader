@@ -51,7 +51,8 @@ const processByKeys = (...keys) => async dataAsyncGenerator => {
 
 // Set the analysis in a standarized format for mongo
 // Data is harvested according to a provided list of keys
-const processAutoKeys = () => async dataAsyncGenerator => {
+// If 'getStats' is passed as true then it calculates data minimum, maximum, average and standard deviation
+const processAutoKeys = getStats => async dataAsyncGenerator => {
   // The 'keys' are defined below. They change through each analysis
   // Keys define the number of data arrays and their names
   const output = {
@@ -80,14 +81,17 @@ const processAutoKeys = () => async dataAsyncGenerator => {
     }
   }
   // Harvest some metadata and include it in the object
-  for (const key of output.y.keys()) {
-    const y = output.y.get(key);
-    y.min = mathjs.min(y.data);
-    y.max = mathjs.max(y.data);
-    y.average = mathjs.mean(y.data);
-    y.stddev = mathjs.std(y.data);
+  if (getStats) {
+    for (const key of output.y.keys()) {
+      const y = output.y.get(key);
+      y.min = mathjs.min(y.data);
+      y.max = mathjs.max(y.data);
+      y.average = mathjs.mean(y.data);
+      y.stddev = mathjs.std(y.data);
+    }
+    output.y = fromPairs(Array.from(output.y.entries()));
   }
-  output.y = fromPairs(Array.from(output.y.entries()));
+
   return output;
 };
 
@@ -141,7 +145,7 @@ const acceptedAnalyses = [
   {
     name: 'rmsd-perres',
     pattern: /rmsd.perres.xvg/,
-    process: processAutoKeys(),
+    process: processAutoKeys(true),
   },
   {
     name: 'rmsd-pairwise',
@@ -157,6 +161,11 @@ const acceptedAnalyses = [
     name: 'fluctuation',
     pattern: /rmsf.xvg/,
     process: processByKeys('rmsf'),
+  },
+  {
+    name: 'hbonds',
+    pattern: /hbonds.xvg/,
+    process: processAutoKeys(false),
   },
 ];
 
