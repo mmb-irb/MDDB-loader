@@ -133,7 +133,6 @@ const processColumns = () => async dataAsyncGenerator => {
       output.get(value).push(data[index]);
     }
   }
-  console.log(output);
   return output;
 };
 
