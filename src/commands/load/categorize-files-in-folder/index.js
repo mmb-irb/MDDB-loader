@@ -6,7 +6,8 @@ const fs = require('fs');
 // In this case return them as a promise
 const readdir = promisify(fs.readdir);
 // RegExp patterns
-const pdbFilePatternToLoad = /^md\..+\.pdb$/i;
+//const pdbFilePatternToLoad = /^md\..+\.pdb$/i;
+const pdbFilePatternToLoad = /^md.imaged.rot.dry.pdb$/i;
 const metadataFilePatternToLoad = /metadata$/i;
 const rawFilePatternToLoad = /\.(pdb|xtc)$/i;
 const trajectoryFilePatternToLoad = /(^md.imaged.rot|pca-\d+).xtc$/i;

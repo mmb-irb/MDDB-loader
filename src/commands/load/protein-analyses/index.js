@@ -174,6 +174,7 @@ const analyzeProteins = async (folder, pdbFile, spinnerRef, abort) => {
   spinnerRef.current = getSpinner().start(
     'Submitting sequences to InterProScan and HMMER',
   );
+  console.log(pdbFile);
   // Read and save the content of the .pdb file
   const fileContent = await readFile(`${folder}/${pdbFile}`, 'utf8');
   // Conver it into Blob format (Binary)
@@ -188,8 +189,14 @@ const analyzeProteins = async (folder, pdbFile, spinnerRef, abort) => {
     let sequence = '';
     // by concatenating the 1-letter code for each residue in the chain
     chain.eachResidue(residue => (sequence += residue.getResname1()));
+
     // if we have a chain and a valid sequence, we will process afterwards
-    if (chain.chainname && sequence && sequence !== 'X') {
+    if (
+      chain.chainname &&
+      sequence &&
+      sequence !== 'X' &&
+      sequence.length > 1
+    ) {
       chains.set(chain.chainname, sequence);
     }
   });
