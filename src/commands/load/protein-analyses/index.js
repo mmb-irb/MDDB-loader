@@ -174,7 +174,7 @@ const analyzeProteins = async (folder, pdbFile, spinnerRef, abort) => {
   spinnerRef.current = getSpinner().start(
     'Submitting sequences to InterProScan and HMMER',
   );
-  console.log(pdbFile);
+
   // Read and save the content of the .pdb file
   const fileContent = await readFile(`${folder}/${pdbFile}`, 'utf8');
   // Conver it into Blob format (Binary)
@@ -183,23 +183,67 @@ const analyzeProteins = async (folder, pdbFile, spinnerRef, abort) => {
   // Load the binary data in NGL
   const structure = await ngl.autoLoad(blob, { ext: 'pdb' });
   // for each chain
+
+  // Here we will store the residues sequence of each chain
   const chains = new Map();
+
+  // Keep track of the current chain and resno all the time
+  let previous;
+
+  // Iterate over each residue
+  structure.eachResidue(residue => {
+    // Get chain name and resno
+    const chain = residue.chainname;
+    const resno = residue.resno;
+    // If this is the same residue as before, skip it
+    if (chain + resno === previous) return;
+    // Get the residue type
+    const type = residue.getResname1();
+    // Add the residue to the chains list
+    // Add a new entrie for the chain if it does not exist
+    const chainSeq = chains.get(chain);
+    if (chainSeq) {
+      chains.set(chain, chains.get(chain) + type);
+    } else {
+      chains.set(chain, type);
+    }
+    previous = chain + resno;
+  });
+
+  // Delete chains whose sequence is just 'X' (e.g. ligands)
+  chains.forEach((sequence, chain) => {
+    if (sequence === 'X') chains.delete(chain);
+  });
+
+  //chains.forEach(c => console.log(c));
+
+  /*
   structure.eachChain(chain => {
     // build the sequence string
     let sequence = '';
     // by concatenating the 1-letter code for each residue in the chain
     chain.eachResidue(residue => (sequence += residue.getResname1()));
 
+    console.log(chain.chainname + ' (' + chain.chainid + ')' + ' -> ' + sequence);
+    //console.log(chain.chainIndex)
+    //console.log(chain.residueOffset)
+    //console.log(chain.residueCount)
+    //console.log(chain.resno)
+    //console.log(chain)
+
+    //console.log(Object.getOwnPropertyNames(chain))
+
     // if we have a chain and a valid sequence, we will process afterwards
     if (
       chain.chainname &&
       sequence &&
-      sequence !== 'X' &&
-      sequence.length > 1
+      sequence !== 'X'
     ) {
       chains.set(chain.chainname, sequence);
     }
   });
+  */
+
   // Change the spinner text to display in console
   spinnerRef.current.text = `Processed 0 sequence out of ${chains.size}, including submission to InterProScan and HMMER`;
 
