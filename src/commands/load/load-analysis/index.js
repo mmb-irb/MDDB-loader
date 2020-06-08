@@ -13,6 +13,9 @@ const getSpinner = require('../../../utils/get-spinner');
 const COMMENT_LINE = statFileLinesToDataLines.COMMENT_LINE;
 // Lines which define keys
 const KEY_MINER = /^@ key (.*$)/;
+// Label miners
+const COLUMN = /^@ column (.*$)/;
+const MATRIX = /^@ matrix (.*$)/;
 
 // Set the analysis in a standarized format for mongo
 // Data is harvested according to a provided list of keys
@@ -99,16 +102,41 @@ const processAutoKeys = () => async dataAsyncGenerator => {
 const processMatrix = () => async dataAsyncGenerator => {
   // The 'keys' are defined below. They change through each analysis
   // Keys define the number of data arrays and their names
-  const output = {
-    y: [],
-  };
+  const output = {};
+  // Name of the field to be filled with new data
+  let label;
+  // Set the method to fill the field with new data
+  let protocol;
+  // 1 - Column
+  // 2 - Matrix
+
   // Read the main data, which comes from the generator
   for await (const data of dataAsyncGenerator) {
     // The comments go first
-    if (COMMENT_LINE.test(data)) continue;
-    // Append the main data to the output.y array
-    output.y.push(data);
+    // They set the new data label and organizing method
+    if (COMMENT_LINE.test(data)) {
+      const column = COLUMN.exec(data);
+      if (column) {
+        protocol = 1;
+        label = column[1];
+        output[label] = [];
+        continue;
+      }
+      const matrix = MATRIX.exec(data);
+      if (matrix) {
+        protocol = 1;
+        label = matrix[1];
+        output[label] = [];
+        continue;
+      }
+      continue;
+    }
+    // When it is not a comment
+    // Append the main data to the output object
+    if (protocol === 1) output[label] = data;
+    if (protocol === 2) output[label].push(data);
   }
+  //console.log(output);
   return output;
 };
 
@@ -145,13 +173,8 @@ const acceptedAnalyses = [
     process: processByKeys('dist'),
   },
   {
-    name: 'dist-perres-mean',
-    pattern: /dist.perres.mean.xvg/,
-    process: processMatrix(),
-  },
-  {
-    name: 'dist-perres-stdv',
-    pattern: /dist.perres.stdv.xvg/,
+    name: 'dist-perres',
+    pattern: /dist.perres.xvg/,
     process: processMatrix(),
   },
   {
@@ -173,11 +196,6 @@ const acceptedAnalyses = [
   {
     name: 'rmsd-pairwise',
     pattern: /rmsd.pairwise.xvg/,
-    process: processMatrix(),
-  },
-  {
-    name: 'rmsd-pairwise-interface',
-    pattern: /rmsd.pairwise.interface.xvg/,
     process: processMatrix(),
   },
   {
