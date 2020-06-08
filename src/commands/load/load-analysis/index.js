@@ -124,7 +124,7 @@ const processMatrix = () => async dataAsyncGenerator => {
       }
       const matrix = MATRIX.exec(data);
       if (matrix) {
-        protocol = 1;
+        protocol = 2;
         label = matrix[1];
         output[label] = [];
         continue;
