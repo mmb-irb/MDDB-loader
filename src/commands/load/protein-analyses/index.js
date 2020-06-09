@@ -187,9 +187,13 @@ const analyzeProteins = async (folder, pdbFile, spinnerRef, abort) => {
   // Here we will store the residues sequence of each chain
   const chains = new Map();
 
+  // This is an alternative way for selecting the correct chains through the residues
+  // It may succeed when the classical way fails, but it may be not the solution
+  // If the chain selection fails here it will fail in the client NGL viewer
+  /*
   // Keep track of the current chain and resno all the time
   let previous;
-
+  
   // Iterate over each residue
   structure.eachResidue(residue => {
     // Get chain name and resno
@@ -214,35 +218,21 @@ const analyzeProteins = async (folder, pdbFile, spinnerRef, abort) => {
   chains.forEach((sequence, chain) => {
     if (sequence === 'X') chains.delete(chain);
   });
+  */
 
-  //chains.forEach(c => console.log(c));
-
-  /*
   structure.eachChain(chain => {
     // build the sequence string
     let sequence = '';
     // by concatenating the 1-letter code for each residue in the chain
     chain.eachResidue(residue => (sequence += residue.getResname1()));
 
-    console.log(chain.chainname + ' (' + chain.chainid + ')' + ' -> ' + sequence);
-    //console.log(chain.chainIndex)
-    //console.log(chain.residueOffset)
-    //console.log(chain.residueCount)
-    //console.log(chain.resno)
-    //console.log(chain)
-
-    //console.log(Object.getOwnPropertyNames(chain))
+    //console.log(chain.chainname + ' (' + chain.chainid + ')' + ' -> ' + sequence);
 
     // if we have a chain and a valid sequence, we will process afterwards
-    if (
-      chain.chainname &&
-      sequence &&
-      sequence !== 'X'
-    ) {
+    if (chain.chainname && sequence && sequence !== 'X') {
       chains.set(chain.chainname, sequence);
     }
   });
-  */
 
   // Change the spinner text to display in console
   spinnerRef.current.text = `Processed 0 sequence out of ${chains.size}, including submission to InterProScan and HMMER`;
