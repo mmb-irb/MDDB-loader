@@ -116,6 +116,14 @@ yargs
             'Force the data append so the user is never asked and data is overwritten',
           type: 'boolean',
         })
+        // --conserve
+        .option('c', {
+          alias: 'conserve',
+          default: false,
+          description:
+            'Restrict the data append so the user is never asked and data is loaded only when there is no conflict',
+          type: 'boolean',
+        })
         // folders
         .positional('folder', {
           describe: 'Folder containing a project to load',

@@ -45,7 +45,7 @@ const userConfirm = async question => {
 
 // Load data from the specified folder into mongo
 const load = async (
-  { folder, forced, append, dryRun = false, gromacsPath }, // These variables belong to the "argv" object
+  { folder, forced, conserve, append, dryRun = false, gromacsPath }, // These variables belong to the "argv" object
   { db, bucket, spinnerRef, projectIdRef }, // These variables are extra stuff from the handler
 ) => {
   // Check that Gromacs is installed in the system
@@ -115,14 +115,10 @@ const load = async (
     // If the dryRun option is set as true, let it go
     // The loading process will be runned but later in the code nothing is loaded in mongo
     // Thus, there is no need to check if there are duplicates
-    if (dryRun) {
-      return true;
-    }
+    if (dryRun) return true;
     // In case it is forced, skip this part
     // This is equal to always choosing the '*' option
-    if (forced) {
-      return true;
-    }
+    if (forced) return true;
     // Get the name of the first (and only) key in the updater
     const updaterKey = Object.keys(updater)[0];
     // Set the name to refer this data when asking the user
@@ -159,6 +155,9 @@ const load = async (
     );
     // In case it does
     if (exist) {
+      // In case it is 'conserve', skip this part
+      // This is equal to always choosing the 'C' option
+      if (conserve) return false;
       // The 'set' command would overwrite the existing data
       // This is applied to pdbInfo and metadata
       if (command === 'set') {
@@ -328,11 +327,20 @@ const load = async (
     let EBIJobs;
     // If the append option is passed, look for the already existing project
     if (append) {
+      // Use regexp to check if 'append' is an accession or an object ID
+      const accessionFormat = new RegExp(
+        '^' + process.env.ACCESSION_PREFIX + '\\d{5}$',
+      );
+      // If it is an accession we have to query in a specific format
+      // If it is an object id we can directly query with it
+      const query = accessionFormat.test(append)
+        ? { accession: append }
+        : append;
       // Find the already existing project in mongo
-      const selectedProject = await db.collection('projects').findOne(append);
+      const selectedProject = await db.collection('projects').findOne(query);
       if (!selectedProject)
         return console.error(
-          chalk.bgRed(`No project found for ID '${append}'`),
+          chalk.bgRed(`No project found for ID/Accession '${append}'`),
         );
 
       projectIdRef.current = selectedProject._id;

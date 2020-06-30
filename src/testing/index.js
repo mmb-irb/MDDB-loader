@@ -5,7 +5,7 @@ const { MongoMemoryServer } = require('mongodb-memory-server');
 
 // Set some fake projects to be uploaded
 const project1 = {
-  accession: 'PRUEBA01',
+  accession: 'MCNS00001',
   published: false,
   metadata: {
     NAME: 'prueba 1',
@@ -14,7 +14,7 @@ const project1 = {
   },
 };
 const project2 = {
-  accession: 'PRUEBA02',
+  accession: 'MCNS00002',
   published: true,
   metadata: {
     NAME: 'prueba 2',
@@ -23,7 +23,7 @@ const project2 = {
   },
 };
 const project3 = {
-  accession: 'PRUEBA03',
+  accession: 'MCNS00003',
   published: false,
   metadata: {
     NAME: 'prueba 3',
@@ -42,6 +42,8 @@ const project4 = {
 
 // Set up the fake server and return an available connection to this server
 const establishFakeConnection = async () => {
+  // Do nothing if we are not testing
+  if (process.env.MODE !== 'testing') return;
   let client;
   try {
     // Create the server
