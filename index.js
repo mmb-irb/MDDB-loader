@@ -41,7 +41,10 @@ const folderCoerce = folder => {
 const idCoerce = id => ObjectId(id);
 
 // RegExp formula to check if a string is in accession format
-const accessionFormat = /^MCNS\d{5}$/;
+//const accessionFormat = /^MCNS\d{5}$/;
+const accessionFormat = new RegExp(
+  '^' + process.env.ACCESSION_PREFIX + '\\d{5}$',
+);
 
 // Convert the input accession string into a valid accession format
 const accessionCoerce = accession => {
