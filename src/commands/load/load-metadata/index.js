@@ -39,7 +39,7 @@ const loadMetadata = async (filename, folder, spinnerRef) => {
           else if (Number.isFinite(+split[1])) value = +split[1];
           // Otherwise, let it as string
           else value = split[1];
-          console.log(split[0] + ' -> ' + value);
+          //console.log(split[0] + ' -> ' + value);
           return [split[0], value];
         }),
     );
