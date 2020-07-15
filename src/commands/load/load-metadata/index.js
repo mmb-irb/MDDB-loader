@@ -12,6 +12,7 @@ const getSpinner = require('../../../utils/get-spinner');
 // RegExp patterns
 const NEW_LINES = /\s*\n+\s*/g;
 const SEPARATORS = /\s*->\s*/g;
+const ARRAY_FORMAT = /^\[.*?\]$/;
 
 // This function extracts metadata from a local file
 const loadMetadata = async (filename, folder, spinnerRef) => {
@@ -30,10 +31,15 @@ const loadMetadata = async (filename, folder, spinnerRef) => {
           let value;
           // Return null if there is nothing
           if (split[1] === '') value = null;
+          // Convert it ro an array if possible
+          // Replace single cuote by double cutoes so the JSON.parser can work
+          else if (ARRAY_FORMAT.test(split[1]))
+            value = JSON.parse(split[1].replace(/'/g, '"'));
           // Convert it to integer if posible
           else if (Number.isFinite(+split[1])) value = +split[1];
           // Otherwise, let it as string
           else value = split[1];
+          console.log(split[0] + ' -> ' + value);
           return [split[0], value];
         }),
     );
