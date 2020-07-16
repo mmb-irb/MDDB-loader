@@ -576,12 +576,18 @@ const load = async (
               )} out of ${
                 EBIJobs.length
               }, including from InterProScan and HMMER`;
-              // Update the database with the new analysis
-              await updateCollection('chains', {
-                name: chain,
-                ...document,
-                project: projectIdRef.current,
+              // Sometimes, when chain sequences are repeated, chain may be e.g. 'A, B, C'
+              // In those cases we must load a new chain for each chain letter
+              const chains = chain.split(', ');
+              chains.forEach(async c => {
+                // Update the database with the new analysis
+                await updateCollection('chains', {
+                  name: c,
+                  ...document,
+                  project: projectIdRef.current,
+                });
               });
+
               return [chain, document];
             }),
           ),

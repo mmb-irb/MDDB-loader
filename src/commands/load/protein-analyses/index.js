@@ -104,6 +104,19 @@ const retrieveHMMER = async job => {
   );
 };
 
+// Stack repeated chains (i.e. with the same sequence) in a single key instead of independent keys
+// The repeated sequence key is modified by adding all the corresponding chainnames
+const addRepeatedChain = (chainname, sequence, chainsmap) => {
+  for (const [key, value] of chainsmap) {
+    if (value === sequence) {
+      chainsmap.set(key + ', ' + chainname, value);
+      chainsmap.delete(key);
+      return true;
+    }
+  }
+  return false;
+};
+
 // Send an analysis request to EBI webpages
 // This is called once for each chain in the protein
 // Results are not awaited, but the code keeps running
@@ -230,7 +243,9 @@ const analyzeProteins = async (folder, pdbFile, spinnerRef, abort) => {
 
     // if we have a chain and a valid sequence, we will process afterwards
     if (chain.chainname && sequence && sequence !== 'X') {
-      chains.set(chain.chainname, sequence);
+      if (addRepeatedChain(chain.chainname, sequence, chains) === false) {
+        chains.set(chain.chainname, sequence);
+      }
     }
   });
 
