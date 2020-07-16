@@ -103,7 +103,6 @@ const loadPCA = async (folder, pcaFiles, spinnerRef) => {
     `Loaded PCA analysis, ${maxIndex} components, ${currentProjection} projections`,
   );
   // Return the results back to load()
-  console.log(output);
   return { name: 'pca', value: output };
 };
 
