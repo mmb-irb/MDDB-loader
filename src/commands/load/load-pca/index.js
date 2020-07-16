@@ -31,7 +31,12 @@ const loadPCA = async (folder, pcaFiles, spinnerRef) => {
 
   // Save in a single array (output.y) all values and keep the last index number
   let maxIndex = 0;
+  // Here the 'index' value is not the iteration number, but the first value from the generator output
+  // When the generator returns numeric value it is expected to be the data index
+  // If the generator yields a string it will be the first character (e.g. #, @, ...)
   for await (const [index, eigenvalue] of eigenvalueGenerator) {
+    // We discard comments
+    if (COMMENT_LINE.test(index)) continue;
     output.y.push({ eigenvalue });
     maxIndex = index;
   }
@@ -49,6 +54,7 @@ const loadPCA = async (folder, pcaFiles, spinnerRef) => {
   const projectionGenerator = statFileLinesToDataLines(
     readFilePerLine(projectionFiles),
   );
+
   // Add the new yielded data to the output in a specific standarized format
   let currentProjection = 0;
   let startedProcessing = true;
@@ -97,6 +103,7 @@ const loadPCA = async (folder, pcaFiles, spinnerRef) => {
     `Loaded PCA analysis, ${maxIndex} components, ${currentProjection} projections`,
   );
   // Return the results back to load()
+  console.log(output);
   return { name: 'pca', value: output };
 };
 
