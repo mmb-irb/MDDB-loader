@@ -47,12 +47,18 @@ const establishFakeConnection = async () => {
   let client;
   try {
     // Create the server
-    const mongod = new MongoMemoryServer();
-    const connectionString = await mongod.getConnectionString();
+    let connectionString;
+    if (process.env.TEST_CONNECTION_STRING)
+      connectionString = process.env.TEST_CONNECTION_STRING;
+    else {
+      const mongod = new MongoMemoryServer();
+      connectionString = await mongod.getConnectionString();
+      //console.log(mongod.getInstanceInfo());
+    }
+
     client = await mongodb.MongoClient.connect(connectionString, {
       useNewUrlParser: true,
     });
-    //console.log(mongod.getInstanceInfo());
     // Add data to the server to simulate the MoDEL structure
     const db = client.db(process.env.DB_NAME);
     const projects = await db.createCollection('projects');
