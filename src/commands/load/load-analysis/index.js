@@ -140,30 +140,6 @@ const processMatrix = () => async dataAsyncGenerator => {
   return output;
 };
 
-// Keys are automatically harvested to tag each column
-const processColumns = () => async dataAsyncGenerator => {
-  // The 'keys' are defined below. They change through each analysis
-  // Keys define the number of data arrays and their names
-  const output = new Map();
-  // Read the main data, which comes from the generator
-  for await (const data of dataAsyncGenerator) {
-    // The comments go first
-    if (COMMENT_LINE.test(data)) {
-      // Harvest the keys if we are meant to
-      const key = KEY_MINER.exec(data);
-      // Set the key
-      if (key) output.set(key[1], []);
-      continue;
-    }
-    // Append the main data to each key array
-    for (const [index, value] of Array.from(output.keys()).entries()) {
-      // The '+ 1' makes the first file column to be ignored
-      output.get(value).push(data[index]);
-    }
-  }
-  return output;
-};
-
 // List of recognized analyses
 // If any of the patterns here match the analysis file, it won't be loaded
 const acceptedAnalyses = [
@@ -206,7 +182,7 @@ const acceptedAnalyses = [
   {
     name: 'hbonds',
     pattern: /hbonds.xvg/,
-    process: processColumns(),
+    process: processMatrix(),
   },
 ];
 
