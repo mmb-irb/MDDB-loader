@@ -45,20 +45,36 @@ const establishFakeConnection = async () => {
   // Do nothing if we are not testing
   if (process.env.MODE !== 'testing') return;
   let client;
+  let connected = false;
   try {
-    // Create the server
+    // If there is a provided connection string, try to connect to it
+    // WARNING: The string connection may be not valid
     let connectionString;
-    if (process.env.TEST_CONNECTION_STRING)
-      connectionString = process.env.TEST_CONNECTION_STRING;
-    else {
+    if (process.env.TEST_CONNECTION_STRING) {
+      try {
+        connectionString = process.env.TEST_CONNECTION_STRING;
+        client = await mongodb.MongoClient.connect(connectionString, {
+          useNewUrlParser: true,
+        });
+        connected = true;
+      } catch (error) {
+        console.error(
+          'The provided connection string is not valid: There is no active Mongo Memory Server',
+        );
+      }
+    }
+    // In case  there is no connection string or it is not valid...
+    // Create a new server and get the connection string
+    if (!connected) {
+      console.log('A new instance of Mongo Memory Server will be created');
       const mongod = new MongoMemoryServer();
       connectionString = await mongod.getConnectionString();
       //console.log(mongod.getInstanceInfo());
+      client = await mongodb.MongoClient.connect(connectionString, {
+        useNewUrlParser: true,
+      });
     }
 
-    client = await mongodb.MongoClient.connect(connectionString, {
-      useNewUrlParser: true,
-    });
     // Add data to the server to simulate the MoDEL structure
     const db = client.db(process.env.DB_NAME);
     const projects = await db.createCollection('projects');
@@ -69,7 +85,7 @@ const establishFakeConnection = async () => {
     await projects.insertOne(project4);
     return client;
   } catch (error) {
-    console.error('fake mongodb connection error');
+    console.error('Mongo Memory Server connection error');
     console.error(error);
     if (client && 'close' in client) client.close();
   }
