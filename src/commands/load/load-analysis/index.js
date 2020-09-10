@@ -184,6 +184,11 @@ const acceptedAnalyses = [
     pattern: /hbonds.xvg/,
     process: processMatrix(),
   },
+  {
+    name: 'energies',
+    pattern: /energies.xvg/,
+    process: processMatrix(),
+  },
 ];
 
 // This function finds if a given filename matches a recognized type of analysis
