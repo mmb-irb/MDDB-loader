@@ -16,6 +16,8 @@ const KEY_MINER = /^@ key (.*$)/;
 // Label miners
 const COLUMN = /^@ column (.*$)/;
 const MATRIX = /^@ matrix (.*$)/;
+const OBJECT = /^@ object (.*$)/;
+const COMPLEX = /^([a-zA-Z0-9-_]+)\.([a-zA-Z0-9-_]+)$/;
 
 // Set the analysis in a standarized format for mongo
 // Data is harvested according to a provided list of keys
@@ -99,17 +101,31 @@ const processAutoKeys = () => async dataAsyncGenerator => {
 
 // Set the analysis in a standarized format for mongo
 // Data is harvested according to a provided list of keys
-const processMatrix = () => async dataAsyncGenerator => {
+const smartProcess = () => async dataAsyncGenerator => {
   // The 'keys' are defined below. They change through each analysis
   // Keys define the number of data arrays and their names
   const output = {};
+  // Set the parent to be modfied. It may be the 'output' itself or another object inside the output
+  let parent;
   // Name of the field to be filled with new data
   let label;
   // Set the method to fill the field with new data
   let protocol;
   // 1 - Column
   // 2 - Matrix
-
+  const parseComplex = inputLabel => {
+    // Check if the label is an object-label complex and set the parent accordingly
+    const complex = COMPLEX.exec(inputLabel);
+    if (complex) {
+      parent = output[complex[1]];
+      label = complex[2];
+    }
+    // When it is not, return the 'output' object as parent and the same input label as label
+    else {
+      parent = output;
+      label = inputLabel;
+    }
+  };
   // Read the main data, which comes from the generator
   for await (const data of dataAsyncGenerator) {
     // The comments go first
@@ -119,6 +135,7 @@ const processMatrix = () => async dataAsyncGenerator => {
       if (column) {
         protocol = 1;
         label = column[1];
+        parseComplex(label);
         output[label] = [];
         continue;
       }
@@ -126,15 +143,22 @@ const processMatrix = () => async dataAsyncGenerator => {
       if (matrix) {
         protocol = 2;
         label = matrix[1];
+        parseComplex(label);
         output[label] = [];
+        continue;
+      }
+      const object = OBJECT.exec(data);
+      if (object) {
+        label = object[1];
+        output[label] = {};
         continue;
       }
       continue;
     }
     // When it is not a comment
     // Append the main data to the output object
-    if (protocol === 1) output[label] = data;
-    if (protocol === 2) output[label].push(data);
+    if (protocol === 1) parent[label] = data;
+    if (protocol === 2) parent[label].push(data);
   }
   //console.log(output);
   return output;
@@ -151,7 +175,7 @@ const acceptedAnalyses = [
   {
     name: 'dist-perres',
     pattern: /dist.perres.xvg/,
-    process: processMatrix(),
+    process: smartProcess(),
   },
   {
     name: 'rgyr', // Name to be set in mongo for this file
@@ -172,7 +196,7 @@ const acceptedAnalyses = [
   {
     name: 'rmsd-pairwise',
     pattern: /rmsd.pairwise.xvg/,
-    process: processMatrix(),
+    process: smartProcess(),
   },
   {
     name: 'fluctuation',
@@ -182,12 +206,17 @@ const acceptedAnalyses = [
   {
     name: 'hbonds',
     pattern: /hbonds.xvg/,
-    process: processMatrix(),
+    process: smartProcess(),
   },
   {
     name: 'energies',
     pattern: /energies.xvg/,
-    process: processMatrix(),
+    process: smartProcess(),
+  },
+  {
+    name: 'pockets',
+    pattern: /pockets.xvg/,
+    process: smartProcess(),
   },
 ];
 
