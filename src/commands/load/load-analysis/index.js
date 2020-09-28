@@ -136,7 +136,7 @@ const smartProcess = () => async dataAsyncGenerator => {
         protocol = 1;
         label = column[1];
         parseComplex(label);
-        output[label] = [];
+        parent[label] = [];
         continue;
       }
       const matrix = MATRIX.exec(data);
@@ -144,7 +144,7 @@ const smartProcess = () => async dataAsyncGenerator => {
         protocol = 2;
         label = matrix[1];
         parseComplex(label);
-        output[label] = [];
+        parent[label] = [];
         continue;
       }
       const object = OBJECT.exec(data);
