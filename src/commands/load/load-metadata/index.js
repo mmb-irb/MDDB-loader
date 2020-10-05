@@ -7,8 +7,6 @@ const fs = require('fs');
 const readFile = promisify(fs.readFile);
 // The "fromPairs" function combine different objects into a single one
 const fromPairs = require('lodash.frompairs');
-// This utility displays in console a dynamic loading status
-const getSpinner = require('../../../utils/get-spinner');
 // RegExp patterns
 const NEW_LINES = /\s*\n+\s*/g;
 const SEPARATORS = /\s*->\s*/g;
@@ -27,8 +25,6 @@ const try2parse = text => {
 
 // This function extracts metadata from a local file
 const loadMetadata = async (filename, folder, spinnerRef) => {
-  // Display the start of this action in the console
-  spinnerRef.current = getSpinner().start('Loading ' + filename);
   try {
     // Read metadata from local file
     const fileContent = await readFile(folder + '/' + filename, 'utf8');
@@ -55,8 +51,6 @@ const loadMetadata = async (filename, folder, spinnerRef) => {
           return [split[0], value];
         }),
     );
-    // Display the end of this action as a success in the console
-    spinnerRef.current.succeed('Loaded ' + filename);
 
     return output;
   } catch (error) {

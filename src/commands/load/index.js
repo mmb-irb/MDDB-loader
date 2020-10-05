@@ -110,6 +110,8 @@ const load = async (
     }
   };
 
+  // This function asks mongo to check if the specified data already exists
+  // It is sensible to uploading things with the same name, in which case asks the user
   // Mongo management and asking the user requieres an await promise format
   const updateAnticipation = async (command, updater) => {
     // If the dryRun option is set as true, let it go
@@ -247,7 +249,6 @@ const load = async (
   };
 
   // Set a general handler to update the 'projects' collection
-  // It is sensible to uploading things with the same name, in which case asks the user
   // The 'command' argument stands for the command to be executed by mongo
   // The 'command' argument expects 'set' or 'push' as string
   // The 'updater' argument stands for the changes to be performed in mongo
@@ -272,6 +273,79 @@ const load = async (
         },
       );
     });
+  };
+
+  // Set a handler to update the 'projects.metadata' field
+  const updateMetadata = async newMetadata => {
+    // Check if the project has metadata already
+    const { metadata } = await db
+      .collection('projects')
+      .findOne(
+        { _id: projectIdRef.current },
+        { projection: { _id: 0, metadata: 1 } },
+      );
+    // In case it does, we modify the received metadata and send it back to mongo
+    // WARNING: Note that values in current metadata which are missing in new metadata will remain
+    // This is logic since we must be 'appending' new data
+    if (metadata) {
+      // Check the status of each new metadata key in the current metadata
+      for (const [key, newValue] of Object.entries(newMetadata)) {
+        const currentValue = metadata[key];
+        // Missing keys are added from current metadata
+        if (!currentValue) metadata[key] = newValue;
+        // Keys with the same value are ignored since there is nothing to change
+        if (currentValue === newValue) continue;
+        // Keys with different values are conflictive and we must ask the user for each one
+        else {
+          // Arrays and objects are not considered 'equal' even when they store identical values
+          // We have to check this is not the case
+          // NEVER FORGET: Both objects and arrays return 'object' when checked with 'typeof'
+          if (
+            typeof currentValue === 'object' &&
+            typeof newValue === 'object'
+          ) {
+            // In case we have an array, check if the current and new stringified arrays are different
+            if (Array.isArray(currentValue) && Array.isArray(newValue)) {
+              if (currentValue.join() === newValue.join()) continue;
+            }
+            // In case we have an object, check if the current and new stringified objects are different
+            else if (!Array.isArray(currentValue) && !Array.isArray(newValue)) {
+              if (JSON.stringify(currentValue) === JSON.stringify(newValue))
+                continue;
+            }
+            // This 'else' should never happen. Just in case.
+            else continue;
+          }
+          console.log('ok 3');
+          const confirm = await userConfirm(
+            `Metadata '${key}' field already exists and its value does not match new metadata.
+            Current value:
+            ${currentValue}
+            New value:
+            ${newValue}
+            Confirm data loading:
+            C - Conserve current value and discard new value
+            * - Overwrite current value with the new value`,
+          );
+          // If 'C' do nothing
+          if (confirm === 'C') {
+            console.log(chalk.yellow('New value will be discarded'));
+            continue;
+          }
+          // Otherwise, overwrite
+          else {
+            console.log(chalk.yellow('Current value will be overwritten'));
+            metadata[key] = newValue;
+          }
+        }
+      }
+      // Finally, load the new metadata object into a mongo
+      await updateProject('set', { metadata: metadata });
+    }
+    // If there is no previous metadata, load the new metadata object into a mongo
+    else {
+      await updateProject('set', { metadata: newMetadata });
+    }
   };
 
   // Set a general handler to update 'analyses' and 'chains' collections
@@ -368,35 +442,6 @@ const load = async (
         ),
       );
     }
-    // Save data from the PDB section in the MMB web page and store it into mongo
-    // First check for duplicates and ask user in case of duplication
-    if (await updateAnticipation('set', { pdbInfo: {} })) {
-      // Get the pdb code for this protein (e.g. 3oe0)
-      const pdbID = (folder.match(/\/(\w{4})[^/]+\/?$/i) || [])[1];
-      if (pdbID) {
-        // Display the start of this action in the console
-        spinnerRef.current = getSpinner().start(
-          `Loading PDB Info for ${pdbID} from API`,
-        );
-        // Extract data from the PDB section of the MMB web page
-        const pdbInfo = await fetch(
-          `http://mmb.pcb.ub.es/api/pdb/${pdbID}/entry`,
-        )
-          // Retrieve data in json format
-          .then(response => response.json())
-          // Display the succeed of this action in the console and return data
-          .then(data => {
-            spinnerRef.current.succeed(`Loaded PDB Info for ${pdbID} from API`);
-            return data;
-          })
-          // In case of error, display the failure of this action in the console
-          .catch(error => {
-            spinnerRef.current.fail(error);
-          });
-        // Update project in mongo
-        await updateProject('set', { pdbInfo });
-      }
-    }
     // Check if the load has been aborted at this point
     if (await checkLoadAborted()) return;
 
@@ -419,13 +464,46 @@ const load = async (
     // The resulting 'metadata' is modified later so it must not be uploaded to mongo yet
     let metadata = {};
     if (metadataFile) {
+      // Display the start of this action in the console
+      spinnerRef.current = getSpinner().start('Loading metadata');
+
       // Harvest metadata
       metadata = (await loadMetadata(metadataFile, folder, spinnerRef)) || {};
-      // Check duplicates and load the metadata into mongo
-      if (metadata && (await updateAnticipation('set', { metadata }))) {
-        await updateProject('set', { metadata });
+
+      // Now set the pdbInfo section in the metadata
+      // Get the PDB id from the metadata (e.g. 3oe0)
+
+      // Get the pdb code for this protein (e.g. 3oe0)
+      const pdbID = metadata.PDBID;
+      if (pdbID) {
+        // Display the start of this action in the console
+        spinnerRef.current.text = `Downloading PDB Info for ${pdbID} from API`;
+        // Extract data from the PDB section of the MMB web page
+        const pdbInfo = await fetch(
+          `http://mmb.pcb.ub.es/api/pdb/${pdbID}/entry`,
+        )
+          // Retrieve data in json format
+          .then(response => response.json())
+          // Display the succeed of this action in the console and return data
+          .then(data => {
+            return data;
+          })
+          // In case of error, display the failure of this action in the console
+          .catch(error => {
+            spinnerRef.current.fail(error);
+          });
+        // Add the pdbInfo to the metadata object
+        metadata.pdbInfo = pdbInfo;
       }
+      // Check duplicates and load the metadata into mongo
+      await updateMetadata(metadata);
+
+      // Display the end of this action as a success in the console
+      spinnerRef.current.succeed('Loaded metadata');
     }
+
+    // Check if the load has been aborted at this point
+    if (await checkLoadAborted()) return;
 
     // Load trajectories into mongo
     for (const filename of trajectoryFiles) {
