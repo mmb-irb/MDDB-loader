@@ -2,6 +2,8 @@
 // More information: https://github.com/nodkz/mongodb-memory-server
 const mongodb = require('mongodb');
 const { MongoMemoryServer } = require('mongodb-memory-server');
+// Visual tool which allows to add colors in console
+const chalk = require('chalk');
 
 // Set some fake projects to be uploaded
 const project1 = {
@@ -44,6 +46,7 @@ const project4 = {
 const establishFakeConnection = async () => {
   // Do nothing if we are not testing
   if (process.env.MODE !== 'testing') return;
+  console.log(chalk.bgMagenta('\n Running loader in TEST mode \n'));
   let client;
   let connected = false;
   try {
@@ -57,9 +60,14 @@ const establishFakeConnection = async () => {
           useNewUrlParser: true,
         });
         connected = true;
+        console.log(
+          'The provided connection string is valid: Connected to Mongo Memory Server',
+        );
       } catch (error) {
         console.error(
-          'The provided connection string is not valid: There is no active Mongo Memory Server',
+          chalk.red(
+            'The provided connection string is not valid: There is no active Mongo Memory Server',
+          ),
         );
       }
     }
