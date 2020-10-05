@@ -316,26 +316,32 @@ const load = async (
             // This 'else' should never happen. Just in case.
             else continue;
           }
-          console.log('ok 3');
-          const confirm = await userConfirm(
-            `Metadata '${key}' field already exists and its value does not match new metadata.
-            Current value:
-            ${currentValue}
-            New value:
-            ${newValue}
-            Confirm data loading:
-            C - Conserve current value and discard new value
-            * - Overwrite current value with the new value`,
-          );
-          // If 'C' do nothing
-          if (confirm === 'C') {
-            console.log(chalk.yellow('New value will be discarded'));
-            continue;
-          }
-          // Otherwise, overwrite
+          // If the 'conserve' option is passed
+          if (conserve) continue;
+          // Else, if the 'forced' option is passed
+          else if (forced) metadata[key] = newValue;
+          // Else, ask the user
           else {
-            console.log(chalk.yellow('Current value will be overwritten'));
-            metadata[key] = newValue;
+            const confirm = await userConfirm(
+              `Metadata '${key}' field already exists and its value does not match new metadata.
+              Current value:
+              ${currentValue}
+              New value:
+              ${newValue}
+              Confirm data loading:
+              C - Conserve current value and discard new value
+              * - Overwrite current value with the new value`,
+            );
+            // If 'C' do nothing
+            if (confirm === 'C') {
+              console.log(chalk.yellow('New value will be discarded'));
+              continue;
+            }
+            // Otherwise, overwrite
+            else {
+              console.log(chalk.yellow('Current value will be overwritten'));
+              metadata[key] = newValue;
+            }
           }
         }
       }
