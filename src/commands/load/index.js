@@ -300,7 +300,7 @@ const load = async (
       for (const [key, newValue] of Object.entries(newMetadata)) {
         const currentValue = metadata[key];
         // Missing keys are added from current metadata
-        if (!currentValue) metadata[key] = newValue;
+        if (currentValue === undefined) metadata[key] = newValue;
         // Keys with the same value are ignored since there is nothing to change
         else if (currentValue === newValue) continue;
         // Keys with different values are conflictive and we must ask the user for each one
