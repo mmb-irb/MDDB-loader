@@ -108,20 +108,29 @@ yargs
           type: 'string',
           coerce: idOrAccessionCoerce,
         })
-        // --forced
-        .option('f', {
-          alias: 'forced',
-          default: false,
-          description:
-            'Force the data append so the user is never asked and data is overwritten',
-          type: 'boolean',
-        })
         // --conserve
         .option('c', {
           alias: 'conserve',
           default: false,
           description:
-            'Restrict the data append so the user is never asked and data is loaded only when there is no conflict',
+            'Restrict the data append so the user is never asked and new data is loaded only when there is no conflict',
+          type: 'boolean',
+        })
+        // --overwrite
+        .option('o', {
+          alias: 'overwrite',
+          default: false,
+          description:
+            'Priorize the data append so the user is never asked and current data is overwritten when there is any conflict',
+          type: 'boolean',
+        })
+        // --force
+        .option('f', {
+          alias: 'force',
+          default: false,
+          description:
+            'Force the data append. Mongo is never asked so we do not know if there is any conflict\n' +
+            'WARNING: Data may be overwritten or duplicated',
           type: 'boolean',
         })
         // folders

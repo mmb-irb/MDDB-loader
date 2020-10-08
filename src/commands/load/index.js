@@ -45,7 +45,7 @@ const userConfirm = async question => {
 
 // Load data from the specified folder into mongo
 const load = async (
-  { folder, forced, conserve, append, dryRun = false, gromacsPath }, // These variables belong to the "argv" object
+  { folder, append, conserve, overwrite, force, dryRun = false, gromacsPath }, // These variables belong to the "argv" object
   { db, bucket, spinnerRef, projectIdRef }, // These variables are extra stuff from the handler
 ) => {
   // Check that Gromacs is installed in the system
@@ -118,9 +118,9 @@ const load = async (
     // The loading process will be runned but later in the code nothing is loaded in mongo
     // Thus, there is no need to check if there are duplicates
     if (dryRun) return true;
-    // In case it is forced, skip this part
+    // In case it is force, skip this part
     // This is equal to always choosing the '*' option
-    if (forced) return true;
+    if (force) return true;
     // Get the name of the first (and only) key in the updater
     const updaterKey = Object.keys(updater)[0];
     // Set the name to refer this data when asking the user
@@ -163,6 +163,9 @@ const load = async (
       // The 'set' command would overwrite the existing data
       // This is applied to pdbInfo and metadata
       if (command === 'set') {
+        // In case it is 'overwrite', we can proceed
+        if (overwrite) return true;
+        // Ask the user
         const confirm = await userConfirm(
           `'${name}' already exists in the project. Confirm data loading:
         C - Conserve current data and discard new data
@@ -174,17 +177,22 @@ const load = async (
           return false;
         } else {
           console.log(chalk.yellow('Current data will be overwritten'));
+          return true;
         }
       }
       // The 'push' command would NOT override the existing data and just add new data
       // This is applied to trajectories, files, analyses and chains
       else if (command === 'push') {
-        const confirm = await userConfirm(
-          `'${name}' already exists in the project. Confirm data loading:
+        // Ask the user
+        // In case it is 'overwrite', proceed to delete previous data and load the new one
+        const confirm = overwrite
+          ? 'D'
+          : await userConfirm(
+              `'${name}' already exists in the project. Confirm data loading:
         C - Conserve current data and discard new data
         D - Delete current data (all duplicates) and load new data
         * - Conserve both current and new data`,
-        );
+            );
         // Abort the process
         if (confirm === 'C') {
           console.log(chalk.yellow('New data will be discarded'));
@@ -316,10 +324,11 @@ const load = async (
             // This 'else' should never happen. Just in case.
             else continue;
           }
+          // When this is a real conflic...
           // If the 'conserve' option is passed
           if (conserve) continue;
-          // Else, if the 'forced' option is passed
-          else if (forced) metadata[key] = newValue;
+          // Else, if the 'force' option is passed
+          else if (overwrite || force) metadata[key] = newValue;
           // Else, ask the user
           else {
             const confirm = await userConfirm(
