@@ -302,7 +302,7 @@ const load = async (
         // Missing keys are added from current metadata
         if (!currentValue) metadata[key] = newValue;
         // Keys with the same value are ignored since there is nothing to change
-        if (currentValue === newValue) continue;
+        else if (currentValue === newValue) continue;
         // Keys with different values are conflictive and we must ask the user for each one
         else {
           // Arrays and objects are not considered 'equal' even when they store identical values
@@ -333,10 +333,8 @@ const load = async (
           else {
             const confirm = await userConfirm(
               `Metadata '${key}' field already exists and its value does not match new metadata.
-              Current value:
-              ${currentValue}
-              New value:
-              ${newValue}
+              Current value: ${currentValue}
+              New value: ${newValue}
               Confirm data loading:
               C - Conserve current value and discard new value
               * - Overwrite current value with the new value`,
