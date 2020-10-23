@@ -251,7 +251,13 @@ const analyzeProteins = async (folder, pdbFile, spinnerRef, abort) => {
     //console.log(chain.chainname + ' (' + chain.chainid + ')' + ' -> ' + sequence);
 
     // if we have a chain and a valid sequence, we will process afterwards
-    if (chain.chainname && sequence && sequence !== 'X') {
+    // Check if sequence is X or all X. In these cases we skip the analysis
+    if (
+      chain.chainname &&
+      sequence &&
+      sequence !== 'X' &&
+      sequence.split('').some(c => c !== 'X')
+    ) {
       if (addRepeatedChain(chain.chainname, sequence, chains) === false) {
         chains.set(chain.chainname, sequence);
       }
