@@ -76,8 +76,11 @@ const establishFakeConnection = async () => {
     if (!connected) {
       console.log('A new instance of Mongo Memory Server will be created');
       const mongod = new MongoMemoryServer();
-      connectionString = await mongod.getConnectionString();
-      //console.log(mongod.getInstanceInfo());
+      // If tnext line silently crashes try to type 'npm i mongodb-memory-server' in the terminal
+      // DANI: Esto para la documentación:
+      // Si después de instar mongodb memory server sigue fallando se puede activar el debug poniendo 'MONGOMS_DEBUG=1' en el archivo '.env'
+      // A mi funcionó hacer 'sudo apt-get install libcurl3' y luego 'sudo apt-get install libcurl4 php-curl'
+      connectionString = await mongod.getUri();
       client = await mongodb.MongoClient.connect(connectionString, {
         useNewUrlParser: true,
       });
