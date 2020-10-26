@@ -177,6 +177,22 @@ const load = async (
           return false;
         } else {
           console.log(chalk.yellow('Current data will be overwritten'));
+          // The '$set' command in mongo would override the previous value
+          // However, in case of chains, we do not perform a real '$set'
+          // Thus, we must delete the previous value here, which will not affect other cases
+          await new Promise(resolve => {
+            db.collection('projects').findOneAndUpdate(
+              { _id: projectIdRef.current },
+              { $unset: updater },
+              err => {
+                if (err)
+                  spinnerRef.current.fail(
+                    '   Error while deleting current data:' + err,
+                  );
+                resolve();
+              },
+            );
+          });
           return true;
         }
       }
