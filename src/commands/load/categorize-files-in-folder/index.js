@@ -8,7 +8,7 @@ const readdir = promisify(fs.readdir);
 // RegExp patterns
 //const pdbFilePatternToLoad = /^md\..+\.pdb$/i;
 const pdbFilePatternToLoad = /^md.imaged.rot.dry.pdb$/i;
-const metadataFilePatternToLoad = /metadata$/i;
+const metadataFilePatternToLoad = /^metadata.json$/i;
 const rawFilePatternToLoad = /\.(pdb|xtc)$/i;
 const trajectoryFilePatternToLoad = /(^md.imaged.rot|pca-\d+).xtc$/i;
 // Alternative regexp to test the code with a small trajectory

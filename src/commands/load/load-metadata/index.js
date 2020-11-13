@@ -5,52 +5,12 @@ const fs = require('fs');
 // readFile allows to get data from a local file
 // In this case data is retuned as a promise
 const readFile = promisify(fs.readFile);
-// The "fromPairs" function combine different objects into a single one
-const fromPairs = require('lodash.frompairs');
-// RegExp patterns
-const NEW_LINES = /\s*\n+\s*/g;
-const SEPARATORS = /\s*->\s*/g;
-//const ARRAY_FORMAT = /^\[.*?\]$/;
-
-let parsed;
-const try2parse = text => {
-  if (typeof value === 'string') return false;
-  try {
-    parsed = JSON.parse(text.replace(/'/g, '"'));
-    return true;
-  } catch (err) {
-    return false;
-  }
-};
 
 // This function extracts metadata from a local file
 const loadMetadata = async (filename, folder, spinnerRef) => {
   try {
-    // Read metadata from local file
     const fileContent = await readFile(folder + '/' + filename, 'utf8');
-    // Process metadata by splitting, transforming and joining back again data as a unique object
-    const output = fromPairs(
-      fileContent
-        .split(NEW_LINES) // Split accoridng to a RegExp pattern
-        .filter(Boolean) // Discard empty strings
-        .map(line => {
-          const split = line.split(SEPARATORS); // Split again by a different RegExp pattern
-          let value;
-          // Try to parse
-          try2parse(split[1]);
-          // Return null if there is nothing
-          if (split[1] === '') value = null;
-          // Convert it to integer if posible
-          else if (Number.isFinite(+split[1])) value = +split[1];
-          // Convert it to an array/object if possible
-          // Replace single cuote by double cutoes so the JSON.parser can work
-          else if (try2parse(split[1])) value = parsed;
-          // Otherwise, let it as string
-          else value = split[1];
-          //console.log(split[0] + ' -> ' + value);
-          return [split[0], value];
-        }),
-    );
+    const output = JSON.parse(fileContent);
 
     return output;
   } catch (error) {
