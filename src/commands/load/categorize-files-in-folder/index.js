@@ -14,7 +14,7 @@ const trajectoryFilePatternToLoad = /(^md.imaged.rot|pca-\d+).xtc$/i;
 // Alternative regexp to test the code with a small trajectory
 //const trajectoryFilePatternToLoad = /md.imaged.rot.100.xtc$/i;
 const pcaFilePatternToLoad = /pca\./i;
-const analysisFilePatternToLoad = /\.xvg$/i;
+const analysisFilePatternToLoad = /^md.[\s\S]*.(xvg|json)$/i;
 
 // This function finds all files in the "folder" argument path and classifies them
 // Classification is performed according to the file names

@@ -9,19 +9,20 @@ const chalk = require('chalk');
 // This utility displays in console a dynamic loading status
 const getSpinner = require('../../../utils/get-spinner');
 
+// Allows to call a function in a version that returns promises
+const { promisify } = require('util');
+// Files system from node
+const fs = require('fs');
+// readFile allows to get data from a local file
+// In this case data is retuned as a promise
+const readFile = promisify(fs.readFile);
+
 // Lines which start by #, @ or &
 const COMMENT_LINE = statFileLinesToDataLines.COMMENT_LINE;
-// Lines which define keys
-const KEY_MINER = /^@ key (.*$)/;
-// Label miners
-const COLUMN = /^@ column (.*$)/;
-const MATRIX = /^@ matrix (.*$)/;
-const OBJECT = /^@ object (.*$)/;
-const COMPLEX = /^([a-zA-Z0-9-_]+)\.([a-zA-Z0-9-_]+)$/;
 
 // Set the analysis in a standarized format for mongo
 // Data is harvested according to a provided list of keys
-const processByKeys = (...keys) => async dataAsyncGenerator => {
+const processXVG = (...keys) => async dataAsyncGenerator => {
   // The 'keys' are defined below. They change through each analysis
   // Keys define the number of data arrays and their names
   const output = {
@@ -54,113 +55,11 @@ const processByKeys = (...keys) => async dataAsyncGenerator => {
   return output;
 };
 
-// Set the analysis in a standarized format for mongo
-// Data is harvested according to a provided list of keys
-// Keys are declared in file comments as '@ key ...'
-// The first data column is ignored and it is mean to be a regularly stepped 'x' edge
-const processAutoKeys = () => async dataAsyncGenerator => {
-  // The 'keys' are defined below. They change through each analysis
-  // Keys define the number of data arrays and their names
-  const output = {
-    start: null,
-    step: null,
-    y: new Map(),
-  };
-  // Read the main data, which comes from the generator
-  for await (const data of dataAsyncGenerator) {
-    // The comments go first
-    if (COMMENT_LINE.test(data)) {
-      // Harvest the keys if we are meant to
-      const key = KEY_MINER.exec(data);
-      // Set the key
-      if (key) output.y.set(key[1], { average: 0, stddev: 0, data: [] });
-      continue;
-    }
-    // Define the time step as the diference bwetween the first and the second values
-    if (output.start !== null && output.step === null)
-      output.step = data[0] - output.start;
-    // Save the first value as start
-    if (output.start === null) output.start = data[0];
-    // Append the main data to each key array
-    for (const [index, value] of Array.from(output.y.keys()).entries()) {
-      // The '+ 1' makes the first file column to be ignored
-      output.y.get(value).data.push(data[index + 1]);
-    }
-  }
-  // Harvest some metadata and include it in the object
-  for (const key of output.y.keys()) {
-    const y = output.y.get(key);
-    y.min = mathjs.min(y.data);
-    y.max = mathjs.max(y.data);
-    y.average = mathjs.mean(y.data);
-    y.stddev = mathjs.std(y.data);
-  }
-  output.y = fromPairs(Array.from(output.y.entries()));
-  return output;
-};
-
-// Set the analysis in a standarized format for mongo
-// Data is harvested according to a provided list of keys
-const smartProcess = () => async dataAsyncGenerator => {
-  // The 'keys' are defined below. They change through each analysis
-  // Keys define the number of data arrays and their names
-  const output = {};
-  // Set the parent to be modfied. It may be the 'output' itself or another object inside the output
-  let parent;
-  // Name of the field to be filled with new data
-  let label;
-  // Set the method to fill the field with new data
-  let protocol;
-  // 1 - Column
-  // 2 - Matrix
-  const parseComplex = inputLabel => {
-    // Check if the label is an object-label complex and set the parent accordingly
-    const complex = COMPLEX.exec(inputLabel);
-    if (complex) {
-      parent = output[complex[1]];
-      label = complex[2];
-    }
-    // When it is not, return the 'output' object as parent and the same input label as label
-    else {
-      parent = output;
-      label = inputLabel;
-    }
-  };
-  // Read the main data, which comes from the generator
-  for await (const data of dataAsyncGenerator) {
-    // The comments go first
-    // They set the new data label and organizing method
-    if (COMMENT_LINE.test(data)) {
-      const column = COLUMN.exec(data);
-      if (column) {
-        protocol = 1;
-        label = column[1];
-        parseComplex(label);
-        parent[label] = [];
-        continue;
-      }
-      const matrix = MATRIX.exec(data);
-      if (matrix) {
-        protocol = 2;
-        label = matrix[1];
-        parseComplex(label);
-        parent[label] = [];
-        continue;
-      }
-      const object = OBJECT.exec(data);
-      if (object) {
-        label = object[1];
-        output[label] = {};
-        continue;
-      }
-      continue;
-    }
-    // When it is not a comment
-    // Append the main data to the output object
-    if (protocol === 1) parent[label] = data;
-    if (protocol === 2) parent[label].push(data);
-  }
-  //console.log(output);
+// Parse a json file
+const processJSON = () => async path => {
+  const fileContent = await readFile(path);
+  const parsedData = JSON.parse(fileContent);
+  const output = { data: parsedData };
   return output;
 };
 
@@ -170,53 +69,53 @@ const acceptedAnalyses = [
   {
     name: 'dist',
     pattern: /dist.xvg/,
-    process: processByKeys('dist'),
+    process: processXVG('dist'),
   },
   {
     name: 'dist-perres',
-    pattern: /dist.perres.xvg/,
-    process: smartProcess(),
+    pattern: /dist.perres.json/,
+    process: processJSON(),
   },
   {
     name: 'rgyr', // Name to be set in mongo for this file
     pattern: /rgyr.xvg/, // Regular expression to match analysis files
     // Logic used to mine and tag data
-    process: processByKeys('rgyr', 'rgyrx', 'rgyry', 'rgyrz'),
+    process: processXVG('rgyr', 'rgyrx', 'rgyry', 'rgyrz'),
   },
   {
     name: 'rmsd',
     pattern: /rmsd.xvg/,
-    process: processByKeys('rmsd'),
+    process: processXVG('rmsd'),
   },
   {
     name: 'rmsd-perres',
-    pattern: /rmsd.perres.xvg/,
-    process: processAutoKeys(),
+    pattern: /rmsd.perres.json/,
+    process: processJSON(),
   },
   {
     name: 'rmsd-pairwise',
-    pattern: /rmsd.pairwise.xvg/,
-    process: smartProcess(),
+    pattern: /rmsd.pairwise.json/,
+    process: processJSON(),
   },
   {
     name: 'fluctuation',
     pattern: /rmsf.xvg/,
-    process: processByKeys('rmsf'),
+    process: processXVG('rmsf'),
   },
   {
     name: 'hbonds',
-    pattern: /hbonds.xvg/,
-    process: smartProcess(),
+    pattern: /hbonds.json/,
+    process: processJSON(),
   },
   {
     name: 'energies',
-    pattern: /energies.xvg/,
-    process: smartProcess(),
+    pattern: /energies.json/,
+    process: processJSON(),
   },
   {
     name: 'pockets',
-    pattern: /pockets.xvg/,
-    process: smartProcess(),
+    pattern: /pockets.json/,
+    process: processJSON(),
   },
 ];
 
@@ -257,11 +156,21 @@ const loadAnalysis = async (
   const { process } =
     acceptedAnalyses.find(({ pattern }) => pattern.test(analysisFile)) || {};
   // Mine the analysis data
-  const value = await process(
-    statFileLinesToDataLines(readFilePerLine(folder + analysisFile)),
-  );
+  const isJSON = /.json$/i.test(analysisFile);
+  let value;
+  // If the input file is a json then read the whole file in a single step
+  if (isJSON) {
+    value = await process(folder + analysisFile);
+  }
+  // Otherwise, it must be and xvg file so read it line per line with a standarized protocol
+  else {
+    value = await process(
+      statFileLinesToDataLines(readFilePerLine(folder + analysisFile)),
+    );
+  }
+
   // If mining was unsuccessful return undefined value
-  if (!value) return { undefined };
+  if (!value) return undefined;
   // When everything was fine
   if (spinnerRef)
     spinnerRef.current.succeed(`Loaded analysis [${analysisFile}]`);
