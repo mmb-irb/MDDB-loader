@@ -58,8 +58,7 @@ const processXVG = (...keys) => async dataAsyncGenerator => {
 // Parse a json file
 const processJSON = () => async path => {
   const fileContent = await readFile(path);
-  const parsedData = JSON.parse(fileContent);
-  const output = { data: parsedData };
+  const output = JSON.parse(fileContent);
   return output;
 };
 
