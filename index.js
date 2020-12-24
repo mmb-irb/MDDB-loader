@@ -5,7 +5,7 @@ const fs = require('fs');
 // Allow reading to the current working directory
 const process = require('process');
 // These 2 lines alone allow all scripts to access the env file through process.env
-const dotenvLoad = require('dotenv').config();
+const dotenvLoad = require('dotenv').config({ path: __dirname + '/.env' });
 if (dotenvLoad.error) throw dotenvLoad.error;
 
 // "yargs" is a library used to manage script calls from unix console
