@@ -328,19 +328,10 @@ const load = async (
             typeof currentValue === 'object' &&
             typeof newValue === 'object'
           ) {
-            // In case we have an array, check if the current and new stringified arrays are different
-            if (Array.isArray(currentValue) && Array.isArray(newValue)) {
-              if (currentValue.join() === newValue.join()) continue;
-            }
-            // In case we have an object, check if the current and new stringified objects are different
-            else if (!Array.isArray(currentValue) && !Array.isArray(newValue)) {
-              if (JSON.stringify(currentValue) === JSON.stringify(newValue))
-                continue;
-            }
-            // This 'else' should never happen. Just in case.
-            else continue;
+            if (JSON.stringify(currentValue) === JSON.stringify(newValue))
+              continue;
           }
-          // When this is a real conflic...
+          // When this is a real conflict...
           // If the 'conserve' option is passed
           if (conserve) continue;
           // Else, if the 'force' option is passed
