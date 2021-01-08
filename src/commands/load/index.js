@@ -45,7 +45,20 @@ const userConfirm = async question => {
 
 // Load data from the specified folder into mongo
 const load = async (
-  { folder, append, conserve, overwrite, force, dryRun = false, gromacsPath }, // These variables belong to the "argv" object
+  {
+    folder,
+    append,
+    conserve,
+    overwrite,
+    force,
+    skipChains,
+    skipMetadata,
+    skipTrajectories,
+    skipFiles,
+    skipAnalyses,
+    dryRun = false,
+    gromacsPath,
+  }, // These variables belong to the "argv" object
   { db, bucket, spinnerRef, projectIdRef }, // These variables are extra stuff from the handler
 ) => {
   // Check that Gromacs is installed in the system
@@ -470,7 +483,11 @@ const load = async (
     // Results are not awaited, but the code keeps running
     // The resulting 'EBIJobs' is used later but it is not uploaded to mongo directly
     // This analysis may be skipped by user if we are appending data to an existing proyect
-    if (pdbFile && (await updateAnticipation('set', { chains: [] }))) {
+    if (
+      !skipChains &&
+      pdbFile &&
+      (await updateAnticipation('set', { chains: [] }))
+    ) {
       EBIJobs = await analyzeProteins(
         folder,
         pdbFile,
@@ -483,7 +500,7 @@ const load = async (
     // Process metadata files
     // The resulting 'metadata' is modified later so it must not be uploaded to mongo yet
     let metadata = {};
-    if (metadataFile) {
+    if (!skipMetadata && metadataFile) {
       // Display the start of this action in the console
       spinnerRef.current = getSpinner().start('Loading metadata');
 
@@ -527,7 +544,7 @@ const load = async (
 
     // Load trajectories into mongo
     for (const filename of trajectoryFiles) {
-      //break; // Use this 'break' to skip loading trajectories
+      if (skipTrajectories) break;
       // Get the expected name for this file according to the 'loadTrajectory' function logic
       const pcaMatch = filename.match(/\.(pca-\d+)\./i);
       let expectedName;
@@ -573,7 +590,7 @@ const load = async (
 
     // Load files into mongo
     for (const [index, filename] of rawFiles.entries()) {
-      //break; // Use this 'break' to skip loading files
+      if (skipFiles) break;
       // Check duplicates
       if (
         !(await updateAnticipation('push', { files: { filename: filename } }))
@@ -607,6 +624,7 @@ const load = async (
 
     // PCA analysis
     if (
+      !skipAnalyses &&
       pcaFiles.length &&
       (await updateAnticipation('push', { analyses: 'pca' }))
     ) {
@@ -623,6 +641,7 @@ const load = async (
 
     // The rest of analyses
     for (const [index, filename] of analysisFiles.entries()) {
+      if (skipAnalyses) break;
       // Check if the load has been aborted before each analysis load
       if (await checkLoadAborted()) return;
       // Get the name of the analysis type

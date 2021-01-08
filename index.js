@@ -100,6 +100,43 @@ yargs
           description: "Doesn't write to database",
           type: 'boolean',
         })
+        // --skip-chains
+        .option('sc', {
+          alias: 'skip-chains',
+          default: false,
+          description:
+            'Skip the InterProScan analysis for protein chain function',
+          type: 'boolean',
+        })
+        // --skip-metadata
+        .option('sm', {
+          alias: 'skip-metadata',
+          default: false,
+          description: 'Skip the metadata load (metadata.json)',
+          type: 'boolean',
+        })
+        // --skip-trajectories
+        .option('st', {
+          alias: 'skip-trajectories',
+          default: false,
+          description:
+            'Skip the load of any trajectory file (xtc) in the binary format (bin)',
+          type: 'boolean',
+        })
+        // --skip-files
+        .option('sf', {
+          alias: 'skip-files',
+          default: false,
+          description: 'Skip the load of any file (pdb, xtc, ...)',
+          type: 'boolean',
+        })
+        // --skip-analyses
+        .option('sa', {
+          alias: 'skip-analyses',
+          default: false,
+          description: 'Skip the load of any analysis (xvg and json)',
+          type: 'boolean',
+        })
         // --append
         .option('a', {
           alias: 'append',
