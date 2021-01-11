@@ -545,20 +545,27 @@ const load = async (
     // Load trajectories into mongo
     for (const filename of trajectoryFiles) {
       if (skipTrajectories) break;
-      // Get the expected name for this file according to the 'loadTrajectory' function logic
+      // Get the name for this file once parsed to binary inside the database
+      let dbFilename;
+      const mainMatch = filename.match(/md.imaged.rot.xtc/i);
       const pcaMatch = filename.match(/\.(pca-\d+)\./i);
-      let expectedName;
-      if (pcaMatch) expectedName = `trajectory.${pcaMatch[1]}.bin`;
-      else expectedName = `trajectory.bin`;
+      // Main trajectory
+      if (mainMatch) dbFilename = `trajectory.bin`;
+      // PCA projections
+      else if (pcaMatch) dbFilename = `trajectory.${pcaMatch[1]}.bin`;
+      // Any other case
+      else dbFilename = filename.replace('.xtc', '.bin');
+      console.log(filename + ' -> ' + dbFilename + '(' + mainMatch + ')');
       // Check duplicates
       const confirm = await updateAnticipation('push', {
-        files: { filename: expectedName },
+        files: { filename: dbFilename },
       });
       if (!confirm) continue;
       // Load the trajectory
       const loadedTrajectory = await loadTrajectory(
         folder,
         filename,
+        dbFilename,
         bucket,
         db.collection('fs.files'),
         projectIdRef.current,

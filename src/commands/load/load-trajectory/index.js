@@ -27,6 +27,7 @@ const TIMEOUT_WARNING = 30000; // 30 seconds
 const loadTrajectory = (
   folder,
   filename,
+  dbFilename,
   bucket,
   files,
   projectID,
@@ -38,7 +39,7 @@ const loadTrajectory = (
 ) => {
   // Display the start of this process in console
   spinnerRef.current = getSpinner().start(
-    `Loading trajectory file '${filename}'`,
+    `Loading trajectory file '${filename}' as '${dbFilename}'`,
   );
   // Track the current frame
   let frameCount = 0;
@@ -46,7 +47,7 @@ const loadTrajectory = (
   // This throttle calls the specified function every "THROTTLE_TIME" seconds (1 second)
   const updateSpinner = throttle(() => {
     // Update the spiner periodically to show the user the time taken for the running process
-    spinnerRef.current.text = `Loading trajectory file [${filename} -> ${
+    spinnerRef.current.text = `Loading trajectory file '${filename}' as '${dbFilename}' [${
       process.env.currentUploadId
     }]\n(frame ${frameCount} in ${prettyMs(
       Date.now() - spinnerRef.current.time,
@@ -83,10 +84,6 @@ const loadTrajectory = (
       '-f', // '-f' stands for the following input to be a file to read
       folder + filename, // Path to file
     ]);
-    // Set the name for the new file stored in mongo
-    let dbFilename = 'trajectory.bin';
-    const pcaMatch = filename.match(/\.(pca-\d+)\./i);
-    if (pcaMatch) dbFilename = `trajectory.${pcaMatch[1]}.bin`;
     // Manage the dryRun option
     const uploadStream = dryRun
       ? // If dryRun is true then interrupt the stream flow
@@ -197,7 +194,7 @@ const loadTrajectory = (
 
     // Display the end of this process as success in console
     spinnerRef.current.succeed(
-      `Loaded trajectory file [${filename} -> ${process.env.currentUploadId}]\n(${frameCount} frames)`,
+      `Loaded trajectory file '${filename}' as '${dbFilename}' [${process.env.currentUploadId}]\n(${frameCount} frames)`,
     );
     // Find the new uploaded document and add a few metadata (frames, atoms and project id)
     // findOneAndUpdate() is a mongo function

@@ -10,7 +10,7 @@ const readdir = promisify(fs.readdir);
 const pdbFilePatternToLoad = /^md.imaged.rot.dry.pdb$/i;
 const metadataFilePatternToLoad = /^metadata.json$/i;
 const rawFilePatternToLoad = /\.(pdb|xtc)$/i;
-const trajectoryFilePatternToLoad = /(^md.imaged.rot|pca-\d+).xtc$/i;
+const trajectoryFilePatternToLoad = /(^md.imaged.rot|pca-\d+|average).xtc$/i;
 // Alternative regexp to test the code with a small trajectory
 //const trajectoryFilePatternToLoad = /md.imaged.rot.100.xtc$/i;
 const pcaFilePatternToLoad = /pca\./i;
