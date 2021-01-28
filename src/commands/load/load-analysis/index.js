@@ -87,6 +87,11 @@ const acceptedAnalyses = [
     process: processXVG('rmsd'),
   },
   {
+    name: 'rmsds',
+    pattern: /rmsds.json/,
+    process: processJSON(),
+  },
+  {
     name: 'rmsd-perres',
     pattern: /rmsd.perres.json/,
     process: processJSON(),
