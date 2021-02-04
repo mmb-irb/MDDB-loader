@@ -92,6 +92,11 @@ const acceptedAnalyses = [
     process: processJSON(),
   },
   {
+    name: 'tmscores',
+    pattern: /tmscores.json/,
+    process: processJSON(),
+  },
+  {
     name: 'rmsd-perres',
     pattern: /rmsd.perres.json/,
     process: processJSON(),
