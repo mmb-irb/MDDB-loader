@@ -555,7 +555,6 @@ const load = async (
       else if (pcaMatch) dbFilename = `trajectory.${pcaMatch[1]}.bin`;
       // Any other case
       else dbFilename = filename.replace('.xtc', '.bin');
-      console.log(filename + ' -> ' + dbFilename + '(' + mainMatch + ')');
       // Check duplicates
       const confirm = await updateAnticipation('push', {
         files: { filename: dbFilename },
