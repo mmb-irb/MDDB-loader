@@ -42,7 +42,7 @@ const loadFile = (
     }
     try {
       // Start the spinner
-      spinnerRef.current = getSpinner().start(`Loading new file`);
+      spinnerRef.current = getSpinner().start(`Loading new file: ${filename}`);
       // Create variables to track the ammoun of data to be passed and already passed
       const totalData = fs.statSync(folder + filename).size;
       let currentData = 0;
