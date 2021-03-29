@@ -126,6 +126,11 @@ const acceptedAnalyses = [
     pattern: /pockets.json/,
     process: processJSON(),
   },
+  {
+    name: 'sasa',
+    pattern: /sasa.json/,
+    process: processJSON(),
+  },
 ];
 
 // This function finds if a given filename matches a recognized type of analysis
