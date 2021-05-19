@@ -15,6 +15,11 @@ const trajectoryFilePatternToLoad = /(^md.imaged.rot|pca-\d+|average).xtc$/i;
 //const trajectoryFilePatternToLoad = /md.imaged.rot.100.xtc$/i;
 const pcaFilePatternToLoad = /pca\./i;
 const analysisFilePatternToLoad = /^md.[\s\S]*.(xvg|json)$/i;
+// Topology files
+const topologyFilePatternToLoad = /^topology.(prmtop|top|psf)$/i;
+const itpFilesPatternToLoad = /\.(itp)$/i;
+// Raw charges files
+const rawChargesFilePatternToLoad = /^charges.txt$/i;
 
 // This function finds all files in the "folder" argument path and classifies them
 // Classification is performed according to the file names
@@ -48,8 +53,22 @@ const categorizeFilesInFolder = async folder => {
       analysisFilePatternToLoad.test(filename) &&
       !pcaFilePatternToLoad.test(filename),
   );
+  // Topology files are those like 'topology.prmtop' or 'topology.top'
+  // There should be one or none
+  const topologyFiles = allFiles.filter(filename =>
+    topologyFilePatternToLoad.test(filename),
+  );
+  // ITP files are thouse ended in '.tip' and they go together with a 'topology.top' file
+  // There may be no itp files as well
+  const itpFiles = allFiles.filter(filename =>
+    itpFilesPatternToLoad.test(filename),
+  );
+  // Look for a file which is called exactly 'metadata'
+  const rawChargesFile = allFiles.find(filename =>
+    rawChargesFilePatternToLoad.test(filename),
+  );
+
   // Finally, return all classified groups and the group which contain all files
-  // PORQUE DEVUELVES allFiles SI LUEGO NO LO USAS?
   return {
     allFiles,
     rawFiles,
@@ -58,6 +77,9 @@ const categorizeFilesInFolder = async folder => {
     trajectoryFiles,
     pcaFiles,
     analysisFiles,
+    topologyFiles,
+    itpFiles,
+    rawChargesFile,
   };
 };
 
