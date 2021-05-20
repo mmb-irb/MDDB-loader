@@ -605,6 +605,7 @@ const load = async (
       rawChargesFile,
     ];
     for (const [index, filename] of loadableFiles.entries()) {
+      if (!filename) continue;
       if (skipFiles) break;
       // Check duplicates
       if (
