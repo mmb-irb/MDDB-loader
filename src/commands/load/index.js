@@ -429,6 +429,9 @@ const load = async (
       trajectoryFiles,
       pcaFiles,
       analysisFiles,
+      topologyFiles,
+      itpFiles,
+      rawChargesFile,
     } = await categorizeFilesInFolder(folder);
 
     let EBIJobs;
@@ -595,7 +598,13 @@ const load = async (
     }
 
     // Load files into mongo
-    for (const [index, filename] of rawFiles.entries()) {
+    const loadableFiles = [
+      ...rawFiles,
+      ...topologyFiles,
+      ...itpFiles,
+      rawChargesFile,
+    ];
+    for (const [index, filename] of loadableFiles.entries()) {
       if (skipFiles) break;
       // Check duplicates
       if (
