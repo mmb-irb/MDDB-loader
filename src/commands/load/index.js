@@ -173,8 +173,12 @@ const load = async (
       // In case it is 'conserve', skip this part
       // This is equal to always choosing the 'C' option
       if (conserve) return false;
+      // Find out the collection where the data to delete is placed
+      // i.e. 'fs.files', 'analyses' or 'chains'
+      let collection = updaterKey;
+      if (collection === 'files') collection = 'fs.files';
       // The 'set' command would overwrite the existing data
-      // This is applied to pdbInfo and metadata
+      // This is applied to chains
       if (command === 'set') {
         // In case it is 'overwrite', we can proceed
         if (overwrite) return true;
@@ -190,18 +194,44 @@ const load = async (
           return false;
         } else {
           console.log(chalk.yellow('Current data will be overwritten'));
-          // The '$set' command in mongo would override the previous value
-          // However, in case of chains, we do not perform a real '$set'
-          // Thus, we must delete the previous value here, which will not affect other cases
+          spinnerRef.current = getSpinner().start(
+            '   Overwritting current data',
+          );
+          // The '$set' command in mongo will override the previous value
           await new Promise(resolve => {
             db.collection('projects').findOneAndUpdate(
               { _id: projectIdRef.current },
-              { $unset: updater },
+              { $set: updater },
+              err => {
+                if (err)
+                  spinnerRef.current.fail(
+                    '   Error while setting new data:' + err,
+                  );
+                resolve();
+              },
+            );
+          });
+          // Delete documents related to the overwritten field
+          await new Promise(resolve => {
+            // NEVER FORGET: Although all collections are supported this is only used for chains
+            db.collection(collection).deleteMany(
+              {
+                $or: [
+                  // 'analyses' and 'chains'
+                  { project: projectIdRef.current },
+                  // 'fs.files'
+                  {
+                    metadata: { project: projectIdRef.current },
+                  },
+                ],
+              },
+              // Callback function
               err => {
                 if (err)
                   spinnerRef.current.fail(
                     '   Error while deleting current data:' + err,
                   );
+                else spinnerRef.current.succeed('   Deleted current data');
                 resolve();
               },
             );
@@ -210,7 +240,7 @@ const load = async (
         }
       }
       // The 'push' command would NOT override the existing data and just add new data
-      // This is applied to trajectories, files, analyses and chains
+      // This is applied to files and analyses
       else if (command === 'push') {
         // Ask the user
         // In case it is 'overwrite', proceed to delete previous data and load the new one
@@ -246,9 +276,8 @@ const load = async (
             );
           });
           // Delete the current document
-          let collection = updaterKey;
-          if (collection === 'files') collection = 'fs.files';
           await new Promise(resolve => {
+            // NEVER FORGET: Although all collections are supported this is only used for files and analyses
             db.collection(collection).deleteMany(
               {
                 $or: [
