@@ -180,14 +180,14 @@ const load = async (
       // The 'set' command would overwrite the existing data
       // This is applied to chains
       if (command === 'set') {
-        // In case it is 'overwrite', we can proceed
-        if (overwrite) return true;
         // Ask the user
-        const confirm = await userConfirm(
-          `'${name}' already exists in the project. Confirm data loading:
+        const confirm = overwrite
+          ? '*'
+          : await userConfirm(
+              `'${name}' already exists in the project. Confirm data loading:
         C - Conserve current data and discard new data
         * - Overwrite current data with new data `,
-        );
+            );
         // Abort the process
         if (confirm === 'C') {
           console.log(chalk.yellow('New data will be discarded'));
