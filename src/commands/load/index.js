@@ -540,29 +540,31 @@ const load = async (
       metadata = (await loadMetadata(metadataFile, folder, spinnerRef)) || {};
 
       // Now set the pdbInfo section in the metadata
-      // Get the PDB id from the metadata (e.g. 3oe0)
 
-      // Get the pdb code for this protein (e.g. 3oe0)
-      const pdbID = metadata.PDBID;
-      if (pdbID) {
-        // Display the start of this action in the console
-        spinnerRef.current.text = `Downloading PDB Info for ${pdbID} from API`;
-        // Extract data from the PDB section of the MMB web page
-        const pdbInfo = await fetch(
-          `http://mmb.pcb.ub.es/api/pdb/${pdbID}/entry`,
-        )
-          // Retrieve data in json format
-          .then(response => response.json())
-          // Display the succeed of this action in the console and return data
-          .then(data => {
-            return data;
-          })
-          // In case of error, display the failure of this action in the console
-          .catch(error => {
-            spinnerRef.current.fail(error);
-          });
-        // Add the pdbInfo to the metadata object
-        metadata.pdbInfo = pdbInfo;
+      // Get the pdb codes for this protein (e.g. [3oe0, 3oe1])
+      const pdbIDs = metadata.PDBIDS;
+      if (pdbIDs) {
+        metadata.pdbInfo = [];
+        pdbIDs.forEach(async pdbID => {
+          // Display the start of this action in the console
+          spinnerRef.current.text = `Downloading PDB Info for ${pdbID} from API`;
+          // Extract data from the PDB section of the MMB web page
+          const pdbInfo = await fetch(
+            `http://mmb.pcb.ub.es/api/pdb/${pdbID}/entry`,
+          )
+            // Retrieve data in json format
+            .then(response => response.json())
+            // Display the succeed of this action in the console and return data
+            .then(data => {
+              return data;
+            })
+            // In case of error, display the failure of this action in the console
+            .catch(error => {
+              spinnerRef.current.fail(error);
+            });
+          // Add the pdbInfo for the current pdb id to the metadata pdbInfo array
+          metadata.pdbInfo.push(pdbInfo);
+        });
       }
       // Check duplicates and load the metadata into mongo
       await updateMetadata(metadata);
