@@ -545,7 +545,7 @@ const load = async (
       const pdbIDs = metadata.PDBIDS;
       if (pdbIDs) {
         metadata.pdbInfo = [];
-        pdbIDs.forEach(async pdbID => {
+        for (const pdbID of pdbIDs) {
           // Display the start of this action in the console
           spinnerRef.current.text = `Downloading PDB Info for ${pdbID} from API`;
           // Extract data from the PDB section of the MMB web page
@@ -564,7 +564,7 @@ const load = async (
             });
           // Add the pdbInfo for the current pdb id to the metadata pdbInfo array
           metadata.pdbInfo.push(pdbInfo);
-        });
+        }
       }
       // Check duplicates and load the metadata into mongo
       await updateMetadata(metadata);
