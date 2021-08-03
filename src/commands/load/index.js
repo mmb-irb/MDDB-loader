@@ -566,11 +566,10 @@ const load = async (
           metadata.pdbInfo.push(pdbInfo);
         }
       }
-      // Check duplicates and load the metadata into mongo
-      await updateMetadata(metadata);
-
       // Display the end of this action as a success in the console
       spinnerRef.current.succeed('Loaded metadata');
+      // Check duplicates and load the metadata into mongo
+      await updateMetadata(metadata);
     }
 
     // Check if the load has been aborted at this point
