@@ -228,6 +228,14 @@ yargs
           description: 'Delete all orphan documents and files',
           type: 'boolean',
         })
+        // --force
+        .option('f', {
+          alias: 'force',
+          default: false,
+          description:
+            'Force the data cleanup, so the user is never asked for confirmation',
+          type: 'boolean',
+        })
         // id
         .positional('id', {
           describe: 'ID to clean up',

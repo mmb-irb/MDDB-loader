@@ -150,7 +150,7 @@ const userConfirm = async ask => {
 
 // This function finds data by project or file ids or by orphanhood and removes it from mongo
 const cleanup = async (
-  { id, deleteAllOrphans },
+  { id, deleteAllOrphans, force },
   { db, bucket, spinnerRef },
 ) => {
   let target;
@@ -268,9 +268,11 @@ const cleanup = async (
   else if (type && type === 'file') {
     const relatedProject = target.metadata.project;
     // Ask user before delete
-    const confirmation = await userConfirm(
-      `Confirm deletion of file '${target.filename}' and its index in project ${relatedProject} [y/*]`,
-    );
+    const confirmation =
+      force ||
+      (await userConfirm(
+        `Confirm deletion of file '${target.filename}' and its index in project ${relatedProject} [y/*]`,
+      ));
     if (!confirmation) return console.log('Cancelled operation');
     spinnerRef.current = getSpinner().start('Deleting found data');
     // Delete the document in fs.files and all its related chunks in fs.chunks
@@ -295,9 +297,11 @@ const cleanup = async (
     const relatedProject = target.project;
     const collection = type === 'analysis' ? 'analyses' : 'chains';
     // Ask user before delete
-    const confirmation = await userConfirm(
-      `Confirm deletion of ${type} '${target.name}' and its index in project ${relatedProject} [y/*]`,
-    );
+    const confirmation =
+      force ||
+      (await userConfirm(
+        `Confirm deletion of ${type} '${target.name}' and its index in project ${relatedProject} [y/*]`,
+      ));
     if (!confirmation) return console.log('Cancelled operation');
     spinnerRef.current = getSpinner().start('Deleting found data');
     // Delete the document in fs.files and all its related chunks in fs.chunks
@@ -318,7 +322,8 @@ const cleanup = async (
     return;
   } else if (type && type === 'chunk') {
     // Ask user before delete
-    const confirmation = await userConfirm(`Confirm chunk deletion [y/*]`);
+    const confirmation =
+      force || (await userConfirm(`Confirm chunk deletion [y/*]`));
     if (!confirmation) return console.log('Cancelled operation');
     spinnerRef.current = getSpinner().start('Deleting found data');
     // Delete the document in fs.files and all its related chunks in fs.chunks
@@ -464,15 +469,19 @@ const cleanup = async (
   }
 
   // Ask user to confirm
-  const confirmation1 = await userConfirm(
-    'Confirm deletion of this data from the database [y/N]',
-  );
+  const confirmation1 =
+    force ||
+    (await userConfirm(
+      'Confirm deletion of this data from the database [y/N]',
+    ));
   if (!confirmation1) return console.log('Cancelled operation');
   if (deleteAllOrphans) {
     // user confirmation... again... because it might remove a lot of stuff
-    const confirmation2 = await userConfirm(
-      'There is no going back from that. Are you reaaaaaally sure? 🤔 [y/N]',
-    );
+    const confirmation2 =
+      force ||
+      (await userConfirm(
+        'There is no going back from that. Are you reaaaaaally sure? 🤔 [y/N]',
+      ));
     if (!confirmation2) return console.log('Cancelled operation');
   }
 
