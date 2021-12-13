@@ -21,6 +21,13 @@ const loadPCA = async (folder, pcaFiles, spinnerRef) => {
   const eigenvaluesFile = pcaFiles.find(filename =>
     filename.includes('eigenval'),
   );
+  // If there is no eigenvalues file then there is no PCA to be loaded
+  if (!eigenvaluesFile) {
+    spinnerRef.current.fail(
+      `Not loaded PCA analysis: missing eigenvalues file`,
+    );
+    return {};
+  }
   // Read the 'eigen' file and mine its data in lines of arrays
   // The 'false' argument stands for ignore commented lines
   // These arrays are meant to have 2 values: the index and the value
