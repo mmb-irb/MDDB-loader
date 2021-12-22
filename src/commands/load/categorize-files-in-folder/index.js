@@ -16,7 +16,7 @@ const trajectoryFilePatternToLoad = /(^md.imaged.rot|pca-\d+|average).xtc$/i;
 const pcaFilePatternToLoad = /pca\./i;
 const analysisFilePatternToLoad = /^md.[\s\S]*.(xvg|json)$/i;
 // Topology files
-const topologyFilePatternToLoad = /^topology.(prmtop|top|psf)$/i;
+const topologyFilePatternToLoad = /^topology.(prmtop|top|psf|tpr)$/i;
 const itpFilesPatternToLoad = /\.(itp)$/i;
 // Raw charges files
 const rawChargesFilePatternToLoad = /^charges.txt$/i;
