@@ -50,7 +50,6 @@ const load = async (
     append,
     conserve,
     overwrite,
-    force,
     skipChains,
     skipMetadata,
     skipTrajectories,
@@ -131,9 +130,6 @@ const load = async (
     // The loading process will be runned but later in the code nothing is loaded in mongo
     // Thus, there is no need to check if there are duplicates
     if (dryRun) return true;
-    // In case it is force, skip this part
-    // This is equal to always choosing the '*' option
-    if (force) return true;
     // Get the name of the first (and only) key in the updater
     const updaterKey = Object.keys(updater)[0];
     // Set the name to refer this data when asking the user
@@ -249,8 +245,7 @@ const load = async (
           : await userConfirm(
               `'${name}' already exists in the project. Confirm data loading:
         C - Conserve current data and discard new data
-        D - Delete current data (all duplicates) and load new data
-        * - Conserve both current and new data`,
+        * - Overwrite current data (delete all duplicates) with new data`,
             );
         // Abort the process
         if (confirm === 'C') {
@@ -258,7 +253,7 @@ const load = async (
           return false;
         }
         // Continue the process but first delete current data
-        else if (confirm === 'D') {
+        else {
           console.log(chalk.yellow('Current data will be deleted'));
           spinnerRef.current = getSpinner().start('   Deleting current data');
           // Delete the 'projects' associated data
@@ -303,10 +298,6 @@ const load = async (
           });
           // Continue the loading process
           return true;
-        } else {
-          console.log(
-            chalk.yellow('Both current and new data will be conserved'),
-          );
         }
       }
     }
@@ -376,8 +367,8 @@ const load = async (
           // When this is a real conflict...
           // If the 'conserve' option is passed
           if (conserve) continue;
-          // Else, if the 'force' option is passed
-          else if (overwrite || force) metadata[key] = newValue;
+          // Else, if the 'overwrite' option is passed
+          else if (overwrite) metadata[key] = newValue;
           // Else, ask the user
           else {
             const confirm = await userConfirm(

@@ -161,15 +161,6 @@ yargs
             'Priorize the data append so the user is never asked and current data is overwritten when there is any conflict',
           type: 'boolean',
         })
-        // --force
-        .option('f', {
-          alias: 'force',
-          default: false,
-          description:
-            'Force the data append. Mongo is never asked so we do not know if there is any conflict\n' +
-            'WARNING: Data may be overwritten or duplicated',
-          type: 'boolean',
-        })
         // folders
         .positional('folder', {
           describe: 'Folder containing a project to load',
