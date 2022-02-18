@@ -382,8 +382,8 @@ const load = async (
           else {
             const confirm = await userConfirm(
               `Metadata '${key}' field already exists and its value does not match new metadata.
-              Current value: ${currentValue}
-              New value: ${newValue}
+              Current value: ${JSON.stringify(currentValue, null, 4)}
+              New value: ${JSON.stringify(newValue, null, 4)}
               Confirm data loading:
               C - Conserve current value and discard new value
               * - Overwrite current value with the new value`,
