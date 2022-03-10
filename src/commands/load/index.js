@@ -22,6 +22,7 @@ const { sleep } = require('timing-functions');
 // Local scripts listed in order of execution
 const categorizeFilesInFolder = require('./categorize-files-in-folder');
 const analyzeProteins = require('./protein-analyses');
+const loadTopology = require('./load-topology');
 const loadTrajectory = require('./load-trajectory');
 const loadMetadata = require('./load-metadata');
 const loadFile = require('./load-file');
@@ -435,6 +436,89 @@ const load = async (
     });
   };
 
+  // Check if there is a previous document already saved
+  // If so, check if we must delete it or conserve it
+  const anticipateTopologiesUpdate = async updater => {
+    const collection = 'topologies';
+    // Check if the path to the updater already exists in the database
+    const exist = await db
+      .collection(collection)
+      .findOne({ project: projectIdRef.current });
+    // In case it does not exist
+    if (!exist) return true;
+    // In case it exists and the 'conserve' flag has been passed we end here
+    // This is equal to always choosing the 'C' option, so we return false
+    if (conserve) return false;
+    // Check if both documents are identical
+    // In this case we stop here since it makes not sense uploading the same
+    if (JSON.stringify(exist) === JSON.stringify(updater)) return false;
+    // const equalAtoms = JSON.stringify(exist.atoms) === JSON.stringify(updater.atoms);
+    // const equalResidues = JSON.stringify(exist.residues) === JSON.stringify(updater.residues);
+    // const equalChains = JSON.stringify(exist.chains) === JSON.stringify(updater.chains);
+    // if (equalAtoms && equalResidues && equalChains) return false;
+    // Ask the user in case the 'overwrite' flag has not been passed
+    const confirm = overwrite
+      ? '*'
+      : await userConfirm(
+          `This project has a topology already and it is different. Confirm data loading:
+          C - Conserve current data and discard new data
+          * - Overwrite current data with new data `,
+        );
+    // If the user has asked to converve current data then abort the process
+    if (confirm === 'C') {
+      console.log(chalk.yellow('New data will be discarded'));
+      return false;
+    } else {
+      console.log(chalk.yellow('Current data will be overwritten'));
+      spinnerRef.current = getSpinner().start('   Overwritting current data');
+      // We must delete the current document in mongo
+      await new Promise(resolve => {
+        db.collection(collection).deleteOne(
+          { project: projectIdRef.current },
+          {},
+          err => {
+            if (err)
+              spinnerRef.current.fail('   Error while deleting data:' + err);
+            else spinnerRef.current.succeed('   Deleted current data');
+            resolve();
+          },
+        );
+      });
+      return true;
+    }
+  };
+
+  // Set handler to update the topologies collection, which is not coordinated with 'projects'
+  // Check if there is already a loaded value different from the the new value to warn the user
+  // The 'updater' argument stands for the object data to be uploaded to mongo
+  const updateTopologies = async updater => {
+    const collection = 'topologies';
+    // Anticipate the load
+    const userConsent = await anticipateTopologiesUpdate(updater);
+    if (!userConsent) return;
+    // Stop here in case of dryRun
+    if (dryRun) return;
+    // Mongo upload must be done in 'await Promise' format. Otherwise, it is prone to fail
+    return new Promise((resolve, reject) => {
+      db.collection(collection).insertOne(
+        updater,
+        // Callback function
+        (error, result) => {
+          // In case the load fails
+          if (error) {
+            console.error(error);
+            reject();
+          }
+          // In case the load is successfull
+          else {
+            if (append) appended.push(result.insertedId);
+            resolve();
+          }
+        },
+      );
+    });
+  };
+
   // Save the current time
   const startTime = Date.now();
   console.log(chalk.cyan(`== starting load of '${folder}'`));
@@ -561,6 +645,23 @@ const load = async (
       spinnerRef.current.succeed('Loaded metadata');
       // Check duplicates and load the metadata into mongo
       await updateMetadata(metadata);
+    }
+
+    // Check if the load has been aborted at this point
+    if (await checkLoadAborted()) return;
+
+    // Load the basic topology using the pdb file
+    if (!skipFiles && pdbFile) {
+      // Display the start of this action in the console
+      spinnerRef.current = getSpinner().start('Loading topology');
+      // Load topology
+      const topology = await loadTopology(folder + '/' + pdbFile);
+      // Add the current project id to the topology object
+      topology.project = projectIdRef.current;
+      // Display the end of this action as a success in the console
+      spinnerRef.current.succeed('Loaded topology');
+      // Load it to mongo
+      await updateTopologies(topology);
     }
 
     // Check if the load has been aborted at this point
