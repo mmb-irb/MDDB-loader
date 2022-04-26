@@ -20,6 +20,8 @@ const topologyFilePatternToLoad = /^topology.(prmtop|top|psf|tpr)$/i;
 const itpFilesPatternToLoad = /\.(itp)$/i;
 // Raw charges files
 const rawChargesFilePatternToLoad = /^charges.txt$/i;
+// The topology data file
+const topologyDataFilePatternToLoad = /^topology.json$/i;
 
 // This function finds all files in the "folder" argument path and classifies them
 // Classification is performed according to the file names
@@ -63,9 +65,13 @@ const categorizeFilesInFolder = async folder => {
   const itpFiles = allFiles.filter(filename =>
     itpFilesPatternToLoad.test(filename),
   );
-  // Look for a file which is called exactly 'metadata'
+  // DANI: This is obsolete since now charges are passed through the topology.json file
   const rawChargesFile = allFiles.find(filename =>
     rawChargesFilePatternToLoad.test(filename),
+  );
+  // Look for a file which is called exactly 'metadata'
+  const topologyDataFile = allFiles.find(filename =>
+    topologyDataFilePatternToLoad.test(filename),
   );
 
   // Finally, return all classified groups and the group which contain all files
@@ -80,6 +86,7 @@ const categorizeFilesInFolder = async folder => {
     topologyFiles,
     itpFiles,
     rawChargesFile,
+    topologyDataFile,
   };
 };
 

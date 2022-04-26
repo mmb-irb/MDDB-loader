@@ -18,11 +18,17 @@ const plural = require('../../utils/plural');
 const printHighlight = require('../../utils/print-highlight');
 // A function for just wait
 const { sleep } = require('timing-functions');
+// Allows to call a function in a version that returns promises
+const { promisify } = require('util');
+// Files system from node
+const fs = require('fs');
+// readFile allows to get data from a local file
+// In this case data is retuned as a promise
+const readFile = promisify(fs.readFile);
 
 // Local scripts listed in order of execution
 const categorizeFilesInFolder = require('./categorize-files-in-folder');
 const analyzeProteins = require('./protein-analyses');
-const loadTopology = require('./load-topology');
 const loadTrajectory = require('./load-trajectory');
 const loadMetadata = require('./load-metadata');
 const loadFile = require('./load-file');
@@ -536,6 +542,7 @@ const load = async (
       topologyFiles,
       itpFiles,
       rawChargesFile,
+      topologyDataFile,
     } = await categorizeFilesInFolder(folder);
 
     let EBIJobs;
@@ -651,11 +658,12 @@ const load = async (
     if (await checkLoadAborted()) return;
 
     // Load the basic topology using the pdb file
-    if (!skipFiles && pdbFile) {
+    if (topologyDataFile) {
       // Display the start of this action in the console
       spinnerRef.current = getSpinner().start('Loading topology');
       // Load topology
-      const topology = await loadTopology(folder + '/' + pdbFile);
+      const fileContent = await readFile(folder + '/' + topologyDataFile);
+      const topology = JSON.parse(fileContent);
       // Add the current project id to the topology object
       topology.project = projectIdRef.current;
       // Display the end of this action as a success in the console

@@ -2,6 +2,7 @@ const fs = require('fs');
 const readline = require('readline');
 
 // Read a pdb file and return database standard formated topology
+// DEPRECATED: This is now done by the workflow
 const loadTopology = async path => {
   // If there is no path then stop here
   if (!path) return;

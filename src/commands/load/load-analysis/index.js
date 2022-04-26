@@ -131,6 +131,11 @@ const acceptedAnalyses = [
     pattern: /sasa.json/,
     process: processJSON(),
   },
+  {
+    name: 'interactions',
+    pattern: /interactions.json/,
+    process: processJSON(),
+  },
 ];
 
 // This function finds if a given filename matches a recognized type of analysis
