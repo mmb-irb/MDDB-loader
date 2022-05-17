@@ -136,6 +136,11 @@ const acceptedAnalyses = [
     pattern: /interactions.json/,
     process: processJSON(),
   },
+  {
+    name: 'pca',
+    pattern: /pca.json/,
+    process: processJSON(),
+  },
 ];
 
 // This function finds if a given filename matches a recognized type of analysis

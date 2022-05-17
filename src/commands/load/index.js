@@ -32,7 +32,6 @@ const analyzeProteins = require('./protein-analyses');
 const loadTrajectory = require('./load-trajectory');
 const loadMetadata = require('./load-metadata');
 const loadFile = require('./load-file');
-const loadPCA = require('./load-pca');
 const { loadAnalysis, nameAnalysis } = require('./load-analysis');
 
 // In case of load abort we need to clean up
@@ -536,8 +535,8 @@ const load = async (
       rawFiles,
       pdbFile,
       metadataFile,
-      trajectoryFiles,
-      pcaFiles,
+      mainTrajectory,
+      pcaTrajectories,
       analysisFiles,
       topologyFiles,
       itpFiles,
@@ -676,54 +675,49 @@ const load = async (
     if (await checkLoadAborted()) return;
 
     // Load trajectories into mongo
-    for (const filename of trajectoryFiles) {
-      if (skipTrajectories) break;
-      // Get the name for this file once parsed to binary inside the database
-      let dbFilename;
-      const mainMatch = filename.match(/md.imaged.rot.xtc/i);
-      const pcaMatch = filename.match(/\.(pca-\d+)\./i);
-      // Main trajectory
-      if (mainMatch) dbFilename = `trajectory.bin`;
-      // PCA projections
-      else if (pcaMatch) dbFilename = `trajectory.${pcaMatch[1]}.bin`;
-      // Any other case
-      else dbFilename = filename.replace('.xtc', '.bin');
-      // Check duplicates
-      const confirm = await updateAnticipation('push', {
-        files: { filename: dbFilename },
+    if (!skipTrajectories) {
+      const dbFilenames = {};
+      if (mainTrajectory) {
+        dbFilenames[mainTrajectory] = `trajectory.bin`;
+      }
+      pcaTrajectories.forEach(filename => {
+        dbFilenames[filename] = filename.replace('.xtc', '.bin');
       });
-      if (!confirm) continue;
-      // Load the trajectory
-      const loadedTrajectory = await loadTrajectory(
-        folder,
-        filename,
-        dbFilename,
-        bucket,
-        db.collection('fs.files'),
-        projectIdRef.current,
-        gromacsPath,
-        dryRun,
-        appended,
-        spinnerRef,
-        checkLoadAborted,
-      );
-      // If there are no results, we continue to the next iteration
-      if (!loadedTrajectory) continue;
-      // If process was aborted
-      else if (loadedTrajectory === 'abort') return;
-      // If there are results, update the project in mongodb
-      await updateProject('push', { files: loadedTrajectory });
-      // Modify the metadata with data from the trajectory (no pca)
-      if (
-        !loadedTrajectory.filename.includes('pca') &&
-        loadedTrajectory.metadata
-      ) {
-        metadata.frameCount = loadedTrajectory.metadata.frames;
-        metadata.atomCount = loadedTrajectory.metadata.atoms;
-        await updateProject('set', {
-          'metadata.frameCount': metadata.frameCount,
-          'metadata.atomCount': metadata.atomCount,
+      for (const [filename, dbFilename] of Object.entries(dbFilenames)) {
+        // Check duplicates
+        const confirm = await updateAnticipation('push', {
+          files: { filename: dbFilename },
         });
+        if (!confirm) continue;
+        // Load the trajectory
+        const loadedTrajectory = await loadTrajectory(
+          folder,
+          filename,
+          dbFilename,
+          bucket,
+          db.collection('fs.files'),
+          projectIdRef.current,
+          gromacsPath,
+          dryRun,
+          appended,
+          spinnerRef,
+          checkLoadAborted,
+        );
+        // If there are no results, we continue to the next iteration
+        if (!loadedTrajectory) continue;
+        // If process was aborted
+        else if (loadedTrajectory === 'abort') return;
+        // If there are results, update the project in mongodb
+        await updateProject('push', { files: loadedTrajectory });
+        // Modify the metadata with data from the main trajectory (no pca)
+        if (filename === mainTrajectory && metadata) {
+          metadata.frameCount = loadedTrajectory.metadata.frames;
+          metadata.atomCount = loadedTrajectory.metadata.atoms;
+          await updateProject('set', {
+            'metadata.frameCount': metadata.frameCount,
+            'metadata.atomCount': metadata.atomCount,
+          });
+        }
       }
     }
 
@@ -767,23 +761,6 @@ const load = async (
 
     // Check if the load has been aborted at this point
     if (await checkLoadAborted()) return;
-
-    // PCA analysis
-    if (
-      !skipAnalyses &&
-      pcaFiles.length &&
-      (await updateAnticipation('push', { analyses: 'pca' }))
-    ) {
-      const { name, value } = await loadPCA(folder, pcaFiles, spinnerRef);
-      if (value) {
-        // Update the project with the new PCA analysis
-        await updateCollection('analyses', {
-          name,
-          value,
-          project: projectIdRef.current,
-        });
-      }
-    }
 
     // The rest of analyses
     for (const [index, filename] of analysisFiles.entries()) {

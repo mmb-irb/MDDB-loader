@@ -10,10 +10,11 @@ const readdir = promisify(fs.readdir);
 const pdbFilePatternToLoad = /^md.imaged.rot.dry.pdb$/i;
 const metadataFilePatternToLoad = /^metadata.json$/i;
 const rawFilePatternToLoad = /\.(pdb|xtc)$/i;
-const trajectoryFilePatternToLoad = /(^md.imaged.rot|pca-\d+|average).xtc$/i;
-// Alternative regexp to test the code with a small trajectory
-//const trajectoryFilePatternToLoad = /md.imaged.rot.100.xtc$/i;
-const pcaFilePatternToLoad = /pca\./i;
+// The main trajectory
+const mainTrajectoryFilePatternToLoad = /^md.imaged.rot.xtc$/i;
+// PCA projected trajectories
+const pcaTrajectoryFilePatternToLoad = /pca.trajectory_\d+.xtc$/i;
+// Analyses
 const analysisFilePatternToLoad = /^md.[\s\S]*.(xvg|json)$/i;
 // Topology files
 const topologyFilePatternToLoad = /^topology.(prmtop|top|psf|tpr)$/i;
@@ -42,18 +43,16 @@ const categorizeFilesInFolder = async folder => {
     metadataFilePatternToLoad.test(filename),
   );
   // Trajectory files are those which end in ".xtc". Some other restrictions are taken
-  const trajectoryFiles = allFiles.filter(filename =>
-    trajectoryFilePatternToLoad.test(filename),
+  const mainTrajectory = allFiles.find(filename =>
+    mainTrajectoryFilePatternToLoad.test(filename),
   );
-  // PCA files are those which contain "pca" in their names
-  const pcaFiles = allFiles.filter(filename =>
-    pcaFilePatternToLoad.test(filename),
+  // Trajectory files are those which end in ".xtc". Some other restrictions are taken
+  const pcaTrajectories = allFiles.filter(filename =>
+    pcaTrajectoryFilePatternToLoad.test(filename),
   );
   // Analysis files are those which end in ".xvg" and do not belong to the PCA files
-  const analysisFiles = allFiles.filter(
-    filename =>
-      analysisFilePatternToLoad.test(filename) &&
-      !pcaFilePatternToLoad.test(filename),
+  const analysisFiles = allFiles.filter(filename =>
+    analysisFilePatternToLoad.test(filename),
   );
   // Topology files are those like 'topology.prmtop' or 'topology.top'
   // There should be one or none
@@ -80,8 +79,8 @@ const categorizeFilesInFolder = async folder => {
     rawFiles,
     pdbFile,
     metadataFile,
-    trajectoryFiles,
-    pcaFiles,
+    mainTrajectory,
+    pcaTrajectories,
     analysisFiles,
     topologyFiles,
     itpFiles,
