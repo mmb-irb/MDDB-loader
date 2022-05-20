@@ -6,7 +6,7 @@ const COMMENT_LINE = /^[#@&]/;
 // If the emitCommentSymbol is passed as true, return a comment 'Symbol' class
 const statFileLinesToDataLines = async function*(lines) {
   // 'lines' are expected to come from a readFilePerLine()
-  for await (const line of lines || []) {
+  for await (const line of (await lines) || []) {
     // Remove surrounding white spaces
     let processedLine = line.trim();
     if (!processedLine) continue;
