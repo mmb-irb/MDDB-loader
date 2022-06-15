@@ -1,5 +1,3 @@
-// This library allows to extract data from a web page
-const fetch = require('node-fetch');
 // Visual tool which allows to add colors in console
 const chalk = require('chalk');
 // Allows asking user for confirmation
@@ -619,33 +617,6 @@ const load = async (
       // Harvest metadata
       metadata = (await loadMetadata(metadataFile, folder, spinnerRef)) || {};
 
-      // Now set the pdbInfo section in the metadata
-
-      // Get the pdb codes for this protein (e.g. [3oe0, 3oe1])
-      const pdbIDs = metadata.PDBIDS;
-      if (pdbIDs) {
-        metadata.pdbInfo = [];
-        for (const pdbID of pdbIDs) {
-          // Display the start of this action in the console
-          spinnerRef.current.text = `Downloading PDB Info for ${pdbID} from API`;
-          // Extract data from the PDB section of the MMB web page
-          const pdbInfo = await fetch(
-            `http://mmb.pcb.ub.es/api/pdb/${pdbID}/entry`,
-          )
-            // Retrieve data in json format
-            .then(response => response.json())
-            // Display the succeed of this action in the console and return data
-            .then(data => {
-              return data;
-            })
-            // In case of error, display the failure of this action in the console
-            .catch(error => {
-              spinnerRef.current.fail(error);
-            });
-          // Add the pdbInfo for the current pdb id to the metadata pdbInfo array
-          metadata.pdbInfo.push(pdbInfo);
-        }
-      }
       // Display the end of this action as a success in the console
       spinnerRef.current.succeed('Loaded metadata');
       // Check duplicates and load the metadata into mongo
