@@ -540,7 +540,6 @@ const load = async (
       analysisFiles,
       topologyFiles,
       itpFiles,
-      rawChargesFile,
       topologyDataFile,
     } = await categorizeFilesInFolder(folder);
 
@@ -722,12 +721,7 @@ const load = async (
     }
 
     // Load files into mongo
-    const loadableFiles = [
-      ...rawFiles,
-      ...topologyFiles,
-      ...itpFiles,
-      rawChargesFile,
-    ];
+    const loadableFiles = [...rawFiles, ...topologyFiles, ...itpFiles];
     for (const [index, filename] of loadableFiles.entries()) {
       if (!filename) continue;
       if (skipFiles) break;

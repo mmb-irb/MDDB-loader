@@ -19,8 +19,6 @@ const analysisFilePatternToLoad = /^md.[\s\S]*.(xvg|json)$/i;
 // Topology files
 const topologyFilePatternToLoad = /^topology.(prmtop|top|psf|tpr)$/i;
 const itpFilesPatternToLoad = /\.(itp)$/i;
-// Raw charges files
-const rawChargesFilePatternToLoad = /^charges.txt$/i;
 // The topology data file
 const topologyDataFilePatternToLoad = /^topology.json$/i;
 
@@ -64,10 +62,6 @@ const categorizeFilesInFolder = async folder => {
   const itpFiles = allFiles.filter(filename =>
     itpFilesPatternToLoad.test(filename),
   );
-  // DANI: This is obsolete since now charges are passed through the topology.json file
-  const rawChargesFile = allFiles.find(filename =>
-    rawChargesFilePatternToLoad.test(filename),
-  );
   // Look for a file which is called exactly 'metadata'
   const topologyDataFile = allFiles.find(filename =>
     topologyDataFilePatternToLoad.test(filename),
@@ -84,7 +78,6 @@ const categorizeFilesInFolder = async folder => {
     analysisFiles,
     topologyFiles,
     itpFiles,
-    rawChargesFile,
     topologyDataFile,
   };
 };
