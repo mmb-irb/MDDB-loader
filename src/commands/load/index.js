@@ -572,10 +572,12 @@ const load = async (
     else {
       // Create a new document in mongo
       // 'insertedId' is a standarized name inside the returned object. Do not change it.
-      const newProject = await db.collection('projects').insertOne({
-        accession: null,
-        published: false,
-      });
+      const newProject = dryRun
+        ? { insertedId: 'This is a fake mongo id' }
+        : await db.collection('projects').insertOne({
+            accession: null,
+            published: false,
+          });
       // Save it to the projectIdRef so the command index.js can access the document
       projectIdRef.current = newProject.insertedId;
       // Display the project id. It may be useful if the load is abruptly interrupted to clean
