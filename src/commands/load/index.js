@@ -605,6 +605,7 @@ const load = async (
         pdbFile,
         spinnerRef,
         checkLoadAborted,
+        db,
       );
       if (EBIJobs === 'abort') return;
     }
