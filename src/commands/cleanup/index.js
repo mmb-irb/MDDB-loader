@@ -189,6 +189,11 @@ const cleanup = async (
         type = 'chain';
         return resolve();
       }
+      target = await db.collection('topologies').findOne(id);
+      if (target) {
+        type = 'topology';
+        return resolve();
+      }
       console.error(chalk.yellow(`Nothing found for ID '${id}'`));
       return resolve();
     });
@@ -262,6 +267,14 @@ const cleanup = async (
       db,
       spinnerRef,
     );
+    toBeDeleted.topologies = await findDocumentsToDelete(
+      id,
+      'topologies',
+      'project',
+      'projects',
+      db,
+      spinnerRef,
+    );
     toBeDeleted.projects = [id];
   }
   // Delete a specific file
@@ -292,7 +305,7 @@ const cleanup = async (
     spinnerRef.current.succeed('Deleted found data');
     return;
   }
-  // Delete a specific chain or document
+  // Delete a specific chain or analysis document
   else if (type && (type === 'analysis' || type === 'chain')) {
     const relatedProject = target.project;
     const collection = type === 'analysis' ? 'analyses' : 'chains';
@@ -318,6 +331,22 @@ const cleanup = async (
         },
       );
     });
+    spinnerRef.current.succeed('Deleted found data');
+    return;
+  }
+  // Delete a specific chain or analysis document
+  else if (type && type === 'topology') {
+    const relatedProject = target.project;
+    // Ask user before delete
+    const confirmation =
+      force ||
+      (await userConfirm(
+        `Confirm deletion of topology from project ${relatedProject} [y/*]`,
+      ));
+    if (!confirmation) return console.log('Cancelled operation');
+    spinnerRef.current = getSpinner().start('Deleting found data');
+    // Delete the document in fs.files and all its related chunks in fs.chunks
+    await Promise.resolve(deleteDocuments([id], db, 'topologies'));
     spinnerRef.current.succeed('Deleted found data');
     return;
   } else if (type && type === 'chunk') {
@@ -436,6 +465,16 @@ const cleanup = async (
           spinnerRef,
         )),
       );
+      toBeDeleted.topologies.push(
+        ...(await findDocumentsToDelete(
+          toBeDeleted.projects[p],
+          'topologies',
+          'project',
+          'projects',
+          db,
+          spinnerRef,
+        )),
+      );
     }
     // Final summary before data deletion confirmation
     console.log(chalk.cyan(`[Summary]`));
@@ -445,6 +484,7 @@ const cleanup = async (
     console.log(chalk.cyan('· Orphan chunks -> ' + toBeDeleted.chunks.length));
     console.log(chalk.cyan('· Analyses -> ' + toBeDeleted.analyses.length));
     console.log(chalk.cyan('· Chains -> ' + toBeDeleted.chains.length));
+    console.log(chalk.cyan('· Topologies -> ' + toBeDeleted.topologies.length));
   }
   // Stop here if no id or "deleteAllOrphans" is provided
   else {
@@ -463,6 +503,7 @@ const cleanup = async (
     toBeDeleted.chunks.length == 0 &&
     toBeDeleted.analyses.length == 0 &&
     toBeDeleted.chains.length == 0 &&
+    toBeDeleted.topologies.length == 0 &&
     toBeDeleted.projects.length == 0
   ) {
     return console.log('There is no data to delete');
@@ -496,6 +537,7 @@ const cleanup = async (
     // Now delete the rest of documents and the project itself
     ...deleteDocuments(toBeDeleted.analyses, db, 'analyses'),
     ...deleteDocuments(toBeDeleted.chains, db, 'chains'),
+    ...deleteDocuments(toBeDeleted.topologies, db, 'topologies'),
     ...deleteDocuments(toBeDeleted.projects, db, 'projects'),
   ]);
 
