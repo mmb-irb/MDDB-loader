@@ -373,6 +373,7 @@ const cleanup = async (
     toBeDeleted.analyses = [];
     toBeDeleted.chains = [];
     toBeDeleted.projects = [];
+    toBeDeleted.topologies = [];
   } else if (type) {
     console.error(
       chalk.bgRed(`Manual cleanup of specific ${type} is not yet supported`),
