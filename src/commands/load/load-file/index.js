@@ -50,6 +50,10 @@ const loadFile = (
       let timeout;
       // Start reading the file by streaming
       const readStream = fs.createReadStream(folder + filename);
+      // In case the filename starts with 'fs.' set the database filename without the prefix
+      let databaseFilename = filename;
+      if (databaseFilename.slice(0, 3) === 'fs.')
+        databaseFilename = databaseFilename.slice(3);
       // Check if the dryRun option is activated. If it is, do nothing.
       // If it is not, start writing the file into mongo by streaming
       const uploadStream = dryRun
@@ -57,7 +61,7 @@ const loadFile = (
         : // Open the mongo writable stream with a few customized options
           // All data uploaded to mongo by this way is stored in fs.chunks
           // fs.chunks is a default collection of mongo which is managed internally
-          bucket.openUploadStream(filename, {
+          bucket.openUploadStream(databaseFilename, {
             // Check that the file format is accepted. If not, change it to "octet-stream"
             contentType: getMimeTypeFromFilename(filename),
             metadata: { project: projectID },

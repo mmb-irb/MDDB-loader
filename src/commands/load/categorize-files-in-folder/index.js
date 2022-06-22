@@ -9,7 +9,9 @@ const readdir = promisify(fs.readdir);
 //const pdbFilePatternToLoad = /^md\..+\.pdb$/i;
 const pdbFilePatternToLoad = /^md.imaged.rot.dry.pdb$/i;
 const metadataFilePatternToLoad = /^metadata.json$/i;
-const rawFilePatternToLoad = /\.(pdb|xtc)$/i;
+// Load as raw files all .pdb and .xtc files
+// Load also as raw files all files whose name starts with 'fs.'
+const rawFilePatternToLoad = /^fs.|\.(pdb|xtc)$/i;
 // The main trajectory
 const mainTrajectoryFilePatternToLoad = /^md.imaged.rot.xtc$/i;
 // PCA projected trajectories
