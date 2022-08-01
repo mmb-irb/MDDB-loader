@@ -53,24 +53,24 @@ const establishFakeConnection = async () => {
     // If there is a provided connection string, try to connect to it
     // WARNING: The string connection may be not valid
     let connectionString;
-    if (process.env.TEST_CONNECTION_STRING) {
-      try {
-        connectionString = process.env.TEST_CONNECTION_STRING;
-        client = await mongodb.MongoClient.connect(connectionString, {
-          useNewUrlParser: true,
-        });
-        connected = true;
-        console.log(
-          'The provided connection string is valid: Connected to Mongo Memory Server',
-        );
-      } catch (error) {
-        console.error(
-          chalk.red(
-            'The provided connection string is not valid: There is no active Mongo Memory Server',
-          ),
-        );
-      }
+    try {
+      //connectionString = process.env.TEST_CONNECTION_STRING;
+      connectionString = `mongodb://127.0.0.1:${process.env.DB_PORT}/${process.env.DB_NAME}?`;
+      client = await mongodb.MongoClient.connect(connectionString, {
+        useNewUrlParser: true,
+      });
+      connected = true;
+      console.log(
+        'The provided connection string is valid: Connected to Mongo Memory Server',
+      );
+    } catch (error) {
+      console.error(
+        chalk.red(
+          'The provided connection string is not valid: There is no active Mongo Memory Server',
+        ),
+      );
     }
+
     // In case  there is no connection string or it is not valid...
     // Create a new server and get the connection string
     if (!connected) {
