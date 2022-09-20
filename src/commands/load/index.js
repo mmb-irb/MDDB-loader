@@ -284,7 +284,7 @@ const load = async (
                   { project: projectIdRef.current, name: name },
                   // 'fs.files'
                   {
-                    metadata: { project: projectIdRef.current },
+                    'metadata.project': projectIdRef.current,
                     filename: name,
                   },
                 ],
