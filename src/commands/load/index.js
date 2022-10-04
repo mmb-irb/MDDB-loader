@@ -28,9 +28,12 @@ const readFile = promisify(fs.readFile);
 const categorizeFilesInFolder = require('./categorize-files-in-folder');
 const analyzeProteins = require('./protein-analyses');
 const loadTrajectory = require('./load-trajectory');
-const loadMetadata = require('./load-metadata');
 const loadFile = require('./load-file');
 const { loadAnalysis, nameAnalysis } = require('./load-analysis');
+const loadReferences = require('./load-references');
+
+// Util to read and parse json files
+const loadJSON = require('../../utils/load-json');
 
 // In case of load abort we need to clean up
 const cleanup = require('../cleanup');
@@ -539,6 +542,7 @@ const load = async (
       topologyFiles,
       itpFiles,
       topologyDataFile,
+      referencesDataFile,
     } = await categorizeFilesInFolder(folder);
 
     let EBIJobs;
@@ -618,13 +622,22 @@ const load = async (
       spinnerRef.current = getSpinner().start('Loading metadata');
 
       // Harvest metadata
-      metadata = (await loadMetadata(metadataFile, folder, spinnerRef)) || {};
-
-      // Display the end of this action as a success in the console
-      spinnerRef.current.succeed('Loaded metadata');
-      // Check duplicates and load the metadata into mongo
-      await updateMetadata(metadata);
+      metadata = await loadJSON(metadataFile, folder);
+      if (metadata) {
+        // Display the end of this action as a success in the console
+        spinnerRef.current.succeed('Loaded metadata');
+        // Check duplicates and load the metadata into mongo
+        await updateMetadata(metadata);
+      } else {
+        spinnerRef.current.fail('Failed to load metadata');
+      }
     }
+
+    // Check if the load has been aborted at this point
+    if (await checkLoadAborted()) return;
+
+    if (referencesDataFile)
+      await loadReferences(referencesDataFile, folder, spinnerRef, db);
 
     // Check if the load has been aborted at this point
     if (await checkLoadAborted()) return;

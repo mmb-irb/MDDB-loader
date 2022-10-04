@@ -194,6 +194,11 @@ const cleanup = async (
         type = 'topology';
         return resolve();
       }
+      target = await db.collection('references').findOne(id);
+      if (target) {
+        type = 'reference';
+        return resolve();
+      }
       console.error(chalk.yellow(`Nothing found for ID '${id}'`));
       return resolve();
     });
@@ -347,6 +352,22 @@ const cleanup = async (
     spinnerRef.current = getSpinner().start('Deleting found data');
     // Delete the document in fs.files and all its related chunks in fs.chunks
     await Promise.resolve(deleteDocuments([id], db, 'topologies'));
+    spinnerRef.current.succeed('Deleted found data');
+    return;
+  }
+  // Delete a specific references
+  else if (type && type === 'reference') {
+    const uniprot = target.uniprot;
+    // Ask user before delete
+    const confirmation =
+      force ||
+      (await userConfirm(
+        `Confirm deletion of reference with UniProt ID ${uniprot} [y/*]`,
+      ));
+    if (!confirmation) return console.log('Cancelled operation');
+    spinnerRef.current = getSpinner().start('Deleting found data');
+    // Delete the document in fs.files and all its related chunks in fs.chunks
+    await Promise.resolve(deleteDocuments([id], db, 'references'));
     spinnerRef.current.succeed('Deleted found data');
     return;
   } else if (type && type === 'chunk') {

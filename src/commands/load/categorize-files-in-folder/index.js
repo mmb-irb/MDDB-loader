@@ -23,6 +23,8 @@ const topologyFilePatternToLoad = /^topology.(prmtop|top|psf|tpr)$/i;
 const itpFilesPatternToLoad = /\.(itp)$/i;
 // The topology data file
 const topologyDataFilePatternToLoad = /^topology.json$/i;
+// The references data file
+const referencesDataFilePatternToLoad = /^references.json$/i;
 
 // This function finds all files in the "folder" argument path and classifies them
 // Classification is performed according to the file names
@@ -64,9 +66,13 @@ const categorizeFilesInFolder = async folder => {
   const itpFiles = allFiles.filter(filename =>
     itpFilesPatternToLoad.test(filename),
   );
-  // Look for a file which is called exactly 'metadata'
+  // Look for a file which is called exactly 'topology.json'
   const topologyDataFile = allFiles.find(filename =>
     topologyDataFilePatternToLoad.test(filename),
+  );
+  // Look for a file which is called exactly 'references.json'
+  const referencesDataFile = allFiles.find(filename =>
+    referencesDataFilePatternToLoad.test(filename),
   );
 
   // Finally, return all classified groups and the group which contain all files
@@ -81,6 +87,7 @@ const categorizeFilesInFolder = async folder => {
     topologyFiles,
     itpFiles,
     topologyDataFile,
+    referencesDataFile,
   };
 };
 

@@ -6,17 +6,16 @@ const fs = require('fs');
 // In this case data is retuned as a promise
 const readFile = promisify(fs.readFile);
 
-// This function extracts metadata from a local file
-const loadMetadata = async (filename, folder, spinnerRef) => {
+// Read and parse a JSON file
+const loadJSON = async (filename, folder) => {
   try {
     const fileContent = await readFile(folder + '/' + filename, 'utf8');
     const output = JSON.parse(fileContent);
-
     return output;
   } catch (error) {
-    // Display the end of this action as a failure in the console
-    spinnerRef.current.fail(error);
+    console.error(error);
+    return null;
   }
 };
 
-module.exports = loadMetadata;
+module.exports = loadJSON;
