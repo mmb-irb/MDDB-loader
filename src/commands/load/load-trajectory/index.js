@@ -12,6 +12,7 @@ const executeCommandPerLine = require('../../../utils/execute-command-per-line')
 // Constants
 const UNIT_CONVERSION_SCALE = 10;
 const N_COORDINATES = 3;
+const BYTES_PER_ATOM = Float32Array.BYTES_PER_ELEMENT * N_COORDINATES;
 // example matches:
 // '      x[    0]={ 6.40500e+00,  7.53800e+00,  9.81800e+00}'
 // '      x[35999]={-8.50000e-02,  1.82000e+00,  7.23700e+00}'
@@ -71,9 +72,12 @@ const loadTrajectory = (
     // keep a buffer handy for reuse for every atoms in every frame
     // Allocate a new buffer of the provided size
     // Float32Array.BYTES_PER_ELEMENT corresponds to 4
-    const coordinatesBuffer = Buffer.alloc(
-      Float32Array.BYTES_PER_ELEMENT * N_COORDINATES,
-    );
+    // DANI: Reutilizar un buffer para un write stream es peligroso
+    // DANI: Esto da pie a que A VECES las primeras coordenadas sean sobreescritas por coordnadas posteriores
+    // DANI: Esto pasaba muy de vez en cuando, pero cuando pasaba era silencioso
+    // DANI: La unica manera de detectarlo era visualmente o mediante el RMSD de la trayectoria parseada
+    //const coordinatesBuffer = Buffer.alloc(BYTES_PER_ATOM);
+
     // This function is equivalent to openning a new terinal and typing this:
     // gmx dump -f path/to/trajectory
     // This assembly runs Gromacs as a paralel process which returns an output in string chunks
@@ -131,6 +135,10 @@ const loadTrajectory = (
       }
 
       // convert units
+      // DANI: Anteriormente el buffer era alocado fuera del loop y reutilizado
+      // DANI: Esto no era seguro así que he hecho que se declare cada vez
+      // DANI: El rendimineto es el mismo, pero no he comprovado a fondo si hay fuga de memoria
+      const coordinatesBuffer = Buffer.alloc(BYTES_PER_ATOM);
       coordinatesBuffer.writeFloatLE(+match[1] * UNIT_CONVERSION_SCALE, 0); // x
       coordinatesBuffer.writeFloatLE(+match[2] * UNIT_CONVERSION_SCALE, 4); // y
       coordinatesBuffer.writeFloatLE(+match[3] * UNIT_CONVERSION_SCALE, 8); // z
