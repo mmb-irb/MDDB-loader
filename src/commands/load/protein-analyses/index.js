@@ -249,17 +249,10 @@ const analyzeProteins = async (folder, pdbFile, spinnerRef, abort, db) => {
     let sequence = '';
     // by concatenating the 1-letter code for each residue in the chain
     chain.eachResidue(residue => {
-      // Get the number of heavy atoms in each residue
-      let heavyAtoms = 0;
-      residue.eachAtom(atom => {
-        if (atom.element === 'H') heavyAtoms += 1;
-      });
-      // Discard residues with only hydrogens
-      // This may happen in some topologies where hydrogen are placed at the end in independent residues
-      if (heavyAtoms > 0) sequence += residue.getResname1();
+      sequence += residue.getResname1();
     });
 
-    //console.log(chain.chainname + ' (' + chain.chainid + ')' + ' -> ' + sequence);
+    //console.log('CHAIN ' + chain.chainname + ' (' + chain.chainid + ')' + ' -> ' + sequence);
 
     // if we have a chain and a valid sequence, we will process afterwards
     // Check if sequence is X or all X. In these cases we skip the analysis
