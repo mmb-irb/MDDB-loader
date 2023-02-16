@@ -25,6 +25,8 @@ const itpFilesPatternToLoad = /\.(itp)$/i;
 const topologyDataFilePatternToLoad = /^topology.json$/i;
 // The references data file
 const referencesDataFilePatternToLoad = /^references.json$/i;
+// The populations data file
+const populationsDataFilePatternToLoad = /^populations.json$/i;
 
 // This function finds all files in the "folder" argument path and classifies them
 // Classification is performed according to the file names
@@ -74,6 +76,10 @@ const categorizeFilesInFolder = async folder => {
   const referencesDataFile = allFiles.find(filename =>
     referencesDataFilePatternToLoad.test(filename),
   );
+  // Look for a file which is called exactly 'populations.json'
+  const populationsDataFile = allFiles.find(filename =>
+    populationsDataFilePatternToLoad.test(filename),
+  );
 
   // Finally, return all classified groups and the group which contain all files
   return {
@@ -88,6 +94,7 @@ const categorizeFilesInFolder = async folder => {
     itpFiles,
     topologyDataFile,
     referencesDataFile,
+    populationsDataFile,
   };
 };
 

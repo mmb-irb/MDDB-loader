@@ -543,6 +543,7 @@ const load = async (
       itpFiles,
       topologyDataFile,
       referencesDataFile,
+      populationsDataFile,
     } = await categorizeFilesInFolder(folder);
 
     let EBIJobs;
@@ -708,7 +709,12 @@ const load = async (
     }
 
     // Load files into mongo
-    const loadableFiles = [...rawFiles, ...topologyFiles, ...itpFiles];
+    const loadableFiles = [
+      ...rawFiles,
+      ...topologyFiles,
+      ...itpFiles,
+      populationsDataFile,
+    ];
     for (const [index, filename] of loadableFiles.entries()) {
       if (!filename) continue;
       if (skipFiles) break;
