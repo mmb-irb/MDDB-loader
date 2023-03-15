@@ -17,7 +17,7 @@ const mainTrajectoryFilePatternToLoad = /^md.imaged.rot.xtc$/i;
 // PCA projected trajectories
 const pcaTrajectoryFilePatternToLoad = /pca.trajectory_\d+.xtc$/i;
 // Analyses
-const analysisFilePatternToLoad = /^md.[\s\S]*.(xvg|json)$/i;
+const analysisFilePatternToLoad = /^md.[\s\S]*.(json)$/i;
 // Topology files
 const topologyFilePatternToLoad = /^topology.(prmtop|top|psf|tpr)$/i;
 const itpFilesPatternToLoad = /\.(itp)$/i;
@@ -54,7 +54,7 @@ const categorizeFilesInFolder = async folder => {
   const pcaTrajectories = allFiles.filter(filename =>
     pcaTrajectoryFilePatternToLoad.test(filename),
   );
-  // Analysis files are those which end in ".xvg" and do not belong to the PCA files
+  // Analysis files are those whose name is "md.whatever.json"
   const analysisFiles = allFiles.filter(filename =>
     analysisFilePatternToLoad.test(filename),
   );

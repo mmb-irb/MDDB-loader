@@ -134,7 +134,7 @@ yargs
         .option('sa', {
           alias: 'skip-analyses',
           default: false,
-          description: 'Skip the load of any analysis (xvg and json)',
+          description: 'Skip the load of any analyses (md.whatever.json files)',
           type: 'boolean',
         })
         // --append
