@@ -438,6 +438,14 @@ const cleanup = async (
       db,
       spinnerRef,
     );
+    toBeDeleted.topologies = await findDocumentsToDelete(
+      null,
+      'topologies',
+      'project',
+      'projects',
+      db,
+      spinnerRef,
+    );
     console.log(
       chalk.cyan(
         `[Finding projects with a failed load and their related data]`,
