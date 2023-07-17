@@ -73,6 +73,10 @@ const acceptedAnalyses = [
     name: 'pca',
     pattern: /pca.json/,
   },
+  {
+    name: 'markov',
+    pattern: /markov.json/,
+  },
 ];
 
 // This function finds if a given filename matches a recognized type of analysis
