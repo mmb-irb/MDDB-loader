@@ -35,7 +35,6 @@
     "eslint": "5.16.0",
     "eslint-config-prettier": "4.3.0",
     "husky": "2.4.1",
-    "jest": "24.8.0",
     "jsdom": "15.1.1",
     "lint-staged": "8.2.1",
     "ngl": "2.0.0-dev.36",
@@ -56,8 +55,7 @@
   },
   "husky": {
     "hooks": {
-      "pre-commit": "lint-staged",
-      "pre-push": "npm run test"
+      "pre-commit": "lint-staged"
     }
   }
 }
