@@ -109,7 +109,7 @@ const main = async () => {
     // Set a query for the coressponding project or id
     const query = accessionFormat.test(idOrAccession)
       ? { accession: idOrAccession }
-      : idOrAccession;
+      : { _id: ObjectId(idOrAccession) };
     // Get the project data
     const projectData = await db.collection('projects').findOne(query);
     const projectId = projectData._id;
