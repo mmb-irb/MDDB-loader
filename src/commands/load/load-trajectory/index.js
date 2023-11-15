@@ -33,7 +33,6 @@ const loadTrajectory = (
   files,
   projectID,
   gromacsCommand, // It is the gromacs-path ('gmx')
-  dryRun,
   appended,
   spinnerRef,
   abort, // Load aborting function
@@ -88,17 +87,13 @@ const loadTrajectory = (
       '-f', // '-f' stands for the following input to be a file to read
       folder + filename, // Path to file
     ]);
-    // Manage the dryRun option
-    const uploadStream = dryRun
-      ? // If dryRun is true then interrupt the stream flow
-        devNull()
-      : // Else, open an upload stream to mongo
-        // All data uploaded to mongo by this way is stored in fs.chunks
-        // fs.chunks is a default collection of mongo which is managed internally
-        bucket.openUploadStream(dbFilename, {
-          contentType: 'application/octet-stream',
-          chunkSizeBytes: 4 * 1024 * 1024, // 4 MiB
-        });
+    // Else, open an upload stream to mongo
+    // All data uploaded to mongo by this way is stored in fs.chunks
+    // fs.chunks is a default collection of mongo which is managed internally
+    const uploadStream = bucket.openUploadStream(dbFilename, {
+      contentType: 'application/octet-stream',
+      chunkSizeBytes: 4 * 1024 * 1024, // 4 MiB
+    });
     // The resulting id of the current upload stream is saved as an environment variable
     // In case of abort, this id is used by the automatic cleanup to find orphan chunks
     process.env.currentUploadId = uploadStream.id;

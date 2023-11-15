@@ -14,7 +14,7 @@ const mongoMemory = require('../testing/index');
 // - Error handling and node shell exit
 // "argv" is a normal object passed from yargs library
 // This object contains the input values of options and positionals from the command
-// e.g. in load command, argv contains the values of {folder, dry-run, gromacs-path}
+// e.g. in load command, argv contains the values of {folder, gromacs-path}
 const commonHandler = commandName => async argv => {
   let client;
   //let session;
@@ -109,7 +109,7 @@ const commonHandler = commandName => async argv => {
     const finalMessage = await command(
       // "argv" is a normal object passed from yargs library
       // This object contains the input values of options and positionals from the command
-      // e.g. in load command, argv contains the values of {folder, dry-run, gromacs-path}
+      // e.g. in load command, argv contains the values of {folder, gromacs-path}
       argv,
       // Also include extra stuff useful across all scripts
       { db, bucket: new mongodb.GridFSBucket(db), spinnerRef, projectIdRef },

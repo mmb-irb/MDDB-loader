@@ -93,13 +93,6 @@ yargs
           description: 'path to gromacs command-line tool', // Option description. Useful for the help
           type: 'string',
         })
-        // --dry-run
-        .option('d', {
-          alias: 'dry-run',
-          default: false,
-          description: "Doesn't write to database",
-          type: 'boolean',
-        })
         // --skip-chains
         .option('sc', {
           alias: 'skip-chains',
@@ -240,7 +233,7 @@ yargs
   // Display all descriptions when the command --help is asked or there is no command
   .help().argv; // "argv" is a normal object passed from yargs library
 // This object contains the input values of options and positionals from the command
-// e.g. in load command, argv contains the values of {folder, dry-run, gromacs-path}
+// e.g. in load command, argv contains the values of {folder, gromacs-path}
 
 // in case an exception manages to escape us
 process.on('unhandledRejection', error => {

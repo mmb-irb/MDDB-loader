@@ -28,7 +28,6 @@ const loadFile = (
   bucket,
   files,
   projectID,
-  dryRun,
   appended,
   spinnerRef,
   index,
@@ -54,19 +53,15 @@ const loadFile = (
       let databaseFilename = filename;
       if (databaseFilename.slice(0, 3) === 'fs.')
         databaseFilename = databaseFilename.slice(3);
-      // Check if the dryRun option is activated. If it is, do nothing.
-      // If it is not, start writing the file into mongo by streaming
-      const uploadStream = dryRun
-        ? devNull()
-        : // Open the mongo writable stream with a few customized options
-          // All data uploaded to mongo by this way is stored in fs.chunks
-          // fs.chunks is a default collection of mongo which is managed internally
-          bucket.openUploadStream(databaseFilename, {
-            // Check that the file format is accepted. If not, change it to "octet-stream"
-            contentType: getMimeTypeFromFilename(filename),
-            metadata: { project: projectID },
-            chunkSizeBytes: 4 * 1024 * 1024, // 4 MiB
-          });
+      // Open the mongo writable stream with a few customized options
+      // All data uploaded to mongo by this way is stored in fs.chunks
+      // fs.chunks is a default collection of mongo which is managed internally
+      const uploadStream = bucket.openUploadStream(databaseFilename, {
+        // Check that the file format is accepted. If not, change it to "octet-stream"
+        contentType: getMimeTypeFromFilename(filename),
+        metadata: { project: projectID },
+        chunkSizeBytes: 4 * 1024 * 1024, // 4 MiB
+      });
       // The resulting id of the current upload stream is saved as an environment variable
       // In case of abort, this id is used by the automatic cleanup to find orphan chunks
       process.env.currentUploadId = uploadStream.id;

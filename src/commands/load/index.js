@@ -62,7 +62,6 @@ const load = async (
     skipTrajectories,
     skipFiles,
     skipAnalyses,
-    dryRun = false,
     gromacsPath,
   }, // These variables belong to the "argv" object
   { db, bucket, spinnerRef, projectIdRef }, // These variables are extra stuff from the handler
@@ -83,12 +82,6 @@ const load = async (
       process.exit(0);
     }
   });
-  // If the dry-run option is set as true, send a console message
-  if (dryRun) {
-    console.log(
-      chalk.yellow("running in 'dry-run' mode, won't affect the database"),
-    );
-  }
   // Track list of appended data
   var appended = [];
   // Check if load has been aborted
@@ -133,10 +126,6 @@ const load = async (
   // It is sensible to uploading things with the same name, in which case asks the user
   // Mongo management and asking the user requieres an await promise format
   const updateAnticipation = async (command, updater) => {
-    // If the dryRun option is set as true, let it go
-    // The loading process will be runned but later in the code nothing is loaded in mongo
-    // Thus, there is no need to check if there are duplicates
-    if (dryRun) return true;
     // Get the name of the first (and only) key in the updater
     const updaterKey = Object.keys(updater)[0];
     // Set the name to refer this data when asking the user
@@ -318,8 +307,6 @@ const load = async (
   // The 'updater' argument stands for the changes to be performed in mongo
   // The 'updater' argument expects an object with a single key (e.g. { metadata })
   const updateProject = async (command, updater) => {
-    // If the dryRun option is set as true, do nothing
-    if (dryRun) return 'abort';
     // Mongo upload must be done in 'await Promise' format. Otherwise, it is prone to fail
     return new Promise((resolve, reject) => {
       db.collection('projects').findOneAndUpdate(
@@ -419,7 +406,7 @@ const load = async (
     const previous = await updateProject('push', {
       [collection]: updater.name,
     });
-    // Previous may abort in case of dryRun
+    // If it was aborted
     if (previous === 'abort') return;
     // Mongo upload must be done in 'await Promise' format. Otherwise, it is prone to fail
     return new Promise((resolve, reject) => {
@@ -502,8 +489,6 @@ const load = async (
     // Anticipate the load
     const userConsent = await anticipateTopologiesUpdate(updater);
     if (!userConsent) return;
-    // Stop here in case of dryRun
-    if (dryRun) return;
     // Mongo upload must be done in 'await Promise' format. Otherwise, it is prone to fail
     return new Promise((resolve, reject) => {
       db.collection(collection).insertOne(
@@ -577,12 +562,10 @@ const load = async (
     else {
       // Create a new document in mongo
       // 'insertedId' is a standarized name inside the returned object. Do not change it.
-      const newProject = dryRun
-        ? { insertedId: 'This is a fake mongo id' }
-        : await db.collection('projects').insertOne({
-            accession: null,
-            published: false,
-          });
+      const newProject = await db.collection('projects').insertOne({
+        accession: null,
+        published: false,
+      });
       // Save it to the projectIdRef so the command index.js can access the document
       projectIdRef.current = newProject.insertedId;
       // Display the project id. It may be useful if the load is abruptly interrupted to clean
@@ -685,7 +668,6 @@ const load = async (
           db.collection('fs.files'),
           projectIdRef.current,
           gromacsPath,
-          dryRun,
           appended,
           spinnerRef,
           checkLoadAborted,
@@ -731,7 +713,6 @@ const load = async (
         bucket,
         db.collection('fs.files'),
         projectIdRef.current,
-        dryRun,
         appended,
         spinnerRef,
         index + 1,
