@@ -120,7 +120,7 @@ const addRepeatedChain = (chainname, sequence, chainsmap) => {
 // Send an analysis request to EBI webpages
 // This is called once for each chain in the protein
 // Results are not awaited, but the code keeps running
-const analyseProtein = async (chain, sequence, db) => {
+const analyseProtein = async (chain, sequence, database) => {
   // If the sequence is too small to analyse return here
   if (sequence.length < MIN_SEQUENCE_SIZE) {
     return [chain, Promise.resolve({ sequence })];
@@ -128,7 +128,7 @@ const analyseProtein = async (chain, sequence, db) => {
   // Find out if there is a chain analysis with this identical sequence in the database already
   // If so, copy the analaysis for this chain so we skip to repeat it
   // DANI: Esto lo hice en un acto de desesperación por lo mal que funciona el tema de las chains normalmente
-  const repeatedChain = await db.collection('chains').findOne(
+  const repeatedChain = await database.db.collection('chains').findOne(
     // WARNING: Remove the internal id in order to avoid a further duplicated id mongo error
     // WARNING: Remove also the name to avoid further conflicts (experimentally tested)
     { sequence: sequence },
@@ -193,14 +193,14 @@ const analyseProtein = async (chain, sequence, db) => {
   return [chain, retrievalTask];
 };
 
-const analyzeProteins = async (folder, pdbFile, spinnerRef, abort, db) => {
+const analyzeProteins = async (structureFile, spinnerRef, abort, database) => {
   // Displays in console the start of this process
   spinnerRef.current = getSpinner().start(
     'Submitting sequences to InterProScan and HMMER',
   );
 
   // Read and save the content of the .pdb file
-  const fileContent = await readFile(`${folder}/${pdbFile}`, 'utf8');
+  const fileContent = await readFile(structureFile, 'utf8');
   // Conver it into Blob format (Binary)
   // Type attribute of "text/plain" stands for encoding using UTF-8
   const blob = new global.Blob([fileContent], { type: 'text/plain' });
@@ -280,7 +280,7 @@ const analyzeProteins = async (folder, pdbFile, spinnerRef, abort, db) => {
       // Make an array from chains sequences saving also the keys or indexes (chain)
       Array.from(chains.entries()).map(([chain, sequence]) =>
         // For each row perform an analysis (function is declared above) and then report the progress
-        analyseProtein(chain, sequence, db).then(output => {
+        analyseProtein(chain, sequence, database).then(output => {
           // Change the spinner text to display in console:
           // - Keep track of the current processing sequence
           // Plural returns a single string which contains the number "i++" and the word "sequence"

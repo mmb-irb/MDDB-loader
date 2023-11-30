@@ -13,28 +13,25 @@ const yargs = require('yargs');
 // ObjectId return
 const { ObjectId } = require('mongodb');
 
-//
+// Hanlde the setup before any command is run
 const commonHandler = require('./src/commands');
 // Convert a local path into a "fs" library valid global path
 const resolvePath = require('./src/utils/resolve-path');
 
 // -----------------------------------------------------------------------------------------
 
-// Convert the input local folder path into a "fs" library valid global folder path
-const folderCoerce = folder => {
+// Convert the input local file or folder path into a "fs" library valid global path
+const fileOrFolderCoerce = fileOrFolder => {
   // Path conversion
-  const cleanedUpFolder = resolvePath(folder, true);
+  const cleanedUpPath = resolvePath(fileOrFolder, true);
   try {
-    // Check if folder is accessible and executable. "X_OK" means folder must be executable.
-    fs.accessSync(cleanedUpFolder, fs.constants.X_OK); // UN FOLDER ES EJECUTABLE ??
+    // Check if file or folder is accessible and executable. "X_OK" means folder must be executable.
+    fs.accessSync(cleanedUpPath, fs.constants.X_OK); // UN FOLDER ES EJECUTABLE ??
   } catch (_) {
-    throw new Error(`unable to use folder '${folder}'`);
+    throw new Error(`unable to use file/folder '${fileOrFolder}'`);
   }
-  return cleanedUpFolder;
+  return cleanedUpPath;
 };
-
-//console.log(typeof cleanedUpFolder);
-//console.log(typeof folder);
 
 // Save the object from mongo which is associated to the provided id
 // WARNING: If the argument passed to this function is null a new ObjectId is generated
@@ -80,16 +77,16 @@ const idOrAccessionCoerce = idOrAccession => {
 yargs
   // load
   .command({
-    command: 'load <folder>', // Command name. Useful for the help
-    desc: 'load data from specified folder(s)', // Command description. Useful for the help
+    command: 'load <fileOrFolder>', // Command name. Useful for the help
+    desc: 'load data from specified file or folder', // Command description. Useful for the help
     builder: yargs =>
       yargs
         // All values from options and positionals are saved at the "argv" object (explained below)
         // The order of declaration in these options and positionals is important (exemplified below)
         // --gromacs-path
-        .option('g', {
+        .option('gro', {
           alias: 'gromacs-path', // Option name. Useful for the help
-          default: 'gmx',
+          default: null,
           description: 'path to gromacs command-line tool', // Option description. Useful for the help
           type: 'string',
         })
@@ -154,11 +151,17 @@ yargs
             'Priorize the data append so the user is never asked and current data is overwritten when there is any conflict',
           type: 'boolean',
         })
-        // folders
-        .positional('folder', {
-          describe: 'Folder containing a project to load',
+        // --md-directories
+        .option('mdir', {
+          alias: 'md-directories',
+          default: null,
+          description: 'Set which MD directories are to be loaded'
+        })
+        // file or folder
+        .positional('fileOrFolder', {
+          describe: 'Single file to be loaded or folder containing a project to load',
           type: 'string',
-          coerce: folderCoerce, // Apply this function over the parsed value from the command line
+          coerce: fileOrFolderCoerce, // Apply this function over the parsed value from the command line
         }),
     handler: commonHandler('load'), // Call the command script with the command name as argument
   })

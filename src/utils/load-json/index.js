@@ -7,9 +7,9 @@ const fs = require('fs');
 const readFile = promisify(fs.readFile);
 
 // Read and parse a JSON file
-const loadJSON = async (filename, folder) => {
+const loadJSON = async (filepath) => {
   try {
-    const fileContent = await readFile(folder + '/' + filename, 'utf8');
+    const fileContent = await readFile(filepath, 'utf8');
     const output = JSON.parse(fileContent);
     return output;
   } catch (error) {

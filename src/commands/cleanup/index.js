@@ -1,5 +1,5 @@
-// Prompts allows asking the user through the console
-const prompts = require('prompts');
+// Load auxiliar functions
+const { userConfirm } = require('../../utils/auxiliar-functions');
 // Get an objectId from the string id
 const { ObjectId } = require('mongodb');
 // This utility displays in console a dynamic loading status
@@ -136,17 +136,6 @@ const deleteFiles = (ids, bucket) => ids.map(id => bucket.delete(id));
 const deleteDocuments = (ids, db, collection) =>
   ids.map(id => db.collection(collection).deleteOne({ _id: id }));
 
-// Await for the user to type "y" before returning the "resolve" signal
-// This is used to prevent deleting data until the user has manually confirmed
-const userConfirm = async ask => {
-  const response = await prompts({
-    type: 'text',
-    name: 'confirm',
-    message: ask,
-  });
-  if (response.confirm && response.confirm.toLowerCase() === 'y') return true;
-  return false;
-};
 
 // This function finds data by project or file ids or by orphanhood and removes it from mongo
 const cleanup = async (

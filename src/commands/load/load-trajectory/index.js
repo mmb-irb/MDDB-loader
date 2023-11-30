@@ -26,20 +26,21 @@ const TIMEOUT_WARNING = 30000; // 30 seconds
 // When the streaming has finished, some extra metadata is added to mongo
 // Keep track of the process and display in console the current frame at any moment
 const loadTrajectory = (
-  folder,
-  filename,
+  filepath,
   dbFilename,
-  bucket,
-  files,
-  projectID,
+  database,
   gromacsCommand, // It is the gromacs-path ('gmx')
   appended,
-  spinnerRef,
   abort, // Load aborting function
 ) => {
+  // Extract some database values
+  const bucket = database.bucket;
+  const files = database.files;
+  const projectID = database.project_id;
+  const spinnerRef = database.spinnerRef;
   // Display the start of this process in console
   spinnerRef.current = getSpinner().start(
-    `Loading trajectory file '${filename}' as '${dbFilename}'`,
+    `Loading trajectory file '${filepath}' as '${dbFilename}'`,
   );
   // Track the current frame
   let frameCount = 0;
@@ -85,7 +86,7 @@ const loadTrajectory = (
       // Arguments sent to Gromacs
       'dump', // Gromacs command: Make binary files human readable
       '-f', // '-f' stands for the following input to be a file to read
-      folder + filename, // Path to file
+      filepath, // Path to file
     ]);
     // Else, open an upload stream to mongo
     // All data uploaded to mongo by this way is stored in fs.chunks
