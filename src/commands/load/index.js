@@ -259,7 +259,6 @@ const load = async (
       let ntrajectory = 0;
       for (const file of trajectoryFiles) {
         ntrajectory += 1;
-        if (file === 'trajectory.xtc') continue;
         // Check if the load has been aborted at this point
         if (await checkAbort()) return;
         // Set the name of the file once loaded in the database
@@ -303,7 +302,6 @@ const load = async (
       // Iterate over loadable files
       let nfile = 0;
       for await (const file of loadableFiles) {
-        if (file === 'trajectory.xtc') continue;
         nfile += 1;
         // Check if the load has been aborted at this point
         if (await checkAbort()) return;
