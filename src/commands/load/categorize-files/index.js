@@ -43,7 +43,7 @@ const categorizeProjectFiles = projectFiles => {
     metadataFilePatternToLoad.test(filename),
   );
   // Look for the topology file
-  const topologyFiles = projectFiles.find(filename =>
+  const topologyFile = projectFiles.find(filename =>
     topologyFilePatternToLoad.test(filename),
   );
   // Look for itp files
@@ -66,7 +66,7 @@ const categorizeProjectFiles = projectFiles => {
   // Finally, return all classified groups and the group which contain all files
   return {
     metadataFile,
-    topologyFiles,
+    topologyFile,
     itpFiles,
     topologyDataFile,
     referencesDataFile,

@@ -23,59 +23,59 @@ const processJSON = async path => {
 const acceptedAnalyses = [
   {
     name: 'dist-perres',
-    pattern: /dist.perres.json/,
+    pattern: /mda.dist_perres.json/,
   },
   {
     name: 'rgyr', // Name to be set in mongo for this file
-    pattern: /rgyr.json/, // Regular expression to match analysis files
+    pattern: /mda.rgyr.json/, // Regular expression to match analysis files
   },
   {
     name: 'rmsds',
-    pattern: /rmsds.json/,
+    pattern: /mda.rmsds.json/,
   },
   {
     name: 'tmscores',
-    pattern: /tmscores.json/,
+    pattern: /mda.tmscores.json/,
   },
   {
     name: 'rmsd-perres',
-    pattern: /rmsd.perres.json/,
+    pattern: /mda.rmsd_perres.json/,
   },
   {
     name: 'rmsd-pairwise',
-    pattern: /rmsd.pairwise.json/,
+    pattern: /mda.rmsd_pairwise.json/,
   },
   {
     name: 'fluctuation',
-    pattern: /rmsf.json/,
+    pattern: /mda.rmsf.json/,
   },
   {
     name: 'hbonds',
-    pattern: /hbonds.json/,
+    pattern: /mda.hbonds.json/,
   },
   {
     name: 'energies',
-    pattern: /energies.json/,
+    pattern: /mda.energies.json/,
   },
   {
     name: 'pockets',
-    pattern: /pockets.json/,
+    pattern: /mda.pockets.json/,
   },
   {
     name: 'sasa',
-    pattern: /sasa.json/,
+    pattern: /mda.sasa.json/,
   },
   {
     name: 'interactions',
-    pattern: /interactions.json/,
+    pattern: /mda.interactions.json/,
   },
   {
     name: 'pca',
-    pattern: /pca.json/,
+    pattern: /mda.pca.json/,
   },
   {
     name: 'markov',
-    pattern: /markov.json/,
+    pattern: /mda.markov.json/,
   },
 ];
 
@@ -84,48 +84,13 @@ const acceptedAnalyses = [
 // This function expects to receive a single argument: the analysis filename
 const nameAnalysis = analysisFile => {
   // Rest of analyses
-  const analysis =
-    acceptedAnalyses.find(({ pattern }) => pattern.test(analysisFile)) || {};
+  const analysis = acceptedAnalyses.find(({ pattern }) => pattern.test(analysisFile)) || {};
   // If any of the patterns match this file, "name" is undefined
-  if (!analysis.name) {
-    console.error(
-      chalk.red(
-        `${analysisFile} has not been identified as any of the valid analysis`,
-      ),
-    );
-    return undefined;
-  }
-  // Return the name
-  return analysis.name;
-};
-
-// Mine the analysis file and return data in a standarized format
-const loadAnalysis = async (
-  folder,
-  analysisFile,
-  spinnerRef,
-  index,
-  analysisLenght,
-) => {
-  // Rest of analyses
-  if (spinnerRef)
-    spinnerRef.current = getSpinner().start(
-      `Loading analysis ${index} out of ${analysisLenght} [${analysisFile}]`,
-    );
-  // Check the analysis to be a JSON file according to its name
-  const isJSON = /.json$/i.test(analysisFile);
-  if (!isJSON) throw new Error('Analyses must be JSON files');
-  // Read the analysis data
-  const value = await processJSON(folder + analysisFile);
-  // If mining was unsuccessful return undefined value
-  if (!value) return undefined;
-  // When everything was fine
-  if (spinnerRef)
-    spinnerRef.current.succeed(`Loaded analysis [${analysisFile}]`);
-  return { value };
+  if (analysis.name) return analysis.name;
+  console.error(chalk.red(`${analysisFile} has not been identified as any of the valid analysis`));
+  return undefined;
 };
 
 module.exports = {
-  loadAnalysis,
   nameAnalysis,
 };

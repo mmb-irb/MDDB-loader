@@ -6,7 +6,7 @@ const prettyMs = require('pretty-ms');
 // This utility displays in console a dynamic loading status
 const getSpinner = require('../../utils/get-spinner');
 // Load auxiliar functions
-const { getGromacsCommand } = require('../../utils/auxiliar-functions');
+const { getGromacsCommand, getBasename } = require('../../utils/auxiliar-functions');
 // Return a word's plural when the numeric argument is bigger than 1
 const plural = require('../../utils/plural');
 // Displays data in console inside a big colorful rectangle
@@ -31,7 +31,7 @@ const categorizeFiles = require('./categorize-files');
 const analyzeProteins = require('./protein-analyses');
 const loadTrajectory = require('./load-trajectory');
 const loadFile = require('./load-file');
-const { loadAnalysis, nameAnalysis } = require('./load-analysis');
+const { nameAnalysis } = require('./load-analysis');
 
 // Load data from the specified folder into mongo
 const load = async (
@@ -67,6 +67,9 @@ const load = async (
   const startTime = Date.now();
   console.log(chalk.cyan(`== starting load of '${fileOrFolder}'`));
 
+  // Set the project directory
+  // DANI: Ahora esto es facil porque no damos soporte a archvios o subdirectorios sueltos
+  const pdir = fileOrFolder;
   // Guess MD directories in case they are missing
   const mdirs = mdDirectories ? mdDirectories : findMdDirectories(fileOrFolder);
 
@@ -116,22 +119,13 @@ const load = async (
   // ---- Metadata ----
 
   if (!skipMetadata) {
-    // First load project metadata, which is expected to have most of the metadata
+    // Load project metadata, which is expected to have most of the metadata
     const projectMetadataFile = categorizedProjectFiles.metadataFile;
     if (projectMetadataFile) {
-      const projectMetadata = await loadJSON(projectMetadataFile);
+      const projectMetadataFilepath = pdir + '/' + projectMetadataFile;
+      const projectMetadata = await loadJSON(projectMetadataFilepath);
       if (!projectMetadata) throw new Error('There is something wrong with the project metadata file');
       await database.updateProjectMetadata(projectMetadata, conserve, overwrite);
-    }
-    // Now load each MD directory metadata
-    for await (const [directory, files] of Object.entries(categorizedMdFiles)) {
-      // Get the metadata filename and if it is missing then skip the load
-      const mdMetadataFile = files.metadataFile;
-      if (!mdMetadataFile) continue;
-      // Load the metadata file
-      const mdMetadata = await loadJSON(directory + '/' + mdMetadataFile);
-      if (!mdMetadata) throw new Error('There is something wrong with the MD metadata file in ' + directory);
-      await database.updateMdMetadata(mdMetadata, conserve, overwrite);
     }
   }
 
@@ -141,17 +135,16 @@ const load = async (
   // ---- References ----
 
   // Load references
-  const referencesDataFile = projectFiles.referencesDataFile;
+  const referencesDataFile = categorizedProjectFiles.referencesDataFile;
   if (referencesDataFile) {
     // Read the references data file
-    const references = await loadJSON(filepath);
-    if (references) {
-      // Iterate over the different references
-      for (const reference of references) {
-        database.loadReference(reference)
-      }
+    const referencesFilepath = pdir + '/' + referencesDataFile;
+    const references = await loadJSON(referencesFilepath);
+    if (!references) throw new Error('There is something wrong with the references file');
+    // Iterate over the different references
+    for await (const reference of references) {
+      await database.loadReference(reference);
     }
-    
   }
 
   // Check if the load has been aborted at this point
@@ -160,42 +153,130 @@ const load = async (
   // ---- Topology ----
 
   // Load the basic topology using the pdb file
-  const topologyDataFile = projectFiles.topologyDataFile;
+  const topologyDataFile = categorizedProjectFiles.topologyDataFile;
   if (topologyDataFile) {
     // Load topology
-    const topologyContent = await readFile(fileOrFolder + '/' + topologyDataFile);
-    const topology = JSON.parse(topologyContent);
+    const topologyDataFilepath = pdir + '/' + topologyDataFile;
+    const topology = await loadJSON(topologyDataFilepath);
+    if (!topology) throw new Error('There is something wrong with the topology data file')
     // Add the current project id to the topology object
     topology.project = database.project_id;
     // Load it to mongo
-    await database.updateTopologies(topology, conserve, overwrite);
+    await database.loadTopology(topology, conserve, overwrite);
+  }
+
+  // Note that there are no trajectories or analyses expected to be in the project nowadays
+  // This may change in the future however
+
+  // ---- Files ----
+
+  if (!skipFiles) {
+    // Set which files are to be uploaded to the database
+    // Discard undefined values from missing files
+    const loadableFiles = [
+      categorizedProjectFiles.topologyFile,
+      ...categorizedProjectFiles.itpFiles,
+      categorizedProjectFiles.populationsDataFile,
+    ].filter(file => file && file.length !== 0);
+    // Iterate over loadable files
+    let nfile = 0;
+    for await (const file of loadableFiles) {
+      nfile += 1;
+      // Check if the load has been aborted at this point
+      if (await checkAbort()) return;
+      // Set the name of the file once loaded in the database
+      // In case the filename starts with 'mdf.' set the database filename without the prefix
+      let databaseFilename = file;
+      if (databaseFilename.slice(0, 4) === 'mdf.')
+        databaseFilename = databaseFilename.slice(4);
+      // Handle any conflicts and ask the user if necessary
+      // Delete previous files in case we want to overwrite data
+      const confirm = await database.forestallFileLoad(databaseFilename, null, conserve, overwrite);
+      if (!confirm) continue;
+      // Set the path to the current file
+      const filepath = pdir + '/' + file;
+      // 'loadFile' is the main function which opens the stream from the file and mongo
+      // The spinner is sent for this function to output its status to the console
+      const loadedFile = await loadFile(
+        filepath,
+        databaseFilename,
+        database,
+        appended,
+        nfile,
+        loadableFiles.length,
+        checkAbort,
+      );
+      // If there are no results, we continue to the next iteration
+      if (!loadedFile) continue;
+      // If process was aborted
+      else if (loadedFile === 'abort') return;
+      // Update MD files with the new uploaded trajectory file
+      await database.setLoadedFile(file, null, loadedFile._id);
+    }
   }
 
   // Check if the load has been aborted at this point
   if (await checkAbort()) return;
 
-  // Load trajectories into mongo
-  if (!skipTrajectories) {
-    // Iterate over the different MD directories
-    // Note that not trajectories are expected to be in the project directory
-    for await (const [directory, files] of Object.entries(categorizedMdFiles)) {
-      console.log('Loading trajectories from ' + directory);
+  // ---------------------------
+  // ----- MD Directories ------
+  // ---------------------------
+
+  // Iterate over the different MD directores
+  for await (const mdDirectory of mdirs) {
+    // Get the MD directory basename
+    const mdDirectoryBasename = getBasename(mdDirectory);
+    console.log(chalk.cyan(`== Loading MD '${mdDirectoryBasename}'`));
+    // Get the directory files
+    const directoryFiles = categorizedMdFiles[mdDirectory];
+
+    // ---- Metadata ----
+
+    // Load the MD metadata if it is not to be skipped
+    // Get the metadata filename and if it is missing then skip the load
+    const mdMetadataFile = directoryFiles.metadataFile;
+    if (!skipMetadata && mdMetadataFile) {
+      // Load the metadata file
+      const mdMetadata = await loadJSON(mdDirectory + '/' + mdMetadataFile);
+      if (!mdMetadata) throw new Error('There is something wrong with the MD metadata file in ' + mdDirectoryBasename);
+      await database.updateMdMetadata(mdMetadata, mdDirectory, conserve, overwrite);
+    }
+
+    // Check if the load has been aborted at this point
+    if (await checkAbort()) return;
+
+    // ---- Trajectories ----
+
+    // Load trajectories into the database
+    if (!skipTrajectories) {
       // Get trajectory files which are to be loaded to the database in a parsed way
-      const trajectoryFiles = [ files.mainTrajectory, ...pcaTrajectories, ...files.uploadableTrajectories ];
+      const trajectoryFiles = [
+        directoryFiles.mainTrajectory,
+        ...directoryFiles.pcaTrajectories,
+        ...directoryFiles.uploadableTrajectories
+      ].filter(file => file && file.length !== 0);
       // Iterate over the different trajectory files
-      for (const trajectoryFile of trajectoryFiles) {
+      let ntrajectory = 0;
+      for (const file of trajectoryFiles) {
+        ntrajectory += 1;
+        if (file === 'trajectory.xtc') continue;
+        // Check if the load has been aborted at this point
+        if (await checkAbort()) return;
         // Set the name of the file once loaded in the database
-        const trajectoryDatabaseName = trajectoryFile.replace('.xtc', '.bin');
+        let databaseFilename = file.replace('.xtc', '.bin');
+        // In case the filename starts with 'mdt.' set the database filename without the prefix
+        if (databaseFilename.slice(0, 4) === 'mdt.')
+          databaseFilename = databaseFilename.slice(4);
         // Handle any conflicts and ask the user if necessary
         // Delete previous files in case we want to overwrite data
-        const confirm = await database.forestallFileLoad(trajectoryDatabaseName, directory, conserve, overwrite);
+        const confirm = await database.forestallFileLoad(databaseFilename, mdDirectory, conserve, overwrite);
         if (!confirm) continue;
         // Set the path to the current file
-        const trajectoryPath = directory + '/' + trajectoryFile;
+        const trajectoryPath = mdDirectory + '/' + file;
         // Load the trajectory parsedly
         const loadedTrajectory = await loadTrajectory(
           trajectoryPath,
-          trajectoryDatabaseName,
+          databaseFilename,
           database,
           gromacsCommand,
           appended,
@@ -206,95 +287,91 @@ const load = async (
         // If process was aborted
         else if (loadedTrajectory === 'abort') return;
         // Update MD files with the new uploaded trajectory file
-        await database.setLoadedFile(trajectoryFile, directory, loadedTrajectory._id);
-      }
-
-    }
-
-    throw new Error('Hasta aqui :)');
-
-    for (const [filename, dbFilename] of Object.entries(dbFilenames)) {
-
-
-      // If there are results, update the project in mongodb
-      await updateProject('push', { files: loadedTrajectory });
-      // Modify the metadata with data from the main trajectory (no pca)
-      if (filename === mainTrajectory) {
-        await updateProject('set', {
-          'metadata.frameCount': loadedTrajectory.metadata.frames,
-          'metadata.atomCount': loadedTrajectory.metadata.atoms,
-        });
+        await database.setLoadedFile(file, mdDirectory, loadedTrajectory._id);
       }
     }
-  }
 
-  // Load files into mongo
-  const loadableFiles = [
-    ...rawFiles,
-    ...topologyFiles,
-    ...itpFiles,
-    populationsDataFile,
-  ];
-  for (const [index, filename] of loadableFiles.entries()) {
-    if (!filename) continue;
-    if (skipFiles) break;
-    // Check duplicates
-    if (
-      !(await updateAnticipation('push', { files: { filename: filename } }))
-    )
-      continue;
-    // 'loadFile' is the main function which opens the stream from the file and mongo
-    // The spinner is sent for this function to output its status to the console
-    const loadedFile = await loadFile(
-      fileOrFolder,
-      filename,
-      bucket,
-      db.collection('fs.files'),
-      projectIdRef.current,
-      appended,
-      spinnerRef,
-      index + 1,
-      rawFiles.length,
-      checkAbort,
-    );
-    // If there are no results, we continue to the next iteration
-    if (!loadedFile) continue;
-    // If process was aborted
-    else if (loadedFile === 'abort') return;
-    // If there are results, update the project in mongodb
-    await updateProject('push', { files: loadedFile });
-  }
+    // ---- Files ----
 
-  // Check if the load has been aborted at this point
-  if (await checkAbort()) return;
+    if (!skipFiles) {
+      // Set which files are to be uploaded to the database
+      const loadableFiles = [
+        directoryFiles.structureFile,
+        directoryFiles.mainTrajectory,
+        ...directoryFiles.uploadableFiles,
+      ].filter(file => file && file.length !== 0);
+      // Iterate over loadable files
+      let nfile = 0;
+      for await (const file of loadableFiles) {
+        if (file === 'trajectory.xtc') continue;
+        nfile += 1;
+        // Check if the load has been aborted at this point
+        if (await checkAbort()) return;
+        // Set the name of the file once loaded in the database
+        // In case the filename starts with 'mdf.' set the database filename without the prefix
+        let databaseFilename = file;
+        if (databaseFilename.slice(0, 4) === 'mdf.')
+          databaseFilename = databaseFilename.slice(4);
+        // Handle any conflicts and ask the user if necessary
+        // Delete previous files in case we want to overwrite data
+        const confirm = await database.forestallFileLoad(databaseFilename, mdDirectory, conserve, overwrite);
+        if (!confirm) continue;
+        // Set the path to the current file
+        const filepath = mdDirectory + '/' + file;
+        // 'loadFile' is the main function which opens the stream from the file and mongo
+        // The spinner is sent for this function to output its status to the console
+        const loadedFile = await loadFile(
+          filepath,
+          databaseFilename,
+          database,
+          appended,
+          nfile,
+          loadableFiles.length,
+          checkAbort,
+        );
+        // If there are no results, we continue to the next iteration
+        if (!loadedFile) continue;
+        // If process was aborted
+        else if (loadedFile === 'abort') return;
+        // Update MD files with the new uploaded trajectory file
+        await database.setLoadedFile(file, mdDirectory, loadedFile._id);
+      }
+    }
 
-  // The rest of analyses
-  for (const [index, filename] of analysisFiles.entries()) {
-    if (skipAnalyses) break;
-    // Check if the load has been aborted before each analysis load
+    // Check if the load has been aborted at this point
     if (await checkAbort()) return;
-    // Get the name of the analysis type
-    const name = nameAnalysis(filename);
-    // Check if name exists and ask for duplicates
-    if (!name || !(await updateAnticipation('push', { analyses: name })))
-      continue;
-    // Load the analysis
-    const { value } = await loadAnalysis(
-      fileOrFolder,
-      filename,
-      spinnerRef,
-      index,
-      analysisFiles.length,
-    );
-    // If there are no results, go to the next iteration
-    if (!value) continue;
-    // Update the database with the new analysis
-    await updateCollection('analyses', {
-      name,
-      value,
-      project: projectIdRef.current,
-    });
+
+    // ---- Analyses ----
+
+    if (!skipAnalyses) {
+      // Iterate over the different analysis files
+      let nanalysis = 0;
+      for await (const file of directoryFiles.analysisFiles) {
+        nanalysis += 1;
+        // Check if the load has been aborted before each analysis load
+        if (await checkAbort()) return;
+        // Get the standard name of the analysis
+        const name = nameAnalysis(file);
+        if (!name) continue;
+        // Handle any conflicts and ask the user if necessary
+        // Delete previous analyses in case we want to overwrite data
+        const confirm = await database.forestallAnalysisLoad(name, mdDirectory, conserve, overwrite);
+        if (!confirm) continue;
+        // Load the analysis
+        const filepath = mdDirectory + '/' + file;
+        // Read the analysis data
+        const content = await loadJSON(filepath);
+        // If mining was unsuccessful return undefined value
+        if (!content) throw new Error(`There is something wrong with the ${name} analysis file`);
+        // Upload new data to the database
+        const analysis = { name: name, value: content, project: database.project_id };
+        await database.loadAnalysis(analysis, mdDirectory);
+      }
+    }
+
   }
+
+  //throw new Error('Hasta aqui :)');
 
   // Load the chains as soon as they are retrieved from the EBI
   if (EBIJobs && EBIJobs.length) {
@@ -311,14 +388,13 @@ const load = async (
       Promise.all(
         EBIJobs.map(([chain, job]) =>
           job.then(async document => {
-            spinnerRef.current.text = `Retrieved ${plural('chain', ++finished, true)} 
-              out of ${EBIJobs.length}, including from InterProScan and HMMER`;
+            spinnerRef.current.text = `Retrieved ${plural('chain', ++finished, true)} out of ${EBIJobs.length}, including from InterProScan and HMMER`;
             // Sometimes, when chain sequences are repeated, chain may be e.g. 'A, B, C'
             // In those cases we must load a new chain for each chain letter
             const chains = chain.split(', ');
             chains.forEach(async c => {
               // Update the database with the new analysis
-              await updateCollection('chains', { name: c, ...document, project: projectIdRef.current });
+              await database.loadChain({ name: c, ...document, project: database.project_id });
             });
 
             return [chain, document];
@@ -343,23 +419,15 @@ const load = async (
     if ((await aborted) === 'abort') return;
     // Finish the spinner
     spinnerRef.current.succeed(
-      `Retrieved ${plural(
-        'chain',
-        finished,
-        true,
-      )}, including from InterProScan and HMMER`,
+      `Retrieved ${plural('chain', finished, true)}, including from InterProScan and HMMER`,
     );
   }
 
   return () => {
     console.log(
-      chalk.cyan(
-        `== finished loading '${fileOrFolder}' in ${prettyMs(
-          Date.now() - startTime,
-        )} with id:`,
-      ),
+      chalk.cyan(`== finished loading '${fileOrFolder}' in ${prettyMs(Date.now() - startTime)} with id:`),
     );
-    printHighlight(projectIdRef.current);
+    printHighlight(database.project_id);
   };
 };
 

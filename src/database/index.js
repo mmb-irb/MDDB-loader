@@ -1,7 +1,14 @@
 // Load auxiliar functions
-const { userConfirm, userConfirmDataLoad, mdNameToDirectory } = require('../utils/auxiliar-functions');
+const {
+    userConfirm,
+    userConfirmDataLoad,
+    mdNameToDirectory,
+    getBasename
+} = require('../utils/auxiliar-functions');
 // Add colors in console
 const chalk = require('chalk');
+// This utility displays in console a dynamic loading status
+const getSpinner = require('../utils/get-spinner');
 
 // Set the project class
 class Database {
@@ -20,7 +27,11 @@ class Database {
         this.md_directory_names = null;
         // Store the current project data once it has been downloaded
         this._project_data = null;
-        
+        // Save also the original project data the first time we download it
+        this.project_data_backup = null;
+        // Keep track of the newly inserted data
+        // This way, in case anything goes wrong, we can revert changes
+        this.inserted_data = []
     };
 
     // Set some collection getters
@@ -36,6 +47,12 @@ class Database {
     get files () {
         return this.db.collection('fs.files');
     }
+    get analyses () {
+        return this.db.collection('analyses');
+    }
+    get chains () {
+        return this.db.collection('chains');
+    }
 
     // Get the database project data
     get project_data () {
@@ -46,13 +63,27 @@ class Database {
             // Otherwise it has to be requested
             this._project_data = await this.projects.findOne({ _id: this.project_id });
             if (!this._project_data) this._project_data = {};
+            // Save the backup
+            // To do so, use the JSON parser and make a full copy
+            if (!this.project_data_backup)
+                this.project_data_backup = JSON.parse(JSON.stringify(this._project_data))
             return this._project_data;
         })();
+    }
+
+    getMdData = async mdDirectory => {
+        if (!mdDirectory) return;
+        const projectData = await this._project_data;
+        const mdDirectoryBasename = mdDirectory && getBasename(mdDirectory);
+        const mdName = mdDirectoryBasename && this.md_directory_names[mdDirectoryBasename];
+        return mdName && projectData.mds.find(md => md.name === mdName);
     }
 
     // Set the database project
     // If a mongo id or accession is passed then we check the project exists
     setupProject = async (idOrAccession, mdDirectories) => {
+        // Parse the full md
+        const mdDirectoryBasenames = mdDirectories.map(directory => getBasename(directory))
         if (idOrAccession) {
             // Use regexp to check if 'append' is an accession or an object ID
             const accessionFormat = new RegExp('^' + process.env.ACCESSION_PREFIX + '\\d{5}$');
@@ -65,37 +96,43 @@ class Database {
             this.project_id = selectedProject._id;
             // Display the project id. It may be useful if the load is abruptly interrupted to clean
             console.log(chalk.cyan(`== new data will be added to project '${this.project_id}'`));
-            // Set MD directory names from project data
-            this.md_directory_names = {}
-            this._project_data.mds.forEach(md => {
-                const name = md.name;
-                const directory = mdNameToDirectory(name);
-                if (mdDirectories.includes(directory))
-                    this.md_directory_names[directory] = name;
-            });
         }
         else {
-            // Create a new document in mongo
+            // Set MD names from the available MD directories
+            const mds = mdDirectoryBasenames.map(directory => {
+                const mdName = directory.replaceAll('_', ' ');
+                return { name: mdName, files: [], analyses: [] }
+            })
+            // Create a new project
             // 'insertedId' is a standarized name inside the returned object. Do not change it.
-            this._project_data = { accession: null, published: false };
+            // DANI: El mdref está fuertemente hardcodeado, hay que pensarlo
+            this._project_data = { accession: null, published: false, mds: mds, mdref: 0, files: [] };
             // Load the new project
             const result = await this.projects.insertOne(this._project_data);
             // If the operation failed
             if (result.acknowledged === false) throw new Error(`Failed to insert new project`);
             // Update the project id
             this.project_id = result.insertedId;
+            // Update the inserted data in case we need to revert the change
+            this.inserted_data.push({
+                name: 'new project',
+                collection: this.projects,
+                id: this.project_id
+            });
             // Display the project id. It may be useful if the load is abruptly interrupted to clean
             console.log(chalk.cyan(`== new project will be stored with the id '${this.project_id}'`));
         }
-        // Set MD directory names from the available MD directories
-        this.md_directory_names = {}
-        mdDirectories.forEach(directory => {
-            const name = directory.replace('_', ' ');
-            this.md_directory_names[directory] = name;
+        // Set MD directory names from project data
+        this.md_directory_names = {};
+        this._project_data.mds.forEach(md => {
+            const name = md.name;
+            const directory = mdNameToDirectory(name);
+            if (mdDirectoryBasenames.includes(directory))
+                this.md_directory_names[directory] = name;
         });
         // Check the number of MD names and MD directories match
         // This could mean MD names are so similar that they lead to identical directory name or vice versa
-        if (mdDirectories.length !== Object.keys(this.md_directory_names))
+        if (mdDirectories.length !== Object.keys(this.md_directory_names).length)
             throw new Error('Number of MD names and MD directories must match');
     }
 
@@ -116,9 +153,16 @@ class Database {
         // If the operation failed
         if (result.acknowledged === false) throw new Error(`Failed to insert new reference`);
         console.log(chalk.green(`  Loaded new reference ${reference.uniprot} -> ${result.insertedId}`));
+        // Update the inserted data in case we need to revert the change
+        this.inserted_data.push({
+            name: 'new reference',
+            collection: this.references,
+            id: result.insertedId
+        });
     };
 
     // Anticipate chains update
+    // Note that chains are updated (i.e. deleted and loaded) all together
     forestallChainsUpdate = async (conserve = false, overwrite = false) => {
         // Find the current chains value
         const currentChains = await this.project_data.chains;
@@ -130,12 +174,8 @@ class Database {
         // Ask the user in case the overwrite flag was not passed
         const confirm = overwrite ? true : await userConfirmDataLoad('Chains');
         // If there was no confirmation then abort the process
-        if (!confirm) {
-            console.log(chalk.yellow('New data will be discarded'));
-            return false;
-        }
+        if (!confirm) return false;
         // If we had confirmation then proceed to delete current data
-        console.log(chalk.yellow('Current data will be overwritten'));
         // Set chains as an empty list
         const updateResult = this.projects.findOneAndUpdate(
             // Find current project by its id
@@ -145,10 +185,26 @@ class Database {
         // If the operation failed
         if (updateResult.acknowledged === false) throw new Error(`Failed to update project data`);
         // Delete previous chains
-        const deleteResults = db.collection('chains').deleteMany({ project: this.project_id });
+        const deleteResults = this.chains.deleteMany({ project: this.project_id });
         console.log(deleteResults);
         if (!deleteResults) throw new Error(`Failed to delete previous data in chains collection`);
         return true;
+    };
+
+    // Load a new chain
+    // WARNING: Note that this function will not check for previously existing chains with identical letter
+    // WARNING: This is done previously by the forestallChainsUpdate function
+    loadChain = async chainContent => {
+        // Upload the new topology
+        const result = await this.chains.insertOne(chainContent);
+        if (result.acknowledged === false) throw new Error(`Failed to insert new chain`);
+        //console.log(chalk.green(`  Loaded new chain -> ${result.insertedId}`));
+        // Update the inserted data in case we need to revert the change
+        this.inserted_data.push({
+            name: 'new chain',
+            collection: this.chains,
+            id: result.insertedId
+        });
     };
 
     // Given a current and a new metadata objects, add missing new fields to the current metadata
@@ -212,13 +268,17 @@ class Database {
         // Note that project metadata is in a field called 'metadata'
         const currentMetadata = await this.project_data.metadata;
         // If there is no metadata then simply add it
-        if (!currentMetadata) return await this.updateProject({ $set: { metadata: newMetadata } });
+        if (!currentMetadata) {
+            await this.updateProject({ $set: { metadata: newMetadata } });
+            return console.log(chalk.green('   Done'));
+        }
         // If there is an already existing metadata then we modify it and send it back to mongo
         // WARNING: Note that values in current metadata which are missing in new metadata will remain
         // This is makes sense since we are 'appending' new data
         await this._merge_metadata(currentMetadata, newMetadata, conserve, overwrite);
         // Finally, load the modified current metadata object into mongo
         await this.updateProject({ $set: { metadata: currentMetadata }});
+        console.log(chalk.green('   Done'));
     };
 
 
@@ -228,19 +288,20 @@ class Database {
         console.log('Loading MD metadata');
         // Get current metadata
         // Note that MD metadata is in every MD object
-        const mds = await this.project_data.mds;
-        const currentMetadata = mds.find(md => mdNameToDirectory(md['name']) === mdDirectory);
+        const projectData = await this.project_data;
+        const mdData = await this.getMdData(mdDirectory);
         // At this point metadata should exist
-        if (!currentMetadata) throw new Error('MD directory ' + mdDirectory + ' does not exist');
+        if (!mdData) throw new Error('MD directory ' + mdDirectory + ' does not exist');
         // Update the MD object with the MD metadata
-        await this._merge_metadata(currentMetadata, newMetadata, conserve, overwrite);
+        await this._merge_metadata(mdData, newMetadata, conserve, overwrite);
         // Finally, load the new mds object into mongo
-        await this.updateProject({ $set: { mds: mds } });
+        await this.updateProject({ $set: { mds: projectData.mds } });
+        console.log(chalk.green('   Done'));
     };
 
     // Check if there is a previous document already saved
     // If so, check if we must delete it or conserve it
-    forestallTopologiesUpdate = async (newTopology, conserve, overwrite) => {
+    forestallTopologyLoad = async (newTopology, conserve, overwrite) => {
         // Check if current project already has a topology in the database
         const exist = await this.topologies.findOne({ project: this.project_id });
         // In case it does not exist we are done
@@ -252,12 +313,8 @@ class Database {
         if (JSON.stringify(exist) === JSON.stringify(newTopology)) return false;
         // Ask the user in case the 'overwrite' flag has not been passed
         const confirm = overwrite ? true : await userConfirmDataLoad('Topology');
-        // If the user has asked to converve current data then abort the process
-        if (!confirm) {
-            console.log(chalk.yellow('New data will be discarded'));
-            return false;
-        }
-        console.log(chalk.yellow('Current data will be overwritten'));
+        // If the user has asked to conserve current data then abort the process
+        if (!confirm) return false;
         // We must delete the current document in mongo
         const result = await db.collection(collection).deleteOne({ project: projectIdRef.current });
         console.log(result);
@@ -267,14 +324,20 @@ class Database {
 
     // Set handler to update the topologies collection, which is not coordinated with 'projects'
     // Check if there is already a loaded value different from the the new value to warn the user
-    // The 'updater' argument stands for the object data to be uploaded to mongo
-    updateTopologies = async (newTopology, conserve, overwrite) => {
+    loadTopology = async (newTopology, conserve, overwrite) => {
         // Anticipate the load and delete previous topology if necessary
-        const userConsent = await this.forestallTopologiesUpdate(newTopology, conserve, overwrite);
+        const userConsent = await this.forestallTopologyLoad(newTopology, conserve, overwrite);
         if (!userConsent) return;
         // Upload the new topology
         const result = await this.topologies.insertOne(newTopology);
         if (result.acknowledged === false) throw new Error(`Failed to insert new topology`);
+        console.log(`Loaded new topology -> ${result.insertedId}`);
+        // Update the inserted data in case we need to revert the change
+        this.inserted_data.push({
+            name: 'new topology',
+            collection: this.topologies,
+            id: result.insertedId
+        });
     };
 
     // Check if there is a previous file with the same name
@@ -282,8 +345,7 @@ class Database {
     forestallFileLoad = async (filename, mdDirectory, conserve, overwrite) => {
         // Check the current available files
         const projectData = await this.project_data;
-        const mdName = mdDirectory && this.md_directory_names[mdDirectory];
-        const mdData = mdName && projectData.mds.find(md => md.name === mdName);
+        const mdData = await this.getMdData(mdDirectory);
         const currentFiles = mdDirectory ? mdData.files : projectData.files;
         const alreadyExistingFile = currentFiles.find(file => file.filename === filename);
         // If the new file is not among the current files then there is no problem
@@ -292,15 +354,11 @@ class Database {
         if (conserve) return false;
         // Note that here we do not check if files are identical since they may be huge
         // Ask the user in case the 'overwrite' flag has not been passed
-        const confirm = overwrite ? true : await userConfirmDataLoad(filename);
+        const confirm = overwrite ? true : await userConfirmDataLoad(filename + ' file');
         // If the user has asked to conserve current data then abort the process
-        if (!confirm) {
-            console.log(chalk.yellow('New data will be discarded'));
-            return false;
-        }
-        console.log(chalk.yellow('Current data will be overwritten'));
+        if (!confirm) return false;
         // Delete the current file from the database
-        const result = await this.files.deleteOne({ project: this.project_id });
+        const result = await this.files.deleteOne({ 'metadata.project': this.project_id, filename: filename });
         console.log(result);
         if (!result) throw new Error(`Failed to remove previous file`);
         // Remove the current file entry from the files list and update the project
@@ -312,271 +370,120 @@ class Database {
         }
         // In case it is a project file
         else {
+            // Simply pull the old file object from the projects files list
             await this.updateProject({ $pull: { files: { filename: filename } } });
         }
         return true;
     };
 
-    // Update the project to register that file has been loaded
+    // Update the project to register that a file has been loaded
     // WARNING: Note that this function will not check for previously existing file with identical name
     // WARNING: This is done previously by the forestallFileLoad function
     setLoadedFile = async (filename, mdDirectory, id) => {
-        console.log('Updating project with the load of ' + filename);
+        console.log(`Updating project with the load of ${filename} file`);
         const fileObject = { name: filename, id: id };
         if (mdDirectory) {
             // Modifiy the whole MDs object and reset it in the project
-            const mdName = mdDirectory && this.md_directory_names[mdDirectory];
-            const mdData = mdName && projectData.mds.find(md => md.name === mdName);
+            const projectData = await this.project_data;
+            const mdData = await this.getMdData(mdDirectory);
             mdData.files.push(fileObject);
             await this.updateProject({ $set: { mds: projectData.mds } });
         }
         else {
+            // Simply push the new file object to the projects files list
             await this.updateProject({ $push: { files: fileObject } });
         }
-
-
-        // Check if the reference is already in the database and, if so, skip it
-        const current = await this.references.findOne({ uniprot: reference.uniprot });
-        if (current) return console.log(chalk.grey(`  Reference ${reference.uniprot} is already in the database`));
-        // Load the new reference
-        const result = await this.references.insertOne(reference);
-        // If the operation failed
-        if (result.acknowledged === false) throw new Error(`Failed to insert new reference`);
-        console.log(chalk.green(`  Loaded new reference ${reference.uniprot} -> ${result.insertedId}`));
+        // Update the inserted data in case we need to revert the change
+        this.inserted_data.push({
+            name: filename + ' file',
+            collection: this.files,
+            id: id
+        });
     };
 
-    // // Set a general handler to update 'analyses' and 'chains' collections
-    // // Previously, update the 'projects' collection through the updateProject function
-    // // The 'collection' argument stands for the mongo collection to be selected
-    // // The 'collection' argument expects 'analyses' or 'chains' as string
-    // // The 'updater' argument stands for the data to be uploaded to mongo
-    // // The 'updater' argument expects an object (e.g. { name, value, projectId })
-    // // Some key of the updater must be named 'name'
-    // updateCollection = async (collection, updater) => {
-    //     const previous = await updateProject('push', { [collection]: updater.name });
-    //     // If it was aborted
-    //     if (previous === 'abort') return;
-    //     // Mongo upload must be done in 'await Promise' format. Otherwise, it is prone to fail
-    //     return new Promise((resolve, reject) => {
-    //     db.collection(collection).insertOne(
-    //         updater,
-    //         // Callback function
-    //             (error, result) => {
-    //             // In case the load fails
-    //             if (error) {
-    //                 console.error(error);
-    //                 reject();
-    //             }
-    //             // In case the load is successfull
-    //             else {
-    //                 if (append) appended.push(result.insertedId);
-    //                 resolve();
-    //             }
-    //         },
-    //     );
-    //     });
-    // };
+    // Check if there is a previous analysis with the same name
+    // If so, check if we must delete it or conserve it
+    // DANI: En teoría no existen los análisis de proyecto, pero le doy soporte porque me los pedirán pronto (imagino)
+    forestallAnalysisLoad = async (name, mdDirectory, conserve, overwrite) => {
+        // Check the current available analyses
+        const projectData = await this.project_data;
+        const mdData = await this.getMdData(mdDirectory);
+        const currentAnalyses = mdDirectory ? mdData.analyses : projectData.analyses;
+        const alreadyExistingAnalysis = currentAnalyses.find(analysis => analysis.name === name);
+        // If the new analysis is not among the current analyses then there is no problem
+        if (!alreadyExistingAnalysis) return true;
+        // In case it exists and the 'conserve' flag has been passed we end here
+        if (conserve) return false;
+        // Note that here we do not check if analyses are identical since they may be huge
+        // Ask the user in case the 'overwrite' flag has not been passed
+        const confirm = overwrite ? true : await userConfirmDataLoad(name + ' analysis');
+        // If the user has asked to conserve current data then abort the process
+        if (!confirm) return false;
+        // Delete the current analysis from the database
+        const result = await this.analyses.deleteOne({ project: this.project_id, name: name });
+        console.log(result);
+        if (!result) throw new Error(`Failed to remove previous analysis`);
+        // Remove the current analysis entry from the analyses list and update the project
+        // In case it is a directory analysis
+        if (mdDirectory) {
+            // Update the whole mds, which is easier than pulling from such specific array
+            currentAnalyses.remove(alreadyExistingAnalysis);
+            await this.updateProject({ $set: { mds: projectData.mds } });
+        }
+        // In case it is a project analysis
+        else {
+            // Simply pull the old value from the projects analyses list
+            await this.updateProject({ $pull: { analyses: { name: name } } });
+        }
+        return true;
+    };
 
-    // updateAnticipation('set', { chains: [] })
-    // updateAnticipation('push', { files: { filename: dbFilename } })
-    // updateAnticipation('push', { files: { filename: filename } })
-    // updateAnticipation('push', { analyses: name })
+    // Load a new analysis
+    // WARNING: Note that this function will not check for previously existing analysis with identical name
+    // WARNING: This is done previously by the forestallAnalysisLoad function
+    loadAnalysis = async (analysis, mdDirectory) => {
+        this.spinnerRef.current = getSpinner().start(`Loading analysis ${analysis.name}`);
+        // Insert a new document in the analysis collection
+        const result = await this.analyses.insertOne(analysis);
+        if (result.acknowledged === false) throw new Error('Failed to load analysis');
+        // Update the project to register that an analysis has been loaded
+        const analysisObject = { name: analysis.name, id: id };
+        if (mdDirectory) {
+            // Modifiy the whole MDs object and reset it in the project
+            const projectData = await this.project_data;
+            const mdData = await this.getMdData(mdDirectory);
+            mdData.analyses.push(analysisObject);
+            await this.updateProject({ $set: { mds: projectData.mds } });
+        }
+        else {
+            // Simply push the new value to the projects analyses list
+            await this.updateProject({ $push: { analyses: analysisObject } });
+        }
+        // Update the inserted data in case we need to revert the change
+        this.inserted_data.push({
+            name: analysis.name + ' analysis',
+            collection: this.analyses,
+            id: id
+        });
+        this.spinnerRef.current.succeed(`Loaded analysis ${analysis.name} -> ${result.insertedId}`);
+    }
 
-    // Ask mongo to check if the specified data already exists
-    // If it does then ask the user if data is to be conserved or overwritten
-    // Remove data which is to be duplicated upon user confirmation
-    //_forestallUpdate = async (command, updater) => {
-    // _forestallUpdate = async (command, updater) => {
-    //     // Get the name of the first (and only) key in the updater
-    //     const updaterKey = Object.keys(updater)[0];
-    //     // Set the name to refer this data when asking the user
-    //     let name;
-    //     // Set the a path object to find the updater fields
-    //     let finder = {};
-    //     // If the command is set it means the document must be directly in the project
-    //     if (command === 'set') {
-    //         name = updaterKey;
-    //         finder[updaterKey] = { $exists: true };
-    //     }
-    //     // If the command is push it means the value or document must be part of an array
-    //     else if (command === 'push') {
-    //         // In case of 'analyses' and 'chains'
-    //         if (typeof updater[updaterKey] === 'string') {
-    //             name = updater[updaterKey];
-    //             finder = updater;
-    //         }
-    //         // In case of 'files'
-    //         // Here, the updater format is { files: { filename: name }}
-    //         // In order to access the filename, we access the first key inside the first key
-    //         else {
-    //             name = updater[updaterKey].filename;
-    //             finder = { [updaterKey]: { $elemMatch: updater[updaterKey] } };
-    //         }
-    //     } else throw new Error('wrong call');
-    //     // Check if the path to the updater already exists in the database
-    //     // *** WARNING: Do not use '...updater' instead of '...finder'
-    //     // This would make the filter sensible to the whole document
-    //     // (i.e. it would filter by each name and value of each field inside the document)
-    //     // Thus, it would only ask the user when documents are identical, which is useless
-    //     const exist = await db.collection('projects').findOne({ _id: projectIdRef.current, ...finder });
-    //     // If does not exist then there is no problem
-    //     if (!exist) return true;
-    //     // In case it is 'conserve', skip this part
-    //     // This is equal to always choosing the 'C' option
-    //     if (conserve) return false;
-    //     // Find out the collection where the data to delete is placed
-    //     // i.e. 'fs.files', 'analyses' or 'chains'
-    //     let collection = updaterKey;
-    //     if (collection === 'files') collection = 'fs.files';
-    //     // The 'set' command would overwrite the existing data
-    //     // This is applied to chains
-    //     if (command === 'set') {
-    //         // Ask the user
-    //         const confirm = overwrite
-    //         ? '*'
-    //         : await userConfirm(
-    //             `'${name}' already exists in the project. Confirm data loading:
-    //             C - Conserve current data and discard new data
-    //             * - Overwrite current data with new data `
-    //         );
-    //         // Abort the process
-    //         if (confirm === 'C') {
-    //             console.log(chalk.yellow('New data will be discarded'));
-    //             return false;
-    //         } else {
-    //             console.log(chalk.yellow('Current data will be overwritten'));
-    //             spinnerRef.current = getSpinner().start('   Overwritting current data');
-    //             // The '$set' command in mongo will override the previous value
-    //             await new Promise(resolve => {
-    //                 db.collection('projects').findOneAndUpdate(
-    //                 { _id: projectIdRef.current },
-    //                 { $set: updater },
-    //                 err => {
-    //                     if (err)
-    //                     spinnerRef.current.fail(
-    //                         '   Error while setting new data:' + err,
-    //                     );
-    //                     resolve();
-    //                 },
-    //                 );
-    //             });
-    //             // Delete documents related to the overwritten field
-    //             await new Promise(resolve => {
-    //                 // NEVER FORGET: Although all collections are supported this is only used for chains
-    //                 db.collection(collection).deleteMany(
-    //                 {
-    //                     $or: [
-    //                     // 'analyses' and 'chains'
-    //                     { project: projectIdRef.current },
-    //                     // 'fs.files'
-    //                     {
-    //                         metadata: { project: projectIdRef.current },
-    //                     },
-    //                     ],
-    //                 },
-    //                 // Callback function
-    //                 err => {
-    //                     if (err)
-    //                     spinnerRef.current.fail(
-    //                         '   Error while deleting current data:' + err,
-    //                     );
-    //                     else spinnerRef.current.succeed('   Deleted current data');
-    //                     resolve();
-    //                 },
-    //                 );
-    //             });
-    //             return true;
-    //         }
-    //     }
-    //     // The 'push' command would NOT override the existing data and just add new data
-    //     // This is applied to files and analyses
-    //     else if (command === 'push') {
-    //         // Ask the user
-    //         // In case it is 'overwrite', proceed to delete previous data and load the new one
-    //         const confirm = overwrite
-    //         ? '*'
-    //         : await userConfirm(`'${name}' already exists in the project. Confirm data loading:
-    //             C - Conserve current data and discard new data
-    //             * - Overwrite current data (delete all duplicates) with new data`);
-    //         // Abort the process
-    //         if (confirm === 'C') {
-    //         console.log(chalk.yellow('New data will be discarded'));
-    //         return false;
-    //         }
-    //         // Continue the process but first delete current data
-    //         else {
-    //         console.log(chalk.yellow('Current data will be deleted'));
-    //         spinnerRef.current = getSpinner().start('   Deleting current data');
-    //         // Delete the 'projects' associated data
-    //         await new Promise(resolve => {
-    //             db.collection('projects').findOneAndUpdate(
-    //             { _id: projectIdRef.current },
-    //             { $pull: updater },
-    //             err => {
-    //                 if (err)
-    //                 spinnerRef.current.fail(
-    //                     '   Error while deleting current data:' + err,
-    //                 );
-    //                 resolve();
-    //             },
-    //             );
-    //         });
-    //         // Delete the current document
-    //         await new Promise(resolve => {
-    //             // NEVER FORGET: Although all collections are supported this is only used for files and analyses
-    //             db.collection(collection).deleteMany(
-    //             {
-    //                 $or: [
-    //                 // 'analyses' and 'chains'
-    //                 { project: projectIdRef.current, name: name },
-    //                 // 'fs.files'
-    //                 {
-    //                     'metadata.project': projectIdRef.current,
-    //                     filename: name,
-    //                 },
-    //                 ],
-    //             },
-    //             // Callback function
-    //             err => {
-    //                 if (err)
-    //                 spinnerRef.current.fail(
-    //                     '   Error while deleting current data:' + err,
-    //                 );
-    //                 else spinnerRef.current.succeed('   Deleted current data');
-    //                 resolve();
-    //             },
-    //             );
-    //         });
-    //         // Continue the loading process
-    //         return true;
-    //         }
-    //     }
-    // };
-
-    // Set a general handler to update the 'projects' collection
-    // The 'command' argument stands for the command to be executed by mongo
-    // The 'command' argument expects 'set' or 'push' as string
-    // The 'updater' argument stands for the changes to be performed in mongo
-    // The 'updater' argument expects an object with a single key (e.g. { metadata })
-    // _update = async (command, updater) => {
-    //     // Mongo upload must be done in 'await Promise' format. Otherwise, it is prone to fail
-    //     return new Promise((resolve, reject) => {
-    //         db.collection('projects').findOneAndUpdate(
-    //         { _id: projectIdRef.current },
-    //         { ['$' + command]: updater },
-    //         // Callback function
-    //         err => {
-    //             // In case the load fails
-    //             if (err) {
-    //             console.error(err);
-    //             reject();
-    //             }
-    //             // In case the load is successfull
-    //             else resolve();
-    //         },
-    //         );
-    //     });
-    // };
+    // Unload things loaded in the database during the last run
+    revertLoad = async () => {
+        // Ask the user if already loaded data is to be conserved or cleaned up
+        const confirm = await userConfirm(
+            `There was some problem and load has been aborted. Confirm further instructions:
+            C - Conserve already loaded data
+            * - Delete already loaded data`);
+        // If data is to be conserved there is nothing to do here
+        if (confirm === 'C') return;
+        // Delete inserted data one by one
+        for (const data of this.inserted_data) {
+            console.log(`Deleting ${data.name} <- ${data.id}`);
+            const result = await data.collection.deleteOne({ _id: data.id });
+            if (result.acknowledged === false) throw new Error(`Failed to delete ${data.name}`);
+        }
+    };
 
 }
 

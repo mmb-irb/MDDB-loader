@@ -2,6 +2,8 @@
 
 // Allows asking user for confirmation
 const prompts = require('prompts');
+// Add colors in console
+const chalk = require('chalk');
 // Allows to call a unix command or run another script
 // The execution of this code keeps running
 const { spawnSync } = require('child_process');
@@ -25,11 +27,17 @@ const userConfirm = async question => {
 
 // Usual question
 const userConfirmDataLoad = async fieldname => {
-  return await userConfirm(
+  const confirm = await userConfirm(
     `'${fieldname}' already exists in the project. Confirm data loading:
     Y - Overwrite current data with new data
     * - Conserve current data and discard new data`
   ) === 'Y';
+  // Warn the user about the consequences of its decision
+  const message = confirm
+    ? 'Current data will be overwritten'
+    : 'New data will be discarded';
+  console.log(chalk.yellow(message));
+  return confirm;
 };
 
 // Check if gromacs excutable is in path
@@ -61,9 +69,16 @@ const mdNameToDirectory = name => {
   return directory
 }
 
+// Given a path with any number of steps, return the last step
+const getBasename = path => {
+  const steps = path.split('/');
+  return steps[steps.length -1];
+}
+
 module.exports = {
   userConfirm,
   userConfirmDataLoad,
   getGromacsCommand,
-  mdNameToDirectory
+  mdNameToDirectory,
+  getBasename
 };

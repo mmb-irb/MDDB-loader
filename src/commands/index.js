@@ -84,6 +84,9 @@ const commonHandler = commandName => async argv => {
       );
     }
     if (error) console.error(chalk.bgRed(error.stack));
+    // Try to revert changes
+    if (database.inserted_data.length > 0)
+      await database.revertLoad();
   } finally {
     // End mongo client
     if (client && client.close) client.close();

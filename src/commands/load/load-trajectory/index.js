@@ -8,6 +8,7 @@ const chalk = require('chalk');
 // This utility displays in console a dynamic loading status
 const getSpinner = require('../../../utils/get-spinner');
 const executeCommandPerLine = require('../../../utils/execute-command-per-line');
+const { getBasename } = require('../../../utils/auxiliar-functions');
 
 // Constants
 const UNIT_CONVERSION_SCALE = 10;
@@ -38,9 +39,11 @@ const loadTrajectory = (
   const files = database.files;
   const projectID = database.project_id;
   const spinnerRef = database.spinnerRef;
+  // Get the filename alone, without the whole path, for displaying
+  const basename = getBasename(filepath);
   // Display the start of this process in console
   spinnerRef.current = getSpinner().start(
-    `Loading trajectory file '${filepath}' as '${dbFilename}'`,
+    `Loading trajectory file '${basename}' as '${dbFilename}'`,
   );
   // Track the current frame
   let frameCount = 0;
@@ -48,7 +51,7 @@ const loadTrajectory = (
   // This throttle calls the specified function every "THROTTLE_TIME" seconds (1 second)
   const updateSpinner = throttle(() => {
     // Update the spiner periodically to show the user the time taken for the running process
-    spinnerRef.current.text = `Loading trajectory file '${filename}' as '${dbFilename}' [${
+    spinnerRef.current.text = `Loading trajectory file '${basename}' as '${dbFilename}' [${
       process.env.currentUploadId
     }]\n(frame ${frameCount} in ${prettyMs(
       Date.now() - spinnerRef.current.time,
@@ -198,7 +201,7 @@ const loadTrajectory = (
 
     // Display the end of this process as success in console
     spinnerRef.current.succeed(
-      `Loaded trajectory file '${filename}' as '${dbFilename}' [${process.env.currentUploadId}]\n(${frameCount} frames)`,
+      `Loaded trajectory file '${basename}' as '${dbFilename}' [${process.env.currentUploadId}]\n(${frameCount} frames)`,
     );
     // Find the new uploaded document and add a few metadata (frames, atoms and project id)
     // findOneAndUpdate() is a mongo function

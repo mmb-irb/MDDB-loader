@@ -23,42 +23,38 @@ const getMimeTypeFromFilename = filename => {
 };
 
 const loadFile = (
-  folder,
-  filename,
-  bucket,
-  files,
-  projectID,
+  filepath,
+  databaseFilename,
+  database,
   appended,
-  spinnerRef,
-  index,
-  rawFilesLength,
+  currentFileNumber,
+  totalFilesNumber,
   abort, // Load aborting function
 ) =>
   new Promise((resolve, reject) => {
+    // Get some fields from the database
+    const bucket = database.bucket;
+    const files = database.files;
+    const projectID = database.project_id;
+    const spinnerRef = database.spinnerRef;
     // Check that there are folder and filename
-    if (!(folder && filename)) {
-      return reject(new Error('Need to pass a folder and a filename'));
-    }
+    if (!filepath) return reject(new Error('Need to pass a folder and a filename'));
     try {
       // Start the spinner
-      spinnerRef.current = getSpinner().start(`Loading new file: ${filename}`);
+      spinnerRef.current = getSpinner().start(`Loading new file: ${databaseFilename}`);
       // Create variables to track the ammoun of data to be passed and already passed
-      const totalData = fs.statSync(folder + filename).size;
+      const totalData = fs.statSync(filepath).size;
       let currentData = 0;
       // Create a variable to track the time since the last chunk, so we can force resume
       let timeout;
       // Start reading the file by streaming
-      const readStream = fs.createReadStream(folder + filename);
-      // In case the filename starts with 'fs.' set the database filename without the prefix
-      let databaseFilename = filename;
-      if (databaseFilename.slice(0, 3) === 'fs.')
-        databaseFilename = databaseFilename.slice(3);
+      const readStream = fs.createReadStream(filepath);
       // Open the mongo writable stream with a few customized options
       // All data uploaded to mongo by this way is stored in fs.chunks
       // fs.chunks is a default collection of mongo which is managed internally
       const uploadStream = bucket.openUploadStream(databaseFilename, {
         // Check that the file format is accepted. If not, change it to "octet-stream"
-        contentType: getMimeTypeFromFilename(filename),
+        contentType: getMimeTypeFromFilename(databaseFilename),
         metadata: { project: projectID },
         chunkSizeBytes: 4 * 1024 * 1024, // 4 MiB
       });
@@ -101,7 +97,7 @@ const loadFile = (
         if (timeout) clearTimeout(timeout);
         // Display it through the spinner
         spinnerRef.current.succeed(
-          `Loaded file [${filename} -> ${uploadStream.id}] (100 %)`,
+          `Loaded file [${databaseFilename} -> ${uploadStream.id}] (100 %)`,
         );
         // Save this id as a reference for cleanup
         if (process.env.uploaded) {
@@ -120,7 +116,7 @@ const loadFile = (
         // Sum the new data chunk number of bytes
         currentData += data.length;
         // Update the spinner
-        spinnerRef.current.text = `Loading file ${index} out of ${rawFilesLength} [${filename} -> ${
+        spinnerRef.current.text = `Loading file ${currentFileNumber} out of ${totalFilesNumber} [${databaseFilename} -> ${
           uploadStream.id
         }]\n  at ${
           // I multiply by extra 100 inside the math.round and divide by 100 out
