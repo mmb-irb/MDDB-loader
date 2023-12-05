@@ -35,7 +35,7 @@ const fileOrFolderCoerce = fileOrFolder => {
 
 // Save the object from mongo which is associated to the provided id
 // WARNING: If the argument passed to this function is null a new ObjectId is generated
-const idCoerce = id => ObjectId(id);
+const idCoerce = id => new ObjectId(id);
 
 // RegExp formula to check if a string is in accession format
 //const accessionFormat = /^MCNS\d{5}$/;

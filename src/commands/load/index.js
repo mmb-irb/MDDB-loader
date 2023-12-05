@@ -78,18 +78,6 @@ const load = async (
 
   // Find all files in the "fileOrFolder" argument path and classify them
   // Classification is performed according to file names
-  // const {
-  //   rawFiles,
-  //   metadataFile,
-  //   mainTrajectory,
-  //   pcaTrajectories,
-  //   analysisFiles,
-  //   topologyFiles,
-  //   itpFiles,
-  //   topologyDataFile,
-  //   referencesDataFile,
-  //   populationsDataFile,
-  // } = await categorizeFiles(allFiles);
   const [categorizedProjectFiles, categorizedMdFiles] = await categorizeFiles(projectFiles, mdFiles);
 
   // If the append option is passed then look for the already existing project
@@ -191,7 +179,7 @@ const load = async (
         databaseFilename = databaseFilename.slice(4);
       // Handle any conflicts and ask the user if necessary
       // Delete previous files in case we want to overwrite data
-      const confirm = await database.forestallFileLoad(databaseFilename, null, conserve, overwrite);
+      const confirm = await database.forestallFileLoad(databaseFilename, undefined, conserve, overwrite);
       if (!confirm) continue;
       // Set the path to the current file
       const filepath = pdir + '/' + file;
@@ -211,7 +199,7 @@ const load = async (
       // If process was aborted
       else if (loadedFile === 'abort') return;
       // Update MD files with the new uploaded trajectory file
-      await database.setLoadedFile(file, null, loadedFile._id);
+      await database.setLoadedFile(file, undefined, loadedFile._id);
     }
   }
 
@@ -226,6 +214,7 @@ const load = async (
   for await (const mdDirectory of mdirs) {
     // Get the MD directory basename
     const mdDirectoryBasename = getBasename(mdDirectory);
+    const mdIndex = database.md_directory_indices[mdDirectoryBasename];
     console.log(chalk.cyan(`== Loading MD '${mdDirectoryBasename}'`));
     // Get the directory files
     const directoryFiles = categorizedMdFiles[mdDirectory];
@@ -239,7 +228,7 @@ const load = async (
       // Load the metadata file
       const mdMetadata = await loadJSON(mdDirectory + '/' + mdMetadataFile);
       if (!mdMetadata) throw new Error('There is something wrong with the MD metadata file in ' + mdDirectoryBasename);
-      await database.updateMdMetadata(mdMetadata, mdDirectory, conserve, overwrite);
+      await database.updateMdMetadata(mdMetadata, mdIndex, conserve, overwrite);
     }
 
     // Check if the load has been aborted at this point
@@ -252,7 +241,6 @@ const load = async (
       // Get trajectory files which are to be loaded to the database in a parsed way
       const trajectoryFiles = [
         directoryFiles.mainTrajectory,
-        ...directoryFiles.pcaTrajectories,
         ...directoryFiles.uploadableTrajectories
       ].filter(file => file && file.length !== 0);
       // Iterate over the different trajectory files
@@ -268,7 +256,7 @@ const load = async (
           databaseFilename = databaseFilename.slice(4);
         // Handle any conflicts and ask the user if necessary
         // Delete previous files in case we want to overwrite data
-        const confirm = await database.forestallFileLoad(databaseFilename, mdDirectory, conserve, overwrite);
+        const confirm = await database.forestallFileLoad(databaseFilename, mdIndex, conserve, overwrite);
         if (!confirm) continue;
         // Set the path to the current file
         const trajectoryPath = mdDirectory + '/' + file;
@@ -286,7 +274,7 @@ const load = async (
         // If process was aborted
         else if (loadedTrajectory === 'abort') return;
         // Update MD files with the new uploaded trajectory file
-        await database.setLoadedFile(file, mdDirectory, loadedTrajectory._id);
+        await database.setLoadedFile(databaseFilename, mdIndex, loadedTrajectory._id);
       }
     }
 
@@ -312,7 +300,7 @@ const load = async (
           databaseFilename = databaseFilename.slice(4);
         // Handle any conflicts and ask the user if necessary
         // Delete previous files in case we want to overwrite data
-        const confirm = await database.forestallFileLoad(databaseFilename, mdDirectory, conserve, overwrite);
+        const confirm = await database.forestallFileLoad(databaseFilename, mdIndex, conserve, overwrite);
         if (!confirm) continue;
         // Set the path to the current file
         const filepath = mdDirectory + '/' + file;
@@ -332,7 +320,7 @@ const load = async (
         // If process was aborted
         else if (loadedFile === 'abort') return;
         // Update MD files with the new uploaded trajectory file
-        await database.setLoadedFile(file, mdDirectory, loadedFile._id);
+        await database.setLoadedFile(databaseFilename, mdIndex, loadedFile._id);
       }
     }
 
@@ -353,7 +341,7 @@ const load = async (
         if (!name) continue;
         // Handle any conflicts and ask the user if necessary
         // Delete previous analyses in case we want to overwrite data
-        const confirm = await database.forestallAnalysisLoad(name, mdDirectory, conserve, overwrite);
+        const confirm = await database.forestallAnalysisLoad(name, mdIndex, conserve, overwrite);
         if (!confirm) continue;
         // Load the analysis
         const filepath = mdDirectory + '/' + file;
@@ -362,8 +350,8 @@ const load = async (
         // If mining was unsuccessful return undefined value
         if (!content) throw new Error(`There is something wrong with the ${name} analysis file`);
         // Upload new data to the database
-        const analysis = { name: name, value: content, project: database.project_id };
-        await database.loadAnalysis(analysis, mdDirectory);
+        const analysis = { name: name, value: content };
+        await database.loadAnalysis(analysis, mdIndex);
       }
     }
 

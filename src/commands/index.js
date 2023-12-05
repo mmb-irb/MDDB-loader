@@ -4,7 +4,7 @@ const process = require('process');
 const chalk = require('chalk');
 // The project manager class
 const Database = require('../database/index');
-// A way to connect to a fake mongodb for testing
+// Connect to the actual database (MongoDB)
 const connectToMongo = require('../utils/connect-to-mongo/index');
 
 // This handler calls the requested command

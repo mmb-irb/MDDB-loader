@@ -40,7 +40,7 @@ const main = async (projectName, clones, db) => {
   const setMD = async (replicaName, idOrAccession) => {
     const mdIndex = mds.length;
     // Set a query for the coressponding project or id
-    const query = { _id: ObjectId(idOrAccession) };
+    const query = { _id: new ObjectId(idOrAccession) };
     // Get the project data
     const projectData = await db.collection('projects').findOne(query);
     const projectId = projectData._id;

@@ -12,7 +12,7 @@ const { ObjectId, MongoClient } = require('mongodb');
 
 // Save the object from mongo which is associated to the provided id
 // WARNING: If the argument passed to this function is null a new ObjectId is generated
-const idCoerce = id => ObjectId(id);
+const idCoerce = id => new ObjectId(id);
 
 // RegExp formula to check if a string is in accession format
 //const accessionFormat = /^MCNS\d{5}$/;
@@ -109,7 +109,7 @@ const main = async () => {
     // Set a query for the coressponding project or id
     const query = accessionFormat.test(idOrAccession)
       ? { accession: idOrAccession }
-      : { _id: ObjectId(idOrAccession) };
+      : { _id: new ObjectId(idOrAccession) };
     // Get the project data
     const projectData = await db.collection('projects').findOne(query);
     const projectId = projectData._id;

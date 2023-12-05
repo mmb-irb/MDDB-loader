@@ -234,7 +234,7 @@ const cleanup = async (
       );
       console.log(`Orphan chunks associated to this file will be found`);
       toBeDeleted.chunks = await findDocumentsToDelete(
-        ObjectId(process.env.currentUploadId),
+        new ObjectId(process.env.currentUploadId),
         'fs.chunks',
         'files_id',
         'fs.files',

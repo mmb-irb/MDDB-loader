@@ -6,8 +6,6 @@ const metadataFilePatternToLoad = /metadata.json$/i;
 const structureFilePatternToLoad = /^structure.pdb$/i;
 // The main trajectory, one for every MD directory
 const mainTrajectoryFilePatternToLoad = /^trajectory.xtc$/i;
-// PCA projected trajectories, any number for every MD directory
-const pcaTrajectoryFilePatternToLoad = /pca.trajectory_\d+.xtc$/i;
 // Analyses, any number for every MD directory
 const analysisFilePatternToLoad = /^mda.[\s\S]*.(json)$/i;
 // Topology files, one for project
@@ -89,10 +87,6 @@ const categorizeMDFiles = mdFiles => {
   const mainTrajectory = mdFiles.find(filename =>
     mainTrajectoryFilePatternToLoad.test(filename),
   );
-  // Trajectory files are those which end in ".xtc". Some other restrictions are taken
-  const pcaTrajectories = mdFiles.filter(filename =>
-    pcaTrajectoryFilePatternToLoad.test(filename),
-  );
   // Look for analysis files
   const analysisFiles = mdFiles.filter(filename =>
     analysisFilePatternToLoad.test(filename),
@@ -111,7 +105,6 @@ const categorizeMDFiles = mdFiles => {
     metadataFile,
     structureFile,
     mainTrajectory,
-    pcaTrajectories,
     analysisFiles,
     uploadableFiles,
     uploadableTrajectories
