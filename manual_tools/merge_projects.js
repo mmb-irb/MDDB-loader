@@ -16,9 +16,7 @@ const idCoerce = id => new ObjectId(id);
 
 // RegExp formula to check if a string is in accession format
 //const accessionFormat = /^MCNS\d{5}$/;
-const accessionFormat = new RegExp(
-  '^' + process.env.ACCESSION_PREFIX + '\\d{5}$',
-);
+const accessionFormat = new RegExp('^' + process.env.ACCESSION_PREFIX + '\\d{5}$');
 
 // Convert the input accession string into a valid accession format
 const accessionCoerce = accession => {
@@ -83,7 +81,7 @@ const main = async () => {
     `mongodb://${process.env.DB_SERVER}:${process.env.DB_PORT}`,
     {
       auth: {
-        user: process.env.DB_AUTH_USER,
+        username: process.env.DB_AUTH_USER,
         password: process.env.DB_AUTH_PASSWORD,
       },
       authSource: process.env.DB_AUTHSOURCE,
@@ -167,15 +165,9 @@ const main = async () => {
     // If this project is the remaining one then we stop here
     if (projectId === remainerProjectId) return;
     // If this project is not the remaining one then remove its project entry, topology and chains
-    const removeProjectResponse = await db
-      .collection('projects')
-      .deleteOne(query);
-    const removeTopologyResponse = await db
-      .collection('topologies')
-      .deleteOne({ project: projectId });
-    const removeChainsResponse = await db
-      .collection('chains')
-      .deleteMany({ project: projectId });
+    const removeProjectResponse = await db.collection('projects').deleteOne(query);
+    const removeTopologyResponse = await db.collection('topologies').deleteOne({ project: projectId });
+    const removeChainsResponse = await db.collection('chains').deleteMany({ project: projectId });
   };
 
   // Set MDs for each project
@@ -188,12 +180,11 @@ const main = async () => {
   // Remove also the project files an analyses fields since noew they are inside the MDs field
   // WARNING: This changes the projects collection
   const query = { _id: remainerProjectId };
-  const updateResponse = await db
-    .collection('projects')
-    .findOneAndUpdate(query, {
-      $set: { mdref: 0, mds: mds },
-      $unset: { analyses: true, files: true },
-    });
+  const updater = {
+    $set: { mdref: 0, mds: mds },
+    $unset: { analyses: true, files: true },
+  };
+  const updateResponse = await db.collection('projects').findOneAndUpdate(query, updater);
 
   // Clean exit
   console.log('Allright :)');

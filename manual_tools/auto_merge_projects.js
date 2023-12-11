@@ -1,6 +1,9 @@
 // WARNING: This script changes iteratively the database structure in many collections
 // WARNING: Do not use it if you are not VERY SURE of what you are doing
 
+// This script is used to autmatically merge several simulations
+// It was osed for the moonshot simulations and all the 1 replica simulations
+
 // This script merges several projects with the old format in a single project with the new format
 // Arguments for this script are the projects to be merged and the first argument is the project to remian
 
@@ -145,7 +148,7 @@ const handler = async () => {
     `mongodb://${process.env.DB_SERVER}:${process.env.DB_PORT}`,
     {
       auth: {
-        user: process.env.DB_AUTH_USER,
+        username: process.env.DB_AUTH_USER,
         password: process.env.DB_AUTH_PASSWORD,
       },
       authSource: process.env.DB_AUTHSOURCE,
