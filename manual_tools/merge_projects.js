@@ -128,6 +128,7 @@ const main = async () => {
             { $set: { project: remainerProjectId, md: mdIndex } },
             { projection: { _id: true } },
           );
+        if (!analysisData.value) throw new Error('We are missing analysis ' + analysis);
         return { name: analysis, id: analysisData.value._id };
       }),
     );
