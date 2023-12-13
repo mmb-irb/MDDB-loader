@@ -29,13 +29,13 @@ const userConfirm = async question => {
 const userConfirmDataLoad = async fieldname => {
   const confirm = await userConfirm(
     `'${fieldname}' already exists in the project. Confirm data loading:
-    Y - Overwrite current data with new data
-    * - Conserve current data and discard new data`
+    Y - Overwrite previous data with new data
+    * - Conserve previous data and discard new data`
   ) === 'Y';
   // Warn the user about the consequences of its decision
   const message = confirm
-    ? 'Current data will be overwritten'
-    : 'New data will be discarded';
+    ? 'Previous data will be overwritten by the new data'
+    : 'Previous data is conserved and the new data will be discarded';
   console.log(chalk.yellow(message));
   return confirm;
 };
@@ -75,10 +75,24 @@ const getBasename = path => {
   return steps[steps.length -1];
 }
 
+// This is just like an string array with the accepted formats
+const mimeMap = new Map([['.pdb', 'chemical/x-pdb']]);
+
+// Check if the provided filename has one of the accepted formats
+// If it is, return the type. If not, return the "octet-stream" format.
+const getMimeTypeFromFilename = filename => {
+  for (const [extension, type] of mimeMap.entries()) {
+    if (filename.toLowerCase().endsWith(extension)) return type;
+  }
+  // default
+  return 'application/octet-stream';
+};
+
 module.exports = {
   userConfirm,
   userConfirmDataLoad,
   getGromacsCommand,
   mdNameToDirectory,
-  getBasename
+  getBasename,
+  getMimeTypeFromFilename
 };

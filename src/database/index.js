@@ -1,14 +1,30 @@
+// Files system
+const fs = require('fs');
+// Add colors in console
+const chalk = require('chalk');
+// This tool converts miliseconds (ms) to a more human friendly string (e.g. 1337000000 -> 15d 11h 23m 20s)
+const prettyMs = require('pretty-ms');
+// This utility displays in console a dynamic loading status
+const getSpinner = require('../utils/get-spinner');
+// Function to call constantly to a function with a timer
+const throttle = require('lodash.throttle');
+// Function to execute command and retrieve output line by line
+const readAndParseTrajectory = require('../utils/read-and-parse-trajectory');
 // Load auxiliar functions
 const {
     userConfirm,
     userConfirmDataLoad,
     mdNameToDirectory,
-    getBasename
+    getBasename,
+    getMimeTypeFromFilename
 } = require('../utils/auxiliar-functions');
-// Add colors in console
-const chalk = require('chalk');
-// This utility displays in console a dynamic loading status
-const getSpinner = require('../utils/get-spinner');
+
+// Constants
+const N_COORDINATES = 3; // x, y, z
+// Time it takes to the trajectory uploading logs to refresh
+const THROTTLE_TIME = 1000; // 1 second
+// Time it takes to the trajectory uploading logs to complain if there is no progress
+const TIMEOUT_WARNING = 30000; // 30 seconds
 
 // Set the project class
 class Database {
@@ -31,7 +47,10 @@ class Database {
         this.project_data_backup = null;
         // Keep track of the newly inserted data
         // This way, in case anything goes wrong, we can revert changes
-        this.inserted_data = []
+        this.inserted_data = [];
+        // Keep track of the currently inserting file
+        // This way, in case anything goes wrong, we can delete orphan chunks
+        this.currentUploadId = null;
     };
 
     // Set some collection getters
@@ -123,6 +142,25 @@ class Database {
         if (result.acknowledged === false) throw new Error('Failed to update current project');
     };
 
+    // Delete a project
+    deleteProject = async () => {
+        // Delete the remote project document
+        const result = await this.projects.deleteOne({ _id: this.project_id });
+        if (!result) throw new Error(`Failed to remove project (${id})`);
+        // // Now use the local project data to cleanup any project associated data
+        // // Remove references if they are not used by other projects
+        // for (const reference of this.project_data.metadata.REFERENCES) {
+        //     if (this.isReferenceUsed(reference.uniprot) === false) this.deleteReference(reference.uniprot);
+        // }
+        // // Remove the topology
+        // this.deleteTopology();
+        // // Remove project files
+        // for (const file of this.project_data.files) {
+        //     // DANI: Demasiados motivos para no usar la función del loadFile
+        //     this.deleteFile(file.name, undefined);
+        // }
+    }
+
     // Add a new reference in the references collection in case it does not exist yet
     loadReference = async reference => {
         console.log('Loading reference ' + reference.uniprot);
@@ -142,6 +180,21 @@ class Database {
         });
     };
 
+    // Check if a reference is still under usage
+    // i.e. there is at least one project using it
+    isReferenceUsed = async uniprot => {
+        const projects = await this.projects.count({ 'metadata.REFERENCES': uniprot });
+        console.log('projects count: ' + projects);
+        if (projects === 0) return false;
+        return true;
+    }
+
+    // Delete a reference
+    deleteReference = async uniprot => {
+        const result = await this.references.deleteOne({ uniprot: uniprot });
+        if (!result) throw new Error(`Failed to remove reference (${uniprot})`);
+    }
+
     // Anticipate chains update
     // Note that chains are updated (i.e. deleted and loaded) all together
     forestallChainsUpdate = async (conserve = false, overwrite = false) => {
@@ -157,18 +210,7 @@ class Database {
         // If there was no confirmation then abort the process
         if (!confirm) return false;
         // If we had confirmation then proceed to delete current data
-        // Set chains as an empty list
-        const updateResult = this.projects.findOneAndUpdate(
-            // Find current project by its id
-            { _id: this.project_id },
-            // The '$set' command in mongo will override the previous value
-            { $set: { chains: [] } });
-        // If the operation failed
-        if (updateResult.acknowledged === false) throw new Error(`Failed to update project data`);
-        // Delete previous chains
-        const deleteResults = this.chains.deleteMany({ project: this.project_id });
-        console.log(deleteResults);
-        if (!deleteResults) throw new Error(`Failed to delete previous data in chains collection`);
+        await this.deleteChains();
         return true;
     };
 
@@ -188,57 +230,67 @@ class Database {
         });
     };
 
+    // Delete all current project chains
+    deleteChains = async () => {
+        // Set project data chains as an empty list
+        this.project_data.chains = [];
+        await this.updateProject();
+        // Delete previous chains
+        const results = this.chains.deleteMany({ project: this.project_id });
+        console.log(results);
+        if (!results) throw new Error(`Failed to delete previous data in chains collection`);
+    };
+
     // Given a current and a new metadata objects, add missing new fields to the current metadata
     // Handle also conflicts when the new value already exists and it has a different value
-    _merge_metadata = async (currentMetadata, newMetadata, conserve = false, overwrite = false) => {
+    _merge_metadata = async (previousMetadata, newMetadata, conserve = false, overwrite = false) => {
         // Check the status of each new metadata key in the current metadata
         for (const [key, newValue] of Object.entries(newMetadata)) {
-            const currentValue = currentMetadata[key];
+            const previousValue = previousMetadata[key];
             // Missing keys are added from current metadata
-            if (currentValue === undefined) currentMetadata[key] = newValue;
+            if (previousValue === undefined) previousMetadata[key] = newValue;
             // Keys with the same value are ignored since there is nothing to change
-            else if (currentValue === newValue) continue;
+            else if (previousValue === newValue) continue;
             // Keys with different values are conflictive and we must ask the user for each one
             else {
                 // Arrays and objects are not considered 'equal' even when they store identical values
                 // We have to check this is not the case
                 // NEVER FORGET: Both objects and arrays return 'object' when checked with 'typeof'
                 if (
-                    typeof currentValue === 'object' &&
+                    typeof previousValue === 'object' &&
                     typeof newValue === 'object'
                 ) {
-                    if (JSON.stringify(currentValue) === JSON.stringify(newValue))
+                    if (JSON.stringify(previousValue) === JSON.stringify(newValue))
                     continue;
                 }
                 // When this is a real conflict...
                 // If the 'conserve' option is passed
                 if (conserve) continue;
                 // Else, if the 'overwrite' option is passed
-                else if (overwrite) currentMetadata[key] = newValue;
+                else if (overwrite) previousMetadata[key] = newValue;
                 // Else, ask the user
                 else {
                     const confirm = await userConfirm(
                         `Metadata '${key}' field already exists and its value does not match new metadata.
-                        Current value: ${JSON.stringify(currentValue, null, 4)}
+                        Previous value: ${JSON.stringify(previousValue, null, 4)}
                         New value: ${JSON.stringify(newValue, null, 4)}
                         Confirm data loading:
-                        C - Conserve current value and discard new value
-                        * - Overwrite current value with the new value`,
+                        Y - Overwrite previous value with the new value
+                        * - Conserve previous value and discard new value`,
                     );
-                    // If 'C' do nothing
-                    if (confirm === 'C') {
-                        console.log(chalk.yellow('New value will be discarded'));
-                        continue;
+                    // If 'Y' the overwrite
+                    if (confirm === 'Y') {
+                        console.log(chalk.yellow('Previous value will be overwritten by the new value'));
+                        previousMetadata[key] = newValue;
                     }
-                    // Otherwise, overwrite
+                    // Otherwise, do nothing
                     else {
-                        console.log(chalk.yellow('Current value will be overwritten'));
-                        currentMetadata[key] = newValue;
+                        console.log(chalk.yellow('Previous value is conserved and the new value will be discarded'));
                     }
                 }
             }
         }
-        return currentMetadata;
+        return previousMetadata;
     }
 
     // Set a handler to update metadata
@@ -247,18 +299,17 @@ class Database {
         console.log('Loading project metadata');
         // Get current metadata
         // Note that project metadata is in a field called 'metadata'
-        const currentMetadata = this.project_data.metadata;
+        const previousMetadata = this.project_data.metadata;
         // If there is no metadata then simply add it
-        if (!currentMetadata) {
+        if (!previousMetadata) {
             this.project_data.metadata = newMetadata;
             await this.updateProject();
             return console.log(chalk.green('   Done'));
         }
         // If there is an already existing metadata then we modify it and send it back to mongo
         // WARNING: Note that values in current metadata which are missing in new metadata will remain
-        // This is makes sense since we are 'appending' new data
-        await this._merge_metadata(currentMetadata, newMetadata, conserve, overwrite);
-        this.project_data.metadata = currentMetadata;
+        // This makes sense since we are 'appending' new data
+        await this._merge_metadata(previousMetadata, newMetadata, conserve, overwrite);
         // Finally, load the modified current metadata object into mongo
         await this.updateProject();
         console.log(chalk.green('   Done'));
@@ -299,9 +350,7 @@ class Database {
         // If the user has asked to conserve current data then abort the process
         if (!confirm) return false;
         // We must delete the current document in mongo
-        const result = await db.collection(collection).deleteOne({ project: projectIdRef.current });
-        console.log(result);
-        if (!result) throw new Error(`Failed to remove previous topology`);
+        await this.deleteTopology();
         return true;
     };
 
@@ -321,6 +370,13 @@ class Database {
             collection: this.topologies,
             id: result.insertedId
         });
+    };
+
+    // Delete the current project topology
+    deleteTopology = async () => {
+        const result = await this.topologies.deleteOne({ project: this.project_id });
+        console.log(result);
+        if (!result) throw new Error(`Failed to remove previous topology`);
     };
 
     // Get the MD index corresponding list of available files
@@ -348,6 +404,185 @@ class Database {
         return true;
     };
 
+    // Load a file using the mongo gridfs bucket
+    loadFile = async (filename, mdIndex, sourceFilepath, abort) => {
+        // Wrap all this function inside a promise which is resolved by the stream
+        await new Promise((resolve, reject) => {
+            // Start the spinner
+            this.spinnerRef.current = getSpinner().start(`Loading new file: ${filename}`);
+            // Create variables to track the ammount of data to be passed and already passed
+            const totalData = fs.statSync(sourceFilepath).size;
+            let currentData = 0;
+            // Start reading the file by streaming
+            const readStream = fs.createReadStream(sourceFilepath);
+            // Open the mongo writable stream with a few customized options
+            // All data uploaded to mongo by this way is stored in fs.chunks
+            // fs.chunks is a default collection of mongo which is managed internally
+            const uploadStream = this.bucket.openUploadStream(filename, {
+                // Check that the file format is accepted. If not, change it to "octet-stream"
+                contentType: getMimeTypeFromFilename(filename),
+                metadata: { project: this.project_id, md: mdIndex },
+                chunkSizeBytes: 4 * 1024 * 1024, // 4 MiB
+            });
+            // The resulting id of the current upload stream is saved as an environment variable
+            // In case of abort, this id is used by the automatic cleanup to find orphan chunks
+            this.currentUploadId = uploadStream.id;
+            // Promise is not resolved if the readable stream returns error
+            readStream.on('error', () => {
+                spinnerRef.current.fail(`Failed to load file ${databaseFilename} -> ${uploadStream.id} at ${
+                    Math.round((currentData / totalData) * 10000) / 100} %`);
+                reject();
+            });
+            // Track the percentaje of data already loaded through the spinner
+            readStream.on('data', async data => {
+                // Sum the new data chunk number of bytes
+                currentData += data.length;
+                // Update the spinner
+                this.spinnerRef.current.text = `Loading file ${filename} -> ${uploadStream.id }\n  at ${
+                    // I multiply by extra 100 inside the math.round and divide by 100 out
+                    // This is because I want the round for 2 decimals
+                    Math.round((currentData / totalData) * 10000) / 100} % (in ${
+                    // The time which is taking to finish the process
+                    prettyMs(Date.now() - this.spinnerRef.current.time)
+                })`;
+                // Pause and wait for the callback to resume
+                readStream.pause();
+                // Check that local buffer is sending data out before continue to prevent memory leaks
+                uploadStream.write(data, 'utf8', async () => {
+                    if (await abort()) return resolve('abort');
+                    readStream.resume();
+                });
+                // At the end
+                if (currentData / totalData === 1) {
+                    await uploadStream.end();
+                    // Display it through the spinner
+                    this.spinnerRef.current.succeed(`Loaded file [${filename} -> ${uploadStream.id}] (100 %)`);
+                    resolve();
+                }
+            });
+        });
+        // Update project data as the new file has been loaded
+        this._setLoadedFile(filename, mdIndex, this.currentUploadId)
+        // Remove this id from the current upload id
+        this.currentUploadId = null;
+    }
+
+    // Load a file using the mongo gridfs bucket
+    loadTrajectoryFile = async (filename, mdIndex, sourceFilepath, gromacsCommand, abort) => {
+        // Get the filename alone, without the whole path, for displaying
+        const basename = getBasename(sourceFilepath);
+        // Display the start of this process in console
+        this.spinnerRef.current = getSpinner().start(`Loading trajectory file '${basename}' as '${filename}'`);
+        // Track the current frame
+        let frameCount = 0;
+        let timeoutID;
+        // This throttle wrap makes the function not to be called more than once in a time range (1 second)
+        const updateSpinner = throttle(() => {
+            // Update the spiner periodically to show the user the time taken for the running process
+            const timeTaken = prettyMs(Date.now() - this.spinnerRef.current.time);
+            this.spinnerRef.current.text = `Loading trajectory file '${basename}' as '${filename}' [${
+                this.currentUploadId}]\n(frame ${frameCount} in ${timeTaken})`;
+            // Warn user if the process is stuck
+            // "setTimeout" and "clearTimeout" are node built-in functions
+            // "clearTimeout" cancels the timeout (only if is is already set, in this case)
+            if (timeoutID) clearTimeout(timeoutID);
+            // "setTimeout" executes a function after a specific amount of time
+            // First argument is the function to be executed and the second argument is the time
+            // In this case, a warning message is added to the spinner after 30 seconds
+            timeoutID = setTimeout(() => {
+                const message = ' ⚠️  Timeout warning: nothing happened in the last 30 seconds.';
+                this.spinnerRef.current.text = `${this.spinnerRef.current.text} ${chalk.yellow(message)}`;
+            }, TIMEOUT_WARNING);
+        }, THROTTLE_TIME);
+        // Set a function which adds one to to the frame counter
+        // This function is then passed to the trajectory reader/parser
+        const addOneFrame = () => {
+            frameCount += 1
+            updateSpinner();
+        };
+        await new Promise(async (resolve, reject) => {
+            // Set initial metadata for the file document
+            const metadata = { project: this.project_id, md: mdIndex };
+            // Else, open an upload stream to mongo
+            // All data uploaded to mongo by this way is stored in fs.chunks
+            // fs.chunks is a default collection of mongo which is managed internally
+            const uploadStream = this.bucket.openUploadStream(filename, {
+                contentType: 'application/octet-stream',
+                metadata: metadata,
+                chunkSizeBytes: 4 * 1024 * 1024, // 4 MiB
+            });
+            // The resulting id of the current upload stream is saved as an environment variable
+            // In case of abort, this id is used by the automatic cleanup to find orphan chunks
+            this.currentUploadId = uploadStream.id;
+            // If there is an error then display the end of this process as failure in console
+            uploadStream.on('error', error => {
+                this.spinnerRef.current.fail(error);
+                reject();
+            });
+            // This function is equivalent to openning a new terinal and typing this:
+            // gmx dump -f path/to/trajectory
+            // This assembly runs Gromacs as a paralel process which returns an output in string chunks
+            // These strings are converted in standarized "lines"
+            const trajectoryCoordinates = readAndParseTrajectory(sourceFilepath, gromacsCommand, addOneFrame, abort);
+            // Set a timeout
+            let timeout;
+            // for each atom coordinates in the data
+            for await (const coordinates of trajectoryCoordinates) {
+                // In case of overload stop writing streams and wait until the drain is resolved
+                const keepGoing = uploadStream.write(coordinates);
+                if (!keepGoing) {
+                    // Stop the loop here until the drain signal is sent
+                    await new Promise(next => uploadStream.once('drain', next));
+                    // Once passed, we remove the timeout
+                    if (timeout) clearTimeout(timeout);
+                }
+            }
+            // Update the logs
+            updateSpinner.cancel();
+            if (timeoutID) clearTimeout(timeoutID);
+            this.spinnerRef.current.text = `All trajectory frames loaded (${frameCount}). Waiting for Mongo...`;
+            // Wait until one of the endings has ended and stop any reamining timeout
+            await uploadStream.end();
+            if (timeout) clearTimeout(timeout);
+            // Display the end of this process as success in console
+            this.spinnerRef.current.succeed(
+                `Loaded trajectory file '${basename}' as '${filename}' [${this.currentUploadId}]\n(${frameCount} frames)`,
+            );
+            // Add the number of frames to the matadata object
+            metadata.frames = frameCount;
+            // Calculate the number of atoms in the loaded trajectory and add it to the metadata object
+            metadata.atoms = uploadStream.length / frameCount / Float32Array.BYTES_PER_ELEMENT / N_COORDINATES;
+            // Updated the recently created file document with additional metadata
+            const result = await this.files.findOneAndUpdate({ _id: uploadStream.id }, { $set: { metadata: metadata } });
+            // If the operation failed
+            if (result.acknowledged === false) throw new Error(`Failed to update file data`);
+            // Resolve it
+            resolve();
+        });
+        // Update project data as the new file has been loaded
+        this._setLoadedFile(filename, mdIndex, this.currentUploadId);
+        // Remove this id from the current upload id
+        this.currentUploadId = null;
+    }
+
+    // Update the project to register that a file has been loaded
+    // WARNING: Note that this function will not check for previously existing file with identical name
+    // WARNING: This should be done by the forestallFileLoad function previously
+    _setLoadedFile = async (filename, mdIndex, id) => {
+        console.log(`Updating project with the load of ${filename} file`);
+        // Get a list of available files
+        const availableFiles = this.getAvailableFiles(mdIndex);
+        // Add the new file to the list and update the remote project
+        availableFiles.push({ name: filename, id: id });
+        await this.updateProject();
+        // Update the inserted data in case we need to revert the change
+        this.inserted_data.push({
+            name: filename + ' file',
+            collection: this.files,
+            id: id
+        });
+    };
+
     // Delete a file both from fs.files / fs.chunks and from the project data
     deleteFile = async (filename, mdIndex) => {
         // Get a list of available files
@@ -365,24 +600,6 @@ class Database {
         availableFiles.splice(fileIndex, 1);
         await this.updateProject();
     }
-
-    // Update the project to register that a file has been loaded
-    // WARNING: Note that this function will not check for previously existing file with identical name
-    // WARNING: This is done previously by the forestallFileLoad function
-    setLoadedFile = async (filename, mdIndex, id) => {
-        console.log(`Updating project with the load of ${filename} file`);
-        // Get a list of available files
-        const availableFiles = this.getAvailableFiles(mdIndex);
-        // Add the new file to the list and update the remote project
-        availableFiles.push({ name: filename, id: id });
-        await this.updateProject();
-        // Update the inserted data in case we need to revert the change
-        this.inserted_data.push({
-            name: filename + ' file',
-            collection: this.files,
-            id: id
-        });
-    };
 
     // Get the MD index corresponding list of available analyses
     getAvailableAnalyses = mdIndex => mdIndex === undefined
@@ -411,25 +628,6 @@ class Database {
         return true;
     };
 
-    // Delete an analysis both from its collection and from the project data
-    deleteAnalysis = async (name, mdIndex) => {
-        console.log(`Deleting file ${name} from MD with index ${mdIndex}`);
-        // Delete the current analysis from the database
-        const result = await this.analyses.deleteOne({
-            name: name,
-            project: this.project_id,
-            md: mdIndex
-        });
-        if (!result) throw new Error(`Failed to remove previous analysis`);
-        // Remove the current analysis entry from the analyses list and update the project
-        // Get a list of available analyses
-        const availableAnalyses = this.getAvailableAnalyses(mdIndex);
-        const currentAnalysis = availableAnalyses.find(analysis => analysis.name === name);
-        const analysisIndex = availableAnalyses.indexOf(currentAnalysis);
-        availableAnalyses.splice(analysisIndex, 1);
-        await this.updateProject();
-    }
-
     // Load a new analysis
     // The analysis object contains a name and a value (the actual content)
     // In this function we also asign the project and the md index
@@ -456,10 +654,35 @@ class Database {
         this.spinnerRef.current.succeed(`Loaded analysis ${analysis.name} -> ${result.insertedId}`);
     }
 
+    // Delete an analysis both from its collection and from the project data
+    deleteAnalysis = async (name, mdIndex) => {
+        console.log(`Deleting file ${name} from MD with index ${mdIndex}`);
+        // Delete the current analysis from the database
+        const result = await this.analyses.deleteOne({
+            name: name,
+            project: this.project_id,
+            md: mdIndex
+        });
+        if (!result) throw new Error(`Failed to remove previous analysis`);
+        // Remove the current analysis entry from the analyses list and update the project
+        // Get a list of available analyses
+        const availableAnalyses = this.getAvailableAnalyses(mdIndex);
+        const currentAnalysis = availableAnalyses.find(analysis => analysis.name === name);
+        const analysisIndex = availableAnalyses.indexOf(currentAnalysis);
+        availableAnalyses.splice(analysisIndex, 1);
+        await this.updateProject();
+    }
+
     // Unload things loaded in the database during the last run
-    revertLoad = async () => {
+    revertLoad = async (confirmed = false) => {
+        // Check if any data was loaded
+        // If not, there is no point in asking the user
+        if (this.inserted_data.length === 0) return;
+        // Stop the spinner if it is still alive
+        if (this.spinnerRef.current && this.spinnerRef.current.running)
+            spinnerRef.current.fail(`Interrupted while doing: ${spinnerRef.current.text}`);
         // Ask the user if already loaded data is to be conserved or cleaned up
-        const confirm = await userConfirm(
+        const confirm = confirmed || await userConfirm(
             `There was some problem and load has been aborted. Confirm further instructions:
             C - Conserve already loaded data
             * - Delete already loaded data`);
@@ -468,8 +691,15 @@ class Database {
         // Delete inserted data one by one
         for (const data of this.inserted_data) {
             console.log(`Deleting ${data.name} <- ${data.id}`);
-            const result = await data.collection.deleteOne({ _id: data.id });
-            if (result.acknowledged === false) throw new Error(`Failed to delete ${data.name}`);
+            const collection = data.collection;
+            if (collection === this.files) {
+                console.log('allright its a file');
+                await this.bucket.delete(currentFile.id);
+            } 
+            else {
+                const result = await data.collection.deleteOne({ _id: data.id });
+                if (result.acknowledged === false) throw new Error(`Failed to delete ${data.name}`);
+            }
         }
     };
 

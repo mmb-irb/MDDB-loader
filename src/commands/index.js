@@ -35,23 +35,15 @@ const commonHandler = commandName => async argv => {
     // If this variable conatains any text, the load process will try to exit cleanly
     if (!process.env.abort) {
       process.env.abort = 'abort';
-      // in case of any error happening
-      // stop spinner
-      if (spinnerRef.current && spinnerRef.current.running) {
-        spinnerRef.current.fail(
-          `Interrupted while doing: ${spinnerRef.current.text}`,
-        );
-      }
+      // In case of any error happening stop the spinner
+      if (spinnerRef.current && spinnerRef.current.running)
+        spinnerRef.current.fail(`Interrupted while doing: ${spinnerRef.current.text}`);
     }
     // In case the abort was already in progress and we receive a new 'abort' request
     else {
       // We instantly kill the whole process
       // This would lead to generate trash data in the database
-      console.error(
-        chalk.bgRed(
-          'Process was instantly killed. Trash data may have been generated in the database',
-        ),
-      );
+      console.error(chalk.bgRed('Process was instantly killed. Trash data may have been generated in the database'));
       process.exit(0);
     }
   });
@@ -85,8 +77,7 @@ const commonHandler = commandName => async argv => {
     }
     if (error) console.error(chalk.bgRed(error.stack));
     // Try to revert changes
-    if (database.inserted_data.length > 0)
-      await database.revertLoad();
+    await database.revertLoad();
   } finally {
     // End mongo client
     if (client && client.close) client.close();

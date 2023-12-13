@@ -128,7 +128,7 @@ const analyseProtein = async (chain, sequence, database) => {
   // Find out if there is a chain analysis with this identical sequence in the database already
   // If so, copy the analaysis for this chain so we skip to repeat it
   // DANI: Esto lo hice en un acto de desesperación por lo mal que funciona el tema de las chains normalmente
-  const repeatedChain = await database.db.collection('chains').findOne(
+  const repeatedChain = await database.chains.findOne(
     // WARNING: Remove the internal id in order to avoid a further duplicated id mongo error
     // WARNING: Remove also the name to avoid further conflicts (experimentally tested)
     { sequence: sequence },
@@ -211,39 +211,6 @@ const analyzeProteins = async (structureFile, spinnerRef, abort, database) => {
   // Here we will store the residues sequence of each chain
   const chains = new Map();
 
-  // This is an alternative way for selecting the correct chains through the residues
-  // It may succeed when the classical way fails, but it may be not the solution
-  // If the chain selection fails here it will fail in the client NGL viewer
-  /*
-  // Keep track of the current chain and resno all the time
-  let previous;
-  
-  // Iterate over each residue
-  structure.eachResidue(residue => {
-    // Get chain name and resno
-    const chain = residue.chainname;
-    const resno = residue.resno;
-    // If this is the same residue as before, skip it
-    if (chain + resno === previous) return;
-    // Get the residue type
-    const type = residue.getResname1();
-    // Add the residue to the chains list
-    // Add a new entrie for the chain if it does not exist
-    const chainSeq = chains.get(chain);
-    if (chainSeq) {
-      chains.set(chain, chains.get(chain) + type);
-    } else {
-      chains.set(chain, type);
-    }
-    previous = chain + resno;
-  });
-
-  // Delete chains whose sequence is just 'X' (e.g. ligands)
-  chains.forEach((sequence, chain) => {
-    if (sequence === 'X') chains.delete(chain);
-  });
-  */
-
   structure.eachChain(chain => {
     // build the sequence string
     let sequence = '';
@@ -256,12 +223,7 @@ const analyzeProteins = async (structureFile, spinnerRef, abort, database) => {
 
     // if we have a chain and a valid sequence, we will process afterwards
     // Check if sequence is X or all X. In these cases we skip the analysis
-    if (
-      chain.chainname &&
-      sequence &&
-      sequence !== 'X' &&
-      sequence.split('').some(c => c !== 'X')
-    ) {
+    if (chain.chainname && sequence && sequence !== 'X' && sequence.split('').some(c => c !== 'X')) {
       if (addRepeatedChain(chain.chainname, sequence, chains) === false) {
         chains.set(chain.chainname, sequence);
       }
@@ -285,13 +247,9 @@ const analyzeProteins = async (structureFile, spinnerRef, abort, database) => {
           // - Keep track of the current processing sequence
           // Plural returns a single string which contains the number "i++" and the word "sequence"
           // The word is pluralized when i++ is bigger than 1 (e.g. "1 sequence", "2 sequences")
-          spinnerRef.current.text = `Processed ${plural(
-            'sequence',
-            ++i,
-            true, // true stands for displaying also the number
-          )} out of ${
-            chains.size
-          }, including submission to InterProScan and HMMER`;
+          // true stands for displaying also the number
+          spinnerRef.current.text = `Processed ${plural('sequence', ++i, true)} out of ${
+            chains.size}, including submission to InterProScan and HMMER`;
           return output;
         }),
       ), // End of the map
@@ -314,9 +272,7 @@ const analyzeProteins = async (structureFile, spinnerRef, abort, database) => {
   if ((await aborted) === 'abort') return 'abort';
   // Finish the spinner process as succeed
   spinnerRef.current.succeed(
-    `Processed ${plural('sequence', i, true)} out of ${
-      chains.size
-    }, including submission to InterProScan and HMMER`,
+    `Processed ${plural('sequence', i, true)} out of ${chains.size}, including submission to InterProScan and HMMER`,
   );
 
   return jobs;

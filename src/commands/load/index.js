@@ -13,13 +13,6 @@ const plural = require('../../utils/plural');
 const printHighlight = require('../../utils/print-highlight');
 // A function for just wait
 const { sleep } = require('timing-functions');
-// Allows to call a function in a version that returns promises
-const { promisify } = require('util');
-// Files system from node
-const fs = require('fs');
-// readFile allows to get data from a local file
-// In this case data is retuned as a promise
-const readFile = promisify(fs.readFile);
 // Read and parse a JSON file
 const loadJSON = require('../../utils/load-json');
 
@@ -29,9 +22,7 @@ const findMdDirectories = require('./find-md-directories');
 const findAllFiles = require('./find-all-files');
 const categorizeFiles = require('./categorize-files');
 const analyzeProteins = require('./protein-analyses');
-const loadTrajectory = require('./load-trajectory');
-const loadFile = require('./load-file');
-const { nameAnalysis } = require('./load-analysis');
+const nameAnalysis = require('./name-analysis');
 
 // Load data from the specified folder into mongo
 const load = async (
@@ -61,7 +52,7 @@ const load = async (
   // This is used to cleanup everything in case of abort during the load
   var appended = [];
   // Set the aborting function in case the load is interrupted further
-  const checkAbort = getAbortingFunction(database, append, appended);
+  const checkAbort = getAbortingFunction(database);
 
   // Save the current time
   const startTime = Date.now();
@@ -98,11 +89,10 @@ const load = async (
   const sampleStructureFile = sampleMd + '/' + sampleMdFiles.structureFile;
   if ( !skipChains && sampleStructureFile && (await database.forestallChainsUpdate(conserve, overwrite)) ) {
     EBIJobs = await analyzeProteins(sampleStructureFile, spinnerRef, checkAbort, database);
-    if (EBIJobs === 'abort') return;
   }
 
   // Check if the load has been aborted at this point
-  if (await checkAbort()) return;
+  await checkAbort();
 
   // ---- Metadata ----
 
@@ -118,7 +108,7 @@ const load = async (
   }
 
   // Check if the load has been aborted at this point
-  if (await checkAbort()) return;
+  await checkAbort();
 
   // ---- References ----
 
@@ -136,7 +126,7 @@ const load = async (
   }
 
   // Check if the load has been aborted at this point
-  if (await checkAbort()) return;
+  await checkAbort();
 
   // ---- Topology ----
 
@@ -171,7 +161,7 @@ const load = async (
     for await (const file of loadableFiles) {
       nfile += 1;
       // Check if the load has been aborted at this point
-      if (await checkAbort()) return;
+      await checkAbort();
       // Set the name of the file once loaded in the database
       // In case the filename starts with 'mdf.' set the database filename without the prefix
       let databaseFilename = file;
@@ -183,28 +173,13 @@ const load = async (
       if (!confirm) continue;
       // Set the path to the current file
       const filepath = pdir + '/' + file;
-      // 'loadFile' is the main function which opens the stream from the file and mongo
-      // The spinner is sent for this function to output its status to the console
-      const loadedFile = await loadFile(
-        filepath,
-        databaseFilename,
-        database,
-        appended,
-        nfile,
-        loadableFiles.length,
-        checkAbort,
-      );
-      // If there are no results, we continue to the next iteration
-      if (!loadedFile) continue;
-      // If process was aborted
-      else if (loadedFile === 'abort') return;
-      // Update MD files with the new uploaded trajectory file
-      await database.setLoadedFile(file, undefined, loadedFile._id);
+      // Load the actual file
+      await database.loadFile(databaseFilename, undefined, filepath, checkAbort);
     }
   }
 
   // Check if the load has been aborted at this point
-  if (await checkAbort()) return;
+  await checkAbort();
 
   // ---------------------------
   // ----- MD Directories ------
@@ -232,7 +207,7 @@ const load = async (
     }
 
     // Check if the load has been aborted at this point
-    if (await checkAbort()) return;
+    await checkAbort();
 
     // ---- Trajectories ----
 
@@ -248,7 +223,7 @@ const load = async (
       for (const file of trajectoryFiles) {
         ntrajectory += 1;
         // Check if the load has been aborted at this point
-        if (await checkAbort()) return;
+        await checkAbort();
         // Set the name of the file once loaded in the database
         let databaseFilename = file.replace('.xtc', '.bin');
         // In case the filename starts with 'mdt.' set the database filename without the prefix
@@ -261,20 +236,13 @@ const load = async (
         // Set the path to the current file
         const trajectoryPath = mdDirectory + '/' + file;
         // Load the trajectory parsedly
-        const loadedTrajectory = await loadTrajectory(
-          trajectoryPath,
+        await database.loadTrajectoryFile(
           databaseFilename,
-          database,
+          mdIndex,
+          trajectoryPath,
           gromacsCommand,
-          appended,
-          checkAbort,
+          checkAbort
         );
-        // If there are no results, we continue to the next iteration
-        if (!loadedTrajectory) continue;
-        // If process was aborted
-        else if (loadedTrajectory === 'abort') return;
-        // Update MD files with the new uploaded trajectory file
-        await database.setLoadedFile(databaseFilename, mdIndex, loadedTrajectory._id);
       }
     }
 
@@ -292,7 +260,7 @@ const load = async (
       for await (const file of loadableFiles) {
         nfile += 1;
         // Check if the load has been aborted at this point
-        if (await checkAbort()) return;
+        await checkAbort();
         // Set the name of the file once loaded in the database
         // In case the filename starts with 'mdf.' set the database filename without the prefix
         let databaseFilename = file;
@@ -304,28 +272,13 @@ const load = async (
         if (!confirm) continue;
         // Set the path to the current file
         const filepath = mdDirectory + '/' + file;
-        // 'loadFile' is the main function which opens the stream from the file and mongo
-        // The spinner is sent for this function to output its status to the console
-        const loadedFile = await loadFile(
-          filepath,
-          databaseFilename,
-          database,
-          appended,
-          nfile,
-          loadableFiles.length,
-          checkAbort,
-        );
-        // If there are no results, we continue to the next iteration
-        if (!loadedFile) continue;
-        // If process was aborted
-        else if (loadedFile === 'abort') return;
-        // Update MD files with the new uploaded trajectory file
-        await database.setLoadedFile(databaseFilename, mdIndex, loadedFile._id);
+        // Load the actual file
+        await database.loadFile(databaseFilename, mdIndex, filepath, checkAbort);
       }
     }
 
     // Check if the load has been aborted at this point
-    if (await checkAbort()) return;
+    await checkAbort();
 
     // ---- Analyses ----
 
@@ -335,7 +288,7 @@ const load = async (
       for await (const file of directoryFiles.analysisFiles) {
         nanalysis += 1;
         // Check if the load has been aborted before each analysis load
-        if (await checkAbort()) return;
+        await checkAbort();
         // Get the standard name of the analysis
         const name = nameAnalysis(file);
         if (!name) continue;
@@ -367,9 +320,6 @@ const load = async (
 
     // Track the number of finished 'chains'
     let finished = 0;
-    // Done is true when the 'jobs' promise is returned and aborted is used to store a promise
-    let done = false;
-    let aborted;
     await Promise.race([
       Promise.all(
         EBIJobs.map(([chain, job]) =>
@@ -389,24 +339,16 @@ const load = async (
       ),
       // Alternative promise for the Promise.race: A vigilant abort promise
       // Check if the load has been aborted once per second
-      (aborted = new Promise(async resolve => {
+      new Promise(async () => {
         // Stay vigilant until the 'jobs' promise is resolved
-        while (!done) {
+        while (true) {
           await sleep(1000);
-          if (await checkAbort()) return resolve('abort');
+          await checkAbort();
         }
-        resolve();
-      })),
+      }),
     ]);
-    // The 'done' / 'aborted' workaround is useful to manage some situations
-    // e.g. The user has canceled the load during the last promise but not answered to confirm
-    done = true;
-    // Check if the load has been aborted
-    if ((await aborted) === 'abort') return;
     // Finish the spinner
-    spinnerRef.current.succeed(
-      `Retrieved ${plural('chain', finished, true)}, including from InterProScan and HMMER`,
-    );
+    spinnerRef.current.succeed(`Retrieved ${plural('chain', finished, true)}, including from InterProScan and HMMER`);
   }
 
   return () => {
