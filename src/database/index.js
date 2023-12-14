@@ -29,9 +29,29 @@ const TIMEOUT_WARNING = 30000; // 30 seconds
 // Set the project class
 class Database {
     constructor (db, bucket) {
+        if (!db) throw new Error('No database');
+        if (!bucket) throw new Error('No bucket');
         // Get database handlers
         this.db = db;
         this.bucket = bucket;
+        // Set some collections
+        this.projects = this.db.collection('projects');
+        this.references = this.db.collection('references');
+        this.topologies = this.db.collection('topologies');
+        this.files = this.db.collection('fs.files');
+        this.analyses = this.db.collection('analyses');
+        this.chains = this.db.collection('chains');
+        this.chunks = this.db.collection('fs.chunks');
+        // List all collections together
+        this.collections = [
+            this.projects,
+            this.references,
+            this.topologies,
+            this.files,
+            this.analyses,
+            this.chains,
+            this.chunks,
+        ];
         // The spinner displays in console a dynamic loading status (see getSpinner)
         // This object saves the access (both read and write) to the spinner methods and variables
         // Since this object is sealed, attributes can be written but not added or deteled
@@ -53,24 +73,17 @@ class Database {
         this.currentUploadId = null;
     };
 
-    // Set some collection getters
-    get projects () {
-        return this.db.collection('projects');
-    }
-    get references () {
-        return this.db.collection('references');
-    }
-    get topologies () {
-        return this.db.collection('topologies');
-    }
-    get files () {
-        return this.db.collection('fs.files');
-    }
-    get analyses () {
-        return this.db.collection('analyses');
-    }
-    get chains () {
-        return this.db.collection('chains');
+    // Get the generic name of a document by the collection it belongs to
+    // This is used for displaying only
+    nameCollectionDocument = collection => {
+        if (collection === this.projects) return 'project';
+        if (collection === this.references) return 'reference';
+        if (collection === this.topologies) return 'topology';
+        if (collection === this.files) return 'file';
+        if (collection === this.analyses) return 'analysis';
+        if (collection === this.chains) return 'chain';
+        if (collection === this.chunks) return 'chunk';
+        throw new Error('Not supported collection');
     }
 
     // Set the database project
@@ -78,6 +91,8 @@ class Database {
     setupProject = async (idOrAccession, mdDirectories = []) => {
         // Parse the full md
         const mdDirectoryBasenames = mdDirectories.map(directory => getBasename(directory));
+        // Set the MD names according to the directory basenames
+        const mdDirectoryNames = mdDirectoryBasenames.map(basename => basename.replaceAll('_', ' '))
         // If an ID was passed (i.e. the project already exists in the database)
         if (idOrAccession) {
             // Use regexp to check if 'append' is an accession or an object ID
@@ -95,10 +110,7 @@ class Database {
         // If no ID was passed (i.e. the project is not yet in the database)
         else {
             // Set MD names from the available MD directories
-            const mds = mdDirectoryBasenames.map(directory => {
-                const mdName = directory.replaceAll('_', ' ');
-                return { name: mdName, files: [], analyses: [] }
-            })
+            const mds = mdDirectoryNames.map(mdName => ({ name: mdName, files: [], analyses: [] }))
             // Create a new project
             // 'insertedId' is a standarized name inside the returned object. Do not change it.
             // DANI: El mdref está fuertemente hardcodeado, hay que pensarlo
@@ -140,6 +152,7 @@ class Database {
     updateProject = async () => {
         const result = await this.projects.replaceOne({ _id: this.project_id }, this.project_data);
         if (result.acknowledged === false) throw new Error('Failed to update current project');
+        console.log('📝 Updated database project data');
     };
 
     // Delete a project
@@ -409,7 +422,7 @@ class Database {
         // Wrap all this function inside a promise which is resolved by the stream
         await new Promise((resolve, reject) => {
             // Start the spinner
-            this.spinnerRef.current = getSpinner().start(`Loading new file: ${filename}`);
+            this.spinnerRef.current = getSpinner().start(`💽 Loading new file: ${filename}`);
             // Create variables to track the ammount of data to be passed and already passed
             const totalData = fs.statSync(sourceFilepath).size;
             let currentData = 0;
@@ -429,7 +442,7 @@ class Database {
             this.currentUploadId = uploadStream.id;
             // Promise is not resolved if the readable stream returns error
             readStream.on('error', () => {
-                spinnerRef.current.fail(`Failed to load file ${databaseFilename} -> ${uploadStream.id} at ${
+                spinnerRef.current.fail(`💽 Failed to load file ${databaseFilename} -> ${uploadStream.id} at ${
                     Math.round((currentData / totalData) * 10000) / 100} %`);
                 reject();
             });
@@ -438,7 +451,7 @@ class Database {
                 // Sum the new data chunk number of bytes
                 currentData += data.length;
                 // Update the spinner
-                this.spinnerRef.current.text = `Loading file ${filename} -> ${uploadStream.id }\n  at ${
+                this.spinnerRef.current.text = `💽 Loading file ${filename} -> ${uploadStream.id }\n  at ${
                     // I multiply by extra 100 inside the math.round and divide by 100 out
                     // This is because I want the round for 2 decimals
                     Math.round((currentData / totalData) * 10000) / 100} % (in ${
@@ -456,13 +469,13 @@ class Database {
                 if (currentData / totalData === 1) {
                     await uploadStream.end();
                     // Display it through the spinner
-                    this.spinnerRef.current.succeed(`Loaded file [${filename} -> ${uploadStream.id}] (100 %)`);
+                    this.spinnerRef.current.succeed(`💽 Loaded file [${filename} -> ${uploadStream.id}] (100 %)`);
                     resolve();
                 }
             });
         });
         // Update project data as the new file has been loaded
-        this._setLoadedFile(filename, mdIndex, this.currentUploadId)
+        await this._setLoadedFile(filename, mdIndex, this.currentUploadId)
         // Remove this id from the current upload id
         this.currentUploadId = null;
     }
@@ -472,7 +485,7 @@ class Database {
         // Get the filename alone, without the whole path, for displaying
         const basename = getBasename(sourceFilepath);
         // Display the start of this process in console
-        this.spinnerRef.current = getSpinner().start(`Loading trajectory file '${basename}' as '${filename}'`);
+        this.spinnerRef.current = getSpinner().start(`💽 Loading trajectory file '${basename}' as '${filename}'`);
         // Track the current frame
         let frameCount = 0;
         let timeoutID;
@@ -480,8 +493,8 @@ class Database {
         const updateSpinner = throttle(() => {
             // Update the spiner periodically to show the user the time taken for the running process
             const timeTaken = prettyMs(Date.now() - this.spinnerRef.current.time);
-            this.spinnerRef.current.text = `Loading trajectory file '${basename}' as '${filename}' [${
-                this.currentUploadId}]\n(frame ${frameCount} in ${timeTaken})`;
+            this.spinnerRef.current.text = `💽 Loading trajectory file '${basename}' as '${filename}' [${
+                this.currentUploadId}]\n (frame ${frameCount} in ${timeTaken})`;
             // Warn user if the process is stuck
             // "setTimeout" and "clearTimeout" are node built-in functions
             // "clearTimeout" cancels the timeout (only if is is already set, in this case)
@@ -540,13 +553,13 @@ class Database {
             // Update the logs
             updateSpinner.cancel();
             if (timeoutID) clearTimeout(timeoutID);
-            this.spinnerRef.current.text = `All trajectory frames loaded (${frameCount}). Waiting for Mongo...`;
+            this.spinnerRef.current.text = `💽 All trajectory frames loaded (${frameCount}). Waiting for Mongo...`;
             // Wait until one of the endings has ended and stop any reamining timeout
             await uploadStream.end();
             if (timeout) clearTimeout(timeout);
             // Display the end of this process as success in console
             this.spinnerRef.current.succeed(
-                `Loaded trajectory file '${basename}' as '${filename}' [${this.currentUploadId}]\n(${frameCount} frames)`,
+                `💽 Loaded trajectory file '${basename}' as '${filename}' [${this.currentUploadId}]\n(${frameCount} frames)`,
             );
             // Add the number of frames to the matadata object
             metadata.frames = frameCount;
@@ -560,7 +573,7 @@ class Database {
             resolve();
         });
         // Update project data as the new file has been loaded
-        this._setLoadedFile(filename, mdIndex, this.currentUploadId);
+        await this._setLoadedFile(filename, mdIndex, this.currentUploadId);
         // Remove this id from the current upload id
         this.currentUploadId = null;
     }
@@ -569,7 +582,6 @@ class Database {
     // WARNING: Note that this function will not check for previously existing file with identical name
     // WARNING: This should be done by the forestallFileLoad function previously
     _setLoadedFile = async (filename, mdIndex, id) => {
-        console.log(`Updating project with the load of ${filename} file`);
         // Get a list of available files
         const availableFiles = this.getAvailableFiles(mdIndex);
         // Add the new file to the list and update the remote project
@@ -589,12 +601,12 @@ class Database {
         const availableFiles = this.getAvailableFiles(mdIndex);
         // Find the file summary
         const currentFile = availableFiles.find(file => file.name === filename);
-        if (!currentFile) throw new Error(`File ${filename} is not in the available files list`);
-        console.log(`Deleting file ${filename} from MD with index ${mdIndex} <- ${currentFile.id}`);
+        if (!currentFile) throw new Error(`File ${filename} is not in the available files list (MD index ${mdIndex})`);
         // Delete the file from fs.files and its chunks from fs.chunks using the file id
         // GridFSBucket.delete has no callback but when it fails (i.e. file not found) it kills the process
         // https://mongodb.github.io/node-mongodb-native/6.3/classes/GridFSBucket.html#delete
         await this.bucket.delete(currentFile.id);
+        console.log(`🗑️ Deleted file ${filename} from MD with index ${mdIndex} <- ${currentFile.id}`);
         // Remove the current file entry from the files list and update the project
         const fileIndex = availableFiles.indexOf(currentFile);
         availableFiles.splice(fileIndex, 1);
@@ -634,12 +646,12 @@ class Database {
     // WARNING: Note that this function will not check for previously existing analysis with identical name
     // WARNING: This is done previously by the forestallAnalysisLoad function
     loadAnalysis = async (analysis, mdIndex) => {
-        this.spinnerRef.current = getSpinner().start(`Loading analysis ${analysis.name}`);
         analysis.project = this.project_id;
         analysis.md = mdIndex;
         // Insert a new document in the analysis collection
         const result = await this.analyses.insertOne(analysis);
         if (result.acknowledged === false) throw new Error('Failed to load analysis');
+        console.log(`💽 Loaded analysis ${analysis.name}`);
         // Get a list of available analyses
         const availableAnalyses = this.getAvailableAnalyses(mdIndex);
         // Update the project to register that an analysis has been loaded
@@ -651,23 +663,23 @@ class Database {
             collection: this.analyses,
             id: id
         });
-        this.spinnerRef.current.succeed(`Loaded analysis ${analysis.name} -> ${result.insertedId}`);
     }
 
     // Delete an analysis both from its collection and from the project data
     deleteAnalysis = async (name, mdIndex) => {
-        console.log(`Deleting file ${name} from MD with index ${mdIndex}`);
+        // Get the current analysis entry analyses
+        const availableAnalyses = this.getAvailableAnalyses(mdIndex);
+        const currentAnalysis = availableAnalyses.find(analysis => analysis.name === name);
+        if (!currentAnalysis) throw new Error(`Analysis ${name} is not in the available analyses list (MD index ${mdIndex})`);
         // Delete the current analysis from the database
         const result = await this.analyses.deleteOne({
             name: name,
             project: this.project_id,
             md: mdIndex
         });
-        if (!result) throw new Error(`Failed to remove previous analysis`);
+        if (!result) throw new Error(`Failed to remove analysis ${name} (MD index ${mdIndex})`);
+        console.log(`🗑️ Deleted analysis ${name} from MD with index ${mdIndex} <- ${currentAnalysis.id}`);
         // Remove the current analysis entry from the analyses list and update the project
-        // Get a list of available analyses
-        const availableAnalyses = this.getAvailableAnalyses(mdIndex);
-        const currentAnalysis = availableAnalyses.find(analysis => analysis.name === name);
         const analysisIndex = availableAnalyses.indexOf(currentAnalysis);
         availableAnalyses.splice(analysisIndex, 1);
         await this.updateProject();
@@ -690,7 +702,6 @@ class Database {
         if (confirm === 'C') return;
         // Delete inserted data one by one
         for (const data of this.inserted_data) {
-            console.log(`Deleting ${data.name} <- ${data.id}`);
             const collection = data.collection;
             if (collection === this.files) {
                 console.log('allright its a file');
@@ -700,8 +711,22 @@ class Database {
                 const result = await data.collection.deleteOne({ _id: data.id });
                 if (result.acknowledged === false) throw new Error(`Failed to delete ${data.name}`);
             }
+            console.log(`🗑️ Deleted ${data.name} <- ${data.id}`);
         }
     };
+
+    // Cleanup functions -------------------------
+
+    // Given an id, find the document and the collection it belongs to
+    findId = async id => {
+        // Iterate over all collections until we find the id
+        for await (const collection of this.collections) {
+            const document = await collection.findOne({ _id: id });
+            if (document) return { document, collection };
+        }
+        // If there was no result then null is returned
+        return null;
+    }
 
 }
 

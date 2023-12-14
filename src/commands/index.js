@@ -51,30 +51,18 @@ const commonHandler = commandName => async argv => {
   // Run the command wrapped by a try
   // This way we can catch the fail and better log the error if something goes wrong
   try {
-
     // Each command has its own script
     // Folders containing these scripts have the same command name
     // Find which script must be loaded according to the command name
     const command = require(`./${commandName}`);
-
-    // Call the requested command
-    const finalMessage = await command(
-      // "argv" is a normal object passed from yargs library
-      // This object contains the input values of options and positionals from the command
-      // e.g. in load command, argv contains the values of {folder, gromacs-path}
-      argv,
-      // Also include the database handler
-      database,
-    );
+    // Call the requested command while passing all the arguments
+    const finalMessage = await command(argv, database);
     if (finalMessage) finalMessage();
   } catch (error) {
     process.env.abort = 'abort';
     // Stop the spinner
-    if (spinnerRef.current && spinnerRef.current.running) {
-      spinnerRef.current.fail(
-        `Interrupted while doing: ${spinnerRef.current.text}`,
-      );
-    }
+    if (spinnerRef.current && spinnerRef.current.running)
+      spinnerRef.current.fail(`Interrupted while doing: ${spinnerRef.current.text}`);
     if (error) console.error(chalk.bgRed(error.stack));
     // Try to revert changes
     await database.revertLoad();

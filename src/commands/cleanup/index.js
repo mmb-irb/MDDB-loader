@@ -18,10 +18,7 @@ const findProjectsToDelete = async (db, spinnerRef) => {
   // Find all project which lack the metadata field
   const cursor = await c.find({ metadata: { $exists: false } });
   const result = (await cursor.toArray()).map(({ _id }) => _id);
-  if (spinnerRef)
-    spinnerRef.current.succeed(
-      `Found ${plural('project', result.length, true)} to delete`,
-    );
+  if (spinnerRef) spinnerRef.current.succeed(`Found ${plural('project', result.length, true)} to delete`);
   return result;
 };
 
@@ -81,10 +78,7 @@ const findDocumentsToDelete = async (
 // ...and the actual number of chunks
 // CAUTION: Returns error if the passed id belongs to a project with 0 files
 const estimateChunks = async (id, db, spinnerRef) => {
-  if (spinnerRef)
-    spinnerRef.current = getSpinner().start(
-      `Estimating the number of chunks to delete`,
-    );
+  if (spinnerRef) spinnerRef.current = getSpinner().start(`Estimating the number of chunks to delete`);
   // Calculate the chunks needed by each file
   const fileChunks = (await db
     .collection('fs.files')
@@ -192,16 +186,11 @@ const cleanup = async (
       return resolve();
     });
     // If you found something give feedback and otherwise stop here
-    if (target)
-      console.log(chalk.cyan(`== running cleanup of ${type} with id ${id}`));
+    if (target) console.log(chalk.cyan(`== running cleanup of ${type} with id ${id}`));
     else return;
   } else if (deleteAllOrphans) {
     console.log(chalk.cyan(`== running trash cleanup`));
-    console.log(
-      chalk.yellow(
-        `CAUTION: Do not run this process while data is beeing loaded`,
-      ),
-    );
+    console.log(chalk.yellow(`CAUTION: Do not run this process while data is beeing loaded`));
   }
 
   // Data to clean will be stored here

@@ -87,9 +87,8 @@ const load = async (
   const sampleMd = mdirs[0];
   const sampleMdFiles = categorizedMdFiles[sampleMd]
   const sampleStructureFile = sampleMd + '/' + sampleMdFiles.structureFile;
-  if ( !skipChains && sampleStructureFile && (await database.forestallChainsUpdate(conserve, overwrite)) ) {
+  if ( !skipChains && sampleStructureFile && (await database.forestallChainsUpdate(conserve, overwrite)) )
     EBIJobs = await analyzeProteins(sampleStructureFile, spinnerRef, checkAbort, database);
-  }
 
   // Check if the load has been aborted at this point
   await checkAbort();
@@ -190,7 +189,7 @@ const load = async (
     // Get the MD directory basename
     const mdDirectoryBasename = getBasename(mdDirectory);
     const mdIndex = database.md_directory_indices[mdDirectoryBasename];
-    console.log(chalk.cyan(`== Loading MD '${mdDirectoryBasename}'`));
+    console.log(chalk.cyan(`== Loading MD '${mdDirectoryBasename}' (MD index ${mdIndex})`));
     // Get the directory files
     const directoryFiles = categorizedMdFiles[mdDirectory];
 
