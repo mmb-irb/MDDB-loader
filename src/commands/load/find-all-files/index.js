@@ -11,8 +11,7 @@ const findAllFiles = (fileOrFolder, mdirs) => {
     if (stats.isDirectory()) {
         projectFiles = fs.readdirSync(fileOrFolder);
         for (const mdDirectory of mdirs) {
-            const mdPath = fileOrFolder + '/' + mdDirectory;
-            mdFiles[mdDirectory] = fs.readdirSync(mdPath);
+            mdFiles[mdDirectory] = fs.readdirSync(mdDirectory);
         }
         return [projectFiles, mdFiles];
     }

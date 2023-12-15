@@ -9,13 +9,18 @@ const deleteFunction = async (
     // Database handler
     database,
 ) => {
+    console.log(chalk.cyan(`== Deletion of '${id}'`));
     // Find the document with the requested Id, no matter in which collection it is
     const target = await database.findId(id);
     // If nothing is found then we are done
     if (!target) return console.error(chalk.yellow(`Nothing found for ID '${id}'`));
-    // Warn the user about the document we are about to delete
+    // Warn the user about the document we are about to delete and ask for confirmation
     const documentName = database.nameCollectionDocument(target.collection);
-    console.log(chalk.cyan(`== running deletion of ${documentName} with id ${id}`));
+    // If the confirm argument has not been passed then ask the user for confirmation
+    if (!confirm) {
+        const confirmation = await userConfirm(`Confirm deletion of of ${documentName} with id ${id} [y/*]`);
+        if (confirmation !== 'y' && confirmation !== 'Y') return console.log('Data deletion has been aborted');
+    }
     // Use the right deleting protocol according to the type of document we are about to delete
     // ----- Analysis -----
     if (target.collection === database.analyses) {

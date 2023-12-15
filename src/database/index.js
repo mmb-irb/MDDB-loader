@@ -35,13 +35,13 @@ class Database {
         this.db = db;
         this.bucket = bucket;
         // Set some collections
-        this.projects = this.db.collection('projects');
-        this.references = this.db.collection('references');
-        this.topologies = this.db.collection('topologies');
-        this.files = this.db.collection('fs.files');
-        this.analyses = this.db.collection('analyses');
-        this.chains = this.db.collection('chains');
-        this.chunks = this.db.collection('fs.chunks');
+        this.projects = db.collection('projects');
+        this.references = db.collection('references');
+        this.topologies = db.collection('topologies');
+        this.files = db.collection('fs.files');
+        this.analyses = db.collection('analyses');
+        this.chains = db.collection('chains');
+        this.chunks = db.collection('fs.chunks');
         // List all collections together
         this.collections = [
             this.projects,
@@ -52,7 +52,7 @@ class Database {
             this.chains,
             this.chunks,
         ];
-        // The spinner displays in console a dynamic loading status (see getSpinner)
+        // The spinner displays in console a dynamic loading status so it is useful for logs
         // This object saves the access (both read and write) to the spinner methods and variables
         // Since this object is sealed, attributes can be written but not added or deteled
         this.spinnerRef = Object.seal({ current: null });
@@ -72,6 +72,24 @@ class Database {
         // This way, in case anything goes wrong, we can delete orphan chunks
         this.currentUploadId = null;
     };
+
+    // Set some functions to easily handle the spinner logs
+    startLog = message => this.spinnerRef.current = getSpinner().start(message);
+    updateLog = message => this.spinnerRef.current.text = message;
+    successLog = message => this.spinnerRef.current.succeed(message);
+    failLog = message => {
+        this.spinnerRef.current.fail(message);
+        throw new Error(message);
+    }
+    get logText () {
+        return this.spinnerRef.current.text;
+    }
+    get logTime () {
+        return this.spinnerRef.current.time;
+    }
+    get isLogRunning () {
+        return this.spinnerRef.current && this.spinnerRef.current.running;
+    }
 
     // Get the generic name of a document by the collection it belongs to
     // This is used for displaying only
@@ -104,11 +122,10 @@ class Database {
             this.project_data = await this.projects.findOne(query);
             if (!this.project_data) throw new Error(`No project found for ID/Accession '${idOrAccession}'`);
             this.project_id = this.project_data._id;
-            // Display the project id. It may be useful if the load is abruptly interrupted to clean
-            console.log(chalk.cyan(`== new data will be added to project '${this.project_id}'`));
         }
         // If no ID was passed (i.e. the project is not yet in the database)
         else {
+            this.startLog(`📝 Adding new database project`);
             // Set MD names from the available MD directories
             const mds = mdDirectoryNames.map(mdName => ({ name: mdName, files: [], analyses: [] }))
             // Create a new project
@@ -118,7 +135,8 @@ class Database {
             // Load the new project
             const result = await this.projects.insertOne(this.project_data);
             // If the operation failed
-            if (result.acknowledged === false) throw new Error(`Failed to insert new project`);
+            if (result.acknowledged === false) return this.failLog(`📝 Failed to add new database project`);
+            this.successLog(`📝 Added new database project -> ${this.project_id}`);
             // Update the project id
             this.project_data._id = result.insertedId;
             this.project_id = result.insertedId;
@@ -128,9 +146,9 @@ class Database {
                 collection: this.projects,
                 id: this.project_id
             });
-            // Display the project id. It may be useful if the load is abruptly interrupted to clean
-            console.log(chalk.cyan(`== new project will be stored with the id '${this.project_id}'`));
         }
+        // Display the project id. It may be useful if the load is abruptly interrupted to clean
+        console.log(chalk.cyan(`== Project '${this.project_id}'`));
         // Set MD directory names and indices from project data
         this.md_directory_names = {};
         this.md_directory_indices = {};
@@ -150,16 +168,20 @@ class Database {
 
     // Update remote project by overwritting it al with current project data
     updateProject = async () => {
+        this.startLog(`📝 Updating database project data`);
+        // Replace remote project data by local project data
         const result = await this.projects.replaceOne({ _id: this.project_id }, this.project_data);
-        if (result.acknowledged === false) throw new Error('Failed to update current project');
-        console.log('📝 Updated database project data');
+        if (result.acknowledged === false) return this.failLog('📝 Failed to update database project data');
+        this.successLog('📝 Updated database project data');
     };
 
     // Delete a project
     deleteProject = async () => {
+        this.startLog(`🗑️ Deleting project ${this.project_id}`);
         // Delete the remote project document
         const result = await this.projects.deleteOne({ _id: this.project_id });
-        if (!result) throw new Error(`Failed to remove project (${id})`);
+        if (!result) return this.failLog(`🗑️ Failed to delete project ${this.project_id}`);
+        this.successLog(`🗑️ Deleted project ${this.project_id}`);
         // // Now use the local project data to cleanup any project associated data
         // // Remove references if they are not used by other projects
         // for (const reference of this.project_data.metadata.REFERENCES) {
@@ -176,14 +198,15 @@ class Database {
 
     // Add a new reference in the references collection in case it does not exist yet
     loadReference = async reference => {
-        console.log('Loading reference ' + reference.uniprot);
-        // Check if the reference is already in the database and, if so, skip it
+        // Check if the reference is already in the database and, if so, skip the load
         const current = await this.references.findOne({ uniprot: reference.uniprot });
-        if (current) return console.log(chalk.grey(`  Reference ${reference.uniprot} is already in the database`));
+        if (current) return console.log(chalk.grey(`Reference ${reference.uniprot} is already in the database`));
+        this.startLog(`💽 Loading reference ${reference.uniprot}`);
         // Load the new reference
         const result = await this.references.insertOne(reference);
         // If the operation failed
-        if (result.acknowledged === false) throw new Error(`Failed to insert new reference`);
+        if (result.acknowledged === false) return this.failLog(`💽 Failed to load reference ${reference.uniprot}`);
+        this.successLog(`💽 Loaded reference ${reference.uniprot}`);
         console.log(chalk.green(`  Loaded new reference ${reference.uniprot} -> ${result.insertedId}`));
         // Update the inserted data in case we need to revert the change
         this.inserted_data.push({
@@ -204,8 +227,10 @@ class Database {
 
     // Delete a reference
     deleteReference = async uniprot => {
+        this.startLog(`🗑️ Deleting referece ${uniprot}`);
         const result = await this.references.deleteOne({ uniprot: uniprot });
-        if (!result) throw new Error(`Failed to remove reference (${uniprot})`);
+        if (!result) return this.failLog(`🗑️ Failed to delete referece ${uniprot}`);
+        this.successLog(`🗑️ Deleted referece ${uniprot}`);
     }
 
     // Anticipate chains update
@@ -232,9 +257,10 @@ class Database {
     // WARNING: This is done previously by the forestallChainsUpdate function
     loadChain = async chainContent => {
         // Upload the new topology
+        this.startLog(`💽 Loading chain ${chainContent.name}`);
         const result = await this.chains.insertOne(chainContent);
-        if (result.acknowledged === false) throw new Error(`Failed to insert new chain`);
-        //console.log(chalk.green(`  Loaded new chain -> ${result.insertedId}`));
+        if (result.acknowledged === false) return this.failLog(`💽 Failed to load chain ${chainContent.name}`);
+        this.successLog(`💽 Loaded chain ${chainContent.name}`);
         // Update the inserted data in case we need to revert the change
         this.inserted_data.push({
             name: 'new chain',
@@ -245,13 +271,15 @@ class Database {
 
     // Delete all current project chains
     deleteChains = async () => {
-        // Set project data chains as an empty list
-        this.project_data.chains = [];
-        await this.updateProject();
+        this.startLog(`🗑️ Deleting chains`);
         // Delete previous chains
         const results = this.chains.deleteMany({ project: this.project_id });
         console.log(results);
-        if (!results) throw new Error(`Failed to delete previous data in chains collection`);
+        if (!results) return this.failLog(`🗑️ Failed to delete chains`);
+        this.successLog(`🗑️ Deleted chains`);
+        // Set project data chains as an empty list
+        this.project_data.chains = [];
+        await this.updateProject();
     };
 
     // Given a current and a new metadata objects, add missing new fields to the current metadata
@@ -317,7 +345,6 @@ class Database {
         if (!previousMetadata) {
             this.project_data.metadata = newMetadata;
             await this.updateProject();
-            return console.log(chalk.green('   Done'));
         }
         // If there is an already existing metadata then we modify it and send it back to mongo
         // WARNING: Note that values in current metadata which are missing in new metadata will remain
@@ -325,7 +352,6 @@ class Database {
         await this._merge_metadata(previousMetadata, newMetadata, conserve, overwrite);
         // Finally, load the modified current metadata object into mongo
         await this.updateProject();
-        console.log(chalk.green('   Done'));
     };
 
 
@@ -343,7 +369,6 @@ class Database {
         this.project_data.mds[mdIndex] = mdData;
         // Finally, load the new mds object into mongo
         await this.updateProject();
-        console.log(chalk.green('   Done'));
     };
 
     // Check if there is a previous document already saved
@@ -421,8 +446,8 @@ class Database {
     loadFile = async (filename, mdIndex, sourceFilepath, abort) => {
         // Wrap all this function inside a promise which is resolved by the stream
         await new Promise((resolve, reject) => {
-            // Start the spinner
-            this.spinnerRef.current = getSpinner().start(`💽 Loading new file: ${filename}`);
+            // Start the logs
+            this.startLog(`💽 Loading new file: ${filename}`);
             // Create variables to track the ammount of data to be passed and already passed
             const totalData = fs.statSync(sourceFilepath).size;
             let currentData = 0;
@@ -442,40 +467,42 @@ class Database {
             this.currentUploadId = uploadStream.id;
             // Promise is not resolved if the readable stream returns error
             readStream.on('error', () => {
-                spinnerRef.current.fail(`💽 Failed to load file ${databaseFilename} -> ${uploadStream.id} at ${
-                    Math.round((currentData / totalData) * 10000) / 100} %`);
+                const progress = Math.round((currentData / totalData) * 10000) / 100;
+                this.failLog(`💽 Failed to load file ${databaseFilename} -> ${uploadStream.id} at ${progress} %`);
                 reject();
             });
-            // Track the percentaje of data already loaded through the spinner
+            // Output the percentaje of data already loaded to the logs
             readStream.on('data', async data => {
                 // Sum the new data chunk number of bytes
                 currentData += data.length;
-                // Update the spinner
-                this.spinnerRef.current.text = `💽 Loading file ${filename} -> ${uploadStream.id }\n  at ${
-                    // I multiply by extra 100 inside the math.round and divide by 100 out
-                    // This is because I want the round for 2 decimals
-                    Math.round((currentData / totalData) * 10000) / 100} % (in ${
-                    // The time which is taking to finish the process
-                    prettyMs(Date.now() - this.spinnerRef.current.time)
-                })`;
+                // Calculate the progress rounded to 2 decimals
+                const progress = Math.round((currentData / totalData) * 10000) / 100;
+                // Calculate the amount of time we have been loading the file
+                const time = prettyMs(Date.now() - this.logTime);
+                // Update the logs
+                this.updateLog(`💽 Loading file ${filename} -> ${uploadStream.id}\n  at ${progress} % (in ${time})`);
                 // Pause and wait for the callback to resume
                 readStream.pause();
                 // Check that local buffer is sending data out before continue to prevent memory leaks
                 uploadStream.write(data, 'utf8', async () => {
-                    if (await abort()) return resolve('abort');
+                    await abort();
                     readStream.resume();
                 });
                 // At the end
                 if (currentData / totalData === 1) {
-                    await uploadStream.end();
-                    // Display it through the spinner
-                    this.spinnerRef.current.succeed(`💽 Loaded file [${filename} -> ${uploadStream.id}] (100 %)`);
-                    resolve();
+                    uploadStream.end(() => {
+                        // Display it through the logs
+                        this.successLog(`💽 Loaded file [${filename} -> ${uploadStream.id}] (100 %)`);
+                        resolve();
+                    });
                 }
             });
         });
+        // Check the new file has been added
+        const result = await this.files.findOne({ _id: this.currentUploadId });
+        if (result === null) throw new Error(`File not found`);
         // Update project data as the new file has been loaded
-        await this._setLoadedFile(filename, mdIndex, this.currentUploadId)
+        await this._addProjectFile(filename, mdIndex, this.currentUploadId);
         // Remove this id from the current upload id
         this.currentUploadId = null;
     }
@@ -485,38 +512,38 @@ class Database {
         // Get the filename alone, without the whole path, for displaying
         const basename = getBasename(sourceFilepath);
         // Display the start of this process in console
-        this.spinnerRef.current = getSpinner().start(`💽 Loading trajectory file '${basename}' as '${filename}'`);
+        this.startLog(`💽 Loading trajectory file '${basename}' as '${filename}'`);
         // Track the current frame
         let frameCount = 0;
         let timeoutID;
         // This throttle wrap makes the function not to be called more than once in a time range (1 second)
-        const updateSpinner = throttle(() => {
-            // Update the spiner periodically to show the user the time taken for the running process
-            const timeTaken = prettyMs(Date.now() - this.spinnerRef.current.time);
-            this.spinnerRef.current.text = `💽 Loading trajectory file '${basename}' as '${filename}' [${
-                this.currentUploadId}]\n (frame ${frameCount} in ${timeTaken})`;
+        const updateLogs = throttle(() => {
+            // Update logs periodically to show the user the time taken for the running process
+            const timeTaken = prettyMs(Date.now() - this.logTime);
+            this.updateLog(`💽 Loading trajectory file '${basename}' as '${filename}' [${
+                this.currentUploadId}]\n (frame ${frameCount} in ${timeTaken})`);
             // Warn user if the process is stuck
             // "setTimeout" and "clearTimeout" are node built-in functions
             // "clearTimeout" cancels the timeout (only if is is already set, in this case)
             if (timeoutID) clearTimeout(timeoutID);
             // "setTimeout" executes a function after a specific amount of time
             // First argument is the function to be executed and the second argument is the time
-            // In this case, a warning message is added to the spinner after 30 seconds
+            // In this case, a warning message is added to the logs after 30 seconds
             timeoutID = setTimeout(() => {
                 const message = ' ⚠️  Timeout warning: nothing happened in the last 30 seconds.';
-                this.spinnerRef.current.text = `${this.spinnerRef.current.text} ${chalk.yellow(message)}`;
+                this.updateLog(`${this.logText} ${chalk.yellow(message)}`);
             }, TIMEOUT_WARNING);
         }, THROTTLE_TIME);
         // Set a function which adds one to to the frame counter
         // This function is then passed to the trajectory reader/parser
         const addOneFrame = () => {
             frameCount += 1
-            updateSpinner();
+            updateLogs();
         };
         await new Promise(async (resolve, reject) => {
             // Set initial metadata for the file document
             const metadata = { project: this.project_id, md: mdIndex };
-            // Else, open an upload stream to mongo
+            // Open an upload stream to mongo
             // All data uploaded to mongo by this way is stored in fs.chunks
             // fs.chunks is a default collection of mongo which is managed internally
             const uploadStream = this.bucket.openUploadStream(filename, {
@@ -529,7 +556,7 @@ class Database {
             this.currentUploadId = uploadStream.id;
             // If there is an error then display the end of this process as failure in console
             uploadStream.on('error', error => {
-                this.spinnerRef.current.fail(error);
+                this.failLog(error);
                 reject();
             });
             // This function is equivalent to openning a new terinal and typing this:
@@ -539,7 +566,7 @@ class Database {
             const trajectoryCoordinates = readAndParseTrajectory(sourceFilepath, gromacsCommand, addOneFrame, abort);
             // Set a timeout
             let timeout;
-            // for each atom coordinates in the data
+            // Iterate over buffers of binary coordinates
             for await (const coordinates of trajectoryCoordinates) {
                 // In case of overload stop writing streams and wait until the drain is resolved
                 const keepGoing = uploadStream.write(coordinates);
@@ -551,29 +578,30 @@ class Database {
                 }
             }
             // Update the logs
-            updateSpinner.cancel();
+            updateLogs.cancel();
             if (timeoutID) clearTimeout(timeoutID);
-            this.spinnerRef.current.text = `💽 All trajectory frames loaded (${frameCount}). Waiting for Mongo...`;
+            this.updateLog(`💽 All trajectory frames loaded (${frameCount}). Waiting for Mongo...`);
             // Wait until one of the endings has ended and stop any reamining timeout
-            await uploadStream.end();
-            if (timeout) clearTimeout(timeout);
-            // Display the end of this process as success in console
-            this.spinnerRef.current.succeed(
-                `💽 Loaded trajectory file '${basename}' as '${filename}' [${this.currentUploadId}]\n(${frameCount} frames)`,
-            );
-            // Add the number of frames to the matadata object
-            metadata.frames = frameCount;
-            // Calculate the number of atoms in the loaded trajectory and add it to the metadata object
-            metadata.atoms = uploadStream.length / frameCount / Float32Array.BYTES_PER_ELEMENT / N_COORDINATES;
-            // Updated the recently created file document with additional metadata
-            const result = await this.files.findOneAndUpdate({ _id: uploadStream.id }, { $set: { metadata: metadata } });
-            // If the operation failed
-            if (result.acknowledged === false) throw new Error(`Failed to update file data`);
-            // Resolve it
-            resolve();
+            uploadStream.end(async () => {
+                // Remove the timeout
+                if (timeout) clearTimeout(timeout);
+                // Display the end of this process as success in console
+                this.successLog(
+                    `💽 Loaded trajectory file '${basename}' as '${filename}' [${uploadStream.id}]\n(${frameCount} frames)`);
+                // Add the number of frames to the matadata object
+                metadata.frames = frameCount;
+                // Calculate the number of atoms in the loaded trajectory and add it to the metadata object
+                metadata.atoms = uploadStream.length / frameCount / Float32Array.BYTES_PER_ELEMENT / N_COORDINATES;
+                // Updated the recently created file document with additional metadata
+                const result = await this.files.findOneAndUpdate({ _id: uploadStream.id }, { $set: { metadata: metadata } });
+                // If the operation failed then warn the user
+                if (result.acknowledged === false) throw new Error(`Failed to update file data`);
+                if (result.value === null) throw new Error(`File not found`);
+                resolve();
+            });
         });
         // Update project data as the new file has been loaded
-        await this._setLoadedFile(filename, mdIndex, this.currentUploadId);
+        await this._addProjectFile(filename, mdIndex, this.currentUploadId);
         // Remove this id from the current upload id
         this.currentUploadId = null;
     }
@@ -581,7 +609,7 @@ class Database {
     // Update the project to register that a file has been loaded
     // WARNING: Note that this function will not check for previously existing file with identical name
     // WARNING: This should be done by the forestallFileLoad function previously
-    _setLoadedFile = async (filename, mdIndex, id) => {
+    _addProjectFile = async (filename, mdIndex, id) => {
         // Get a list of available files
         const availableFiles = this.getAvailableFiles(mdIndex);
         // Add the new file to the list and update the remote project
@@ -602,14 +630,31 @@ class Database {
         // Find the file summary
         const currentFile = availableFiles.find(file => file.name === filename);
         if (!currentFile) throw new Error(`File ${filename} is not in the available files list (MD index ${mdIndex})`);
+        this.startLog(`🗑️  Deleting file ${filename} <- ${currentFile.id}`);
         // Delete the file from fs.files and its chunks from fs.chunks using the file id
         // GridFSBucket.delete has no callback but when it fails (i.e. file not found) it kills the process
         // https://mongodb.github.io/node-mongodb-native/6.3/classes/GridFSBucket.html#delete
         await this.bucket.delete(currentFile.id);
-        console.log(`🗑️ Deleted file ${filename} from MD with index ${mdIndex} <- ${currentFile.id}`);
+        this.successLog(`🗑️  Deleted file ${filename} <- ${currentFile.id}`);
         // Remove the current file entry from the files list and update the project
         const fileIndex = availableFiles.indexOf(currentFile);
         availableFiles.splice(fileIndex, 1);
+        await this.updateProject();
+    }
+
+    // Rename a file, both in the files collection and in project data
+    renameFile = async (filename, mdIndex, newFilename) => {
+        // Get a list of available files
+        const availableFiles = this.getAvailableFiles(mdIndex);
+        // Find the file summary
+        const currentFile = availableFiles.find(file => file.name === filename);
+        if (!currentFile) throw new Error(`File ${filename} is not in the available files list (MD index ${mdIndex})`);
+        // Update filename in the files collection document
+        const result = await this.files.findOneAndUpdate({ _id: currentFile.id }, { filename: newFilename });
+        console.log(result);
+        console.log(`Renamed file ${filename} (${currentFile.id}) as ${newFilename}`);
+        // Rename the file object name and update the project
+        currentFile.name = newFilename;
         await this.updateProject();
     }
 
@@ -690,9 +735,8 @@ class Database {
         // Check if any data was loaded
         // If not, there is no point in asking the user
         if (this.inserted_data.length === 0) return;
-        // Stop the spinner if it is still alive
-        if (this.spinnerRef.current && this.spinnerRef.current.running)
-            spinnerRef.current.fail(`Interrupted while doing: ${spinnerRef.current.text}`);
+        // Stop the logs if it they are still alive
+        if (this.isLogRunning) this.failLog(`Interrupted while doing: ${this.logText}`);
         // Ask the user if already loaded data is to be conserved or cleaned up
         const confirm = confirmed || await userConfirm(
             `There was some problem and load has been aborted. Confirm further instructions:

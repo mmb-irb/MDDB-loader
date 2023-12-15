@@ -18,7 +18,7 @@ const loadJSON = require('../../utils/load-json');
 
 // Local scripts listed in order of execution
 const getAbortingFunction = require('./abort');
-const findMdDirectories = require('./find-md-directories');
+const { findMdDirectories, parseDirectories } = require('./handle-directories');
 const findAllFiles = require('./find-all-files');
 const categorizeFiles = require('./categorize-files');
 const analyzeProteins = require('./protein-analyses');
@@ -48,21 +48,18 @@ const load = async (
   const gromacsCommand = skipTrajectories ? null : getGromacsCommand(gromacsPath);
   // Extract some fields from the database handler
   const spinnerRef = database.spinnerRef;
-  // Track list of appended data
-  // This is used to cleanup everything in case of abort during the load
-  var appended = [];
   // Set the aborting function in case the load is interrupted further
   const checkAbort = getAbortingFunction(database);
 
   // Save the current time
   const startTime = Date.now();
-  console.log(chalk.cyan(`== starting load of '${fileOrFolder}'`));
+  console.log(chalk.cyan(`== Load of '${fileOrFolder}'`));
 
   // Set the project directory
   // DANI: Ahora esto es facil porque no damos soporte a archvios o subdirectorios sueltos
   const pdir = fileOrFolder;
   // Guess MD directories in case they are missing
-  const mdirs = mdDirectories ? mdDirectories : findMdDirectories(fileOrFolder);
+  const mdirs = mdDirectories ? parseDirectories(fileOrFolder, mdDirectories) : findMdDirectories(fileOrFolder);
 
   // Find all available files according to the input paths
   const [projectFiles, mdFiles] = findAllFiles(fileOrFolder, mdirs);
@@ -185,13 +182,13 @@ const load = async (
   // ---------------------------
 
   // Iterate over the different MD directores
-  for await (const mdDirectory of mdirs) {
+  for await (const mdir of mdirs) {
     // Get the MD directory basename
-    const mdDirectoryBasename = getBasename(mdDirectory);
-    const mdIndex = database.md_directory_indices[mdDirectoryBasename];
-    console.log(chalk.cyan(`== Loading MD '${mdDirectoryBasename}' (MD index ${mdIndex})`));
+    const mdirBasename = getBasename(mdir);
+    const mdIndex = database.md_directory_indices[mdirBasename];
+    console.log(chalk.cyan(`== MD directory '${mdirBasename}' (MD index ${mdIndex})`));
     // Get the directory files
-    const directoryFiles = categorizedMdFiles[mdDirectory];
+    const directoryFiles = categorizedMdFiles[mdir];
 
     // ---- Metadata ----
 
@@ -200,8 +197,8 @@ const load = async (
     const mdMetadataFile = directoryFiles.metadataFile;
     if (!skipMetadata && mdMetadataFile) {
       // Load the metadata file
-      const mdMetadata = await loadJSON(mdDirectory + '/' + mdMetadataFile);
-      if (!mdMetadata) throw new Error('There is something wrong with the MD metadata file in ' + mdDirectoryBasename);
+      const mdMetadata = await loadJSON(mdir + '/' + mdMetadataFile);
+      if (!mdMetadata) throw new Error('There is something wrong with the MD metadata file in ' + mdirBasename);
       await database.updateMdMetadata(mdMetadata, mdIndex, conserve, overwrite);
     }
 
@@ -233,7 +230,7 @@ const load = async (
         const confirm = await database.forestallFileLoad(databaseFilename, mdIndex, conserve, overwrite);
         if (!confirm) continue;
         // Set the path to the current file
-        const trajectoryPath = mdDirectory + '/' + file;
+        const trajectoryPath = mdir + '/' + file;
         // Load the trajectory parsedly
         await database.loadTrajectoryFile(
           databaseFilename,
@@ -270,7 +267,7 @@ const load = async (
         const confirm = await database.forestallFileLoad(databaseFilename, mdIndex, conserve, overwrite);
         if (!confirm) continue;
         // Set the path to the current file
-        const filepath = mdDirectory + '/' + file;
+        const filepath = mdir + '/' + file;
         // Load the actual file
         await database.loadFile(databaseFilename, mdIndex, filepath, checkAbort);
       }
@@ -296,7 +293,7 @@ const load = async (
         const confirm = await database.forestallAnalysisLoad(name, mdIndex, conserve, overwrite);
         if (!confirm) continue;
         // Load the analysis
-        const filepath = mdDirectory + '/' + file;
+        const filepath = mdir + '/' + file;
         // Read the analysis data
         const content = await loadJSON(filepath);
         // If mining was unsuccessful return undefined value

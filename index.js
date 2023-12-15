@@ -148,8 +148,7 @@ yargs
             .option('mdir', {
                 alias: 'md-directories',
                 description: 'Set which MD directories are to be loaded',
-                type: 'array',
-                default: null,
+                type: 'array'
             })
             // file or folder
             .positional('fileOrFolder', {
