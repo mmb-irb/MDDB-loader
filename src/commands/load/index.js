@@ -6,7 +6,11 @@ const prettyMs = require('pretty-ms');
 // This utility displays in console a dynamic loading status
 const getSpinner = require('../../utils/get-spinner');
 // Load auxiliar functions
-const { getGromacsCommand, getBasename } = require('../../utils/auxiliar-functions');
+const {
+  getGromacsCommand,
+  directoryCoerce,
+  getBasename
+} = require('../../utils/auxiliar-functions');
 // Return a word's plural when the numeric argument is bigger than 1
 const plural = require('../../utils/plural');
 // Displays data in console inside a big colorful rectangle
@@ -18,7 +22,11 @@ const loadJSON = require('../../utils/load-json');
 
 // Local scripts listed in order of execution
 const getAbortingFunction = require('./abort');
-const { findMdDirectories, parseDirectories } = require('./handle-directories');
+const {
+  findWildcardPaths,
+  findMdDirectories,
+  parseDirectories
+} = require('./handle-directories');
 const findAllFiles = require('./find-all-files');
 const categorizeFiles = require('./categorize-files');
 const analyzeProteins = require('./protein-analyses');
@@ -28,9 +36,11 @@ const nameAnalysis = require('./name-analysis');
 const load = async (
   // Command additional arguments
   {
-    fileOrFolder,
-    mdDirectories,
+    pdir,
+    mdirs,
     append,
+    include,
+    exclude,
     conserve,
     overwrite,
     skipChains,
@@ -53,27 +63,36 @@ const load = async (
 
   // Save the current time
   const startTime = Date.now();
-  console.log(chalk.cyan(`== Load of '${fileOrFolder}'`));
+  console.log(chalk.cyan(`== Load of '${pdir}'`));
 
   // Set the project directory
-  // DANI: Ahora esto es facil porque no damos soporte a archvios o subdirectorios sueltos
-  const pdir = fileOrFolder;
+  const projectDirectory = directoryCoerce(pdir);
   // Guess MD directories in case they are missing
-  const mdirs = mdDirectories ? parseDirectories(fileOrFolder, mdDirectories) : findMdDirectories(fileOrFolder);
+  const mdDirectories = mdirs ? parseDirectories(projectDirectory, mdirs) : findMdDirectories(projectDirectory);
+
+  // Make sure both include and exclude options are not passed together since they are not compatible
+  if (include && include.length > 0 && exclude && exclude.length > 0)
+    throw new Error(`Options 'include' and 'exclude' are not compatible. Please use only one of them at a time`);
+
+  // Parse the included files
+  const includedFiles = findWildcardPaths(projectDirectory, include);
+  // Parse the excluded files
+  const excludedFiles = findWildcardPaths(projectDirectory, exclude);
 
   // Find all available files according to the input paths
-  const [projectFiles, mdFiles] = findAllFiles(fileOrFolder, mdirs);
+  const [projectFiles, mdFiles] = findAllFiles(projectDirectory, mdDirectories, includedFiles, excludedFiles);
 
-  // Find all files in the "fileOrFolder" argument path and classify them
+  // Find all files in the "projectDirectory" argument path and classify them
   // Classification is performed according to file names
   const [categorizedProjectFiles, categorizedMdFiles] = await categorizeFiles(projectFiles, mdFiles);
 
-  // If the append option is passed then look for the already existing project
-  // Else create a new project
-  // Note that from this is the first change in the database
-  // Thus if you reach this part and then the process fails the database will require some cleanup
-  await database.setupProject(id = append, mdDirectories = mdirs);
-  
+  // If an ID was passed (i.e. the project already exists in the database)
+  if (append) await database.syncProject(idOrAccession = append);
+  // If no ID was passed (i.e. the project is not yet in the database)
+  else await database.createProject();
+  // Display the project id. It may be useful if the load is abruptly interrupted to clean
+  console.log(chalk.cyan(`== Project '${database.project_id}'`));
+
   // Send data to the IPS and HMMER web pages to get it analized and retrieve the results
   // One analysis is performed for each protein chain
   // Results are not awaited but the code keeps running since the analysis takes some time
@@ -81,11 +100,13 @@ const load = async (
   let EBIJobs;
   // Get any of the structure files
   // Sequence should be same along the different MD directories
-  const sampleMd = mdirs[0];
+  const sampleMd = mdDirectories[0];
   const sampleMdFiles = categorizedMdFiles[sampleMd]
-  const sampleStructureFile = sampleMd + '/' + sampleMdFiles.structureFile;
-  if ( !skipChains && sampleStructureFile && (await database.forestallChainsUpdate(conserve, overwrite)) )
-    EBIJobs = await analyzeProteins(sampleStructureFile, spinnerRef, checkAbort, database);
+  const sampleStructureFile = sampleMdFiles.structureFile;
+  if ( !skipChains && sampleStructureFile && (await database.forestallChainsUpdate(conserve, overwrite)) ) {
+    const sampleStructurePath = sampleMd + sampleStructureFile;
+    EBIJobs = await analyzeProteins(sampleStructurePath, spinnerRef, checkAbort, database);
+  }
 
   // Check if the load has been aborted at this point
   await checkAbort();
@@ -93,10 +114,11 @@ const load = async (
   // ---- Metadata ----
 
   if (!skipMetadata) {
+    console.log('Loading project metadata');
     // Load project metadata, which is expected to have most of the metadata
     const projectMetadataFile = categorizedProjectFiles.metadataFile;
     if (projectMetadataFile) {
-      const projectMetadataFilepath = pdir + '/' + projectMetadataFile;
+      const projectMetadataFilepath = projectDirectory + '/' + projectMetadataFile;
       const projectMetadata = await loadJSON(projectMetadataFilepath);
       if (!projectMetadata) throw new Error('There is something wrong with the project metadata file');
       await database.updateProjectMetadata(projectMetadata, conserve, overwrite);
@@ -112,7 +134,7 @@ const load = async (
   const referencesDataFile = categorizedProjectFiles.referencesDataFile;
   if (referencesDataFile) {
     // Read the references data file
-    const referencesFilepath = pdir + '/' + referencesDataFile;
+    const referencesFilepath = projectDirectory + '/' + referencesDataFile;
     const references = await loadJSON(referencesFilepath);
     if (!references) throw new Error('There is something wrong with the references file');
     // Iterate over the different references
@@ -130,7 +152,7 @@ const load = async (
   const topologyDataFile = categorizedProjectFiles.topologyDataFile;
   if (topologyDataFile) {
     // Load topology
-    const topologyDataFilepath = pdir + '/' + topologyDataFile;
+    const topologyDataFilepath = projectDirectory + '/' + topologyDataFile;
     const topology = await loadJSON(topologyDataFilepath);
     if (!topology) throw new Error('There is something wrong with the topology data file')
     // Add the current project id to the topology object
@@ -168,7 +190,7 @@ const load = async (
       const confirm = await database.forestallFileLoad(databaseFilename, undefined, conserve, overwrite);
       if (!confirm) continue;
       // Set the path to the current file
-      const filepath = pdir + '/' + file;
+      const filepath = projectDirectory + '/' + file;
       // Load the actual file
       await database.loadFile(databaseFilename, undefined, filepath, checkAbort);
     }
@@ -182,12 +204,18 @@ const load = async (
   // ---------------------------
 
   // Iterate over the different MD directores
-  for await (const mdir of mdirs) {
+  let mdCount = 0;
+  for await (const mdir of mdDirectories) {
     // Get the MD directory basename
     const mdirBasename = getBasename(mdir);
-    const mdIndex = database.md_directory_indices[mdirBasename];
-    console.log(chalk.cyan(`== MD directory '${mdirBasename}' (MD index ${mdIndex})`));
-    // Get the directory files
+    const mdName = mdirBasename.replaceAll('_', ' ');
+    const mdIndex = append ? database.project_data.mds.findIndex(md => md.name === mdName) : mdCount;
+    if (mdIndex === -1) throw new Error(`Non-existent MD name: ${mdName}`);
+    mdCount += 1;
+    console.log(chalk.cyan(`== MD directory '${mdirBasename}' named as '${mdName}' (MD index ${mdIndex})`));
+    // If the MD does not exist then add it to the project data
+    if (!database.project_data.mds[mdIndex]) await database.addMDirectory(mdName);
+    // Get the MD directory files
     const directoryFiles = categorizedMdFiles[mdir];
 
     // ---- Metadata ----
@@ -196,9 +224,10 @@ const load = async (
     // Get the metadata filename and if it is missing then skip the load
     const mdMetadataFile = directoryFiles.metadataFile;
     if (!skipMetadata && mdMetadataFile) {
+      console.log('Loading MD metadata');
       // Load the metadata file
       const mdMetadata = await loadJSON(mdir + '/' + mdMetadataFile);
-      if (!mdMetadata) throw new Error('There is something wrong with the MD metadata file in ' + mdirBasename);
+      if (!mdMetadata) throw new Error(`There is something wrong with the MD metadata file in ${mdirBasename}`);
       await database.updateMdMetadata(mdMetadata, mdIndex, conserve, overwrite);
     }
 
@@ -349,7 +378,7 @@ const load = async (
 
   return () => {
     console.log(
-      chalk.cyan(`== finished loading '${fileOrFolder}' in ${prettyMs(Date.now() - startTime)} with id:`),
+      chalk.cyan(`== finished loading '${projectDirectory}' in ${prettyMs(Date.now() - startTime)} with id:`),
     );
     printHighlight(database.project_id);
   };

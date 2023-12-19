@@ -1,3 +1,5 @@
+// Connect to the actual database (MongoDB)
+const connectToMongo = require('../utils/connect-to-mongo/index');
 // Files system
 const fs = require('fs');
 // Add colors in console
@@ -26,12 +28,17 @@ const THROTTLE_TIME = 1000; // 1 second
 // Time it takes to the trajectory uploading logs to complain if there is no progress
 const TIMEOUT_WARNING = 30000; // 30 seconds
 
+// Use regexp to check if 'append' is an accession or an object ID
+const accessionFormat = new RegExp('^' + process.env.ACCESSION_PREFIX + '\\d{5}$');
+
 // Set the project class
 class Database {
-    constructor (db, bucket) {
+    constructor (client, db, bucket) {
+        if (!client) throw new Error('No client');
         if (!db) throw new Error('No database');
         if (!bucket) throw new Error('No bucket');
         // Get database handlers
+        this.client = client; // Client is not used by the database, but it is read from the database by others
         this.db = db;
         this.bucket = bucket;
         // Set some collections
@@ -59,8 +66,6 @@ class Database {
         // Keep the project ID in case we need to roll back
         // This object is sent empty to the load index.js, which saves a new mongo document on it
         this.project_id = null;
-        // Store the MD names once they have been found
-        this.md_directory_names = null;
         // Store the current project data once it has been downloaded
         this.project_data = null;
         // Save also the original project data the first time we download it
@@ -104,66 +109,61 @@ class Database {
         throw new Error('Not supported collection');
     }
 
-    // Set the database project
-    // If a mongo id or accession is passed then we check the project exists
-    setupProject = async (idOrAccession, mdDirectories = []) => {
-        // Parse the full md
-        const mdDirectoryBasenames = mdDirectories.map(directory => getBasename(directory));
-        // Set the MD names according to the directory basenames
-        const mdDirectoryNames = mdDirectoryBasenames.map(basename => basename.replaceAll('_', ' '))
-        // If an ID was passed (i.e. the project already exists in the database)
-        if (idOrAccession) {
-            // Use regexp to check if 'append' is an accession or an object ID
-            const accessionFormat = new RegExp('^' + process.env.ACCESSION_PREFIX + '\\d{5}$');
-            // If it is an accession we have to query in a specific format
-            // If it is an object id we can directly query with it
-            const query = accessionFormat.test(idOrAccession) ? { accession: idOrAccession } : idOrAccession;
-            // Find the already existing project in mongo
-            this.project_data = await this.projects.findOne(query);
-            if (!this.project_data) throw new Error(`No project found for ID/Accession '${idOrAccession}'`);
-            this.project_id = this.project_data._id;
-        }
-        // If no ID was passed (i.e. the project is not yet in the database)
-        else {
-            this.startLog(`📝 Adding new database project`);
-            // Set MD names from the available MD directories
-            const mds = mdDirectoryNames.map(mdName => ({ name: mdName, files: [], analyses: [] }))
-            // Create a new project
-            // 'insertedId' is a standarized name inside the returned object. Do not change it.
-            // DANI: El mdref está fuertemente hardcodeado, hay que pensarlo
-            this.project_data = { accession: null, published: false, mds: mds, mdref: 0, files: [] };
-            // Load the new project
-            const result = await this.projects.insertOne(this.project_data);
-            // If the operation failed
-            if (result.acknowledged === false) return this.failLog(`📝 Failed to add new database project`);
-            this.successLog(`📝 Added new database project -> ${this.project_id}`);
-            // Update the project id
-            this.project_data._id = result.insertedId;
-            this.project_id = result.insertedId;
-            // Update the inserted data in case we need to revert the change
-            this.inserted_data.push({
-                name: 'new project',
-                collection: this.projects,
-                id: this.project_id
-            });
-        }
-        // Display the project id. It may be useful if the load is abruptly interrupted to clean
-        console.log(chalk.cyan(`== Project '${this.project_id}'`));
-        // Set MD directory names and indices from project data
-        this.md_directory_names = {};
-        this.md_directory_indices = {};
-        this.project_data.mds.forEach((md, index) => {
-            const name = md.name;
-            const directory = mdNameToDirectory(name);
-            if (mdDirectoryBasenames.includes(directory)) {
-                this.md_directory_names[directory] = name;
-                this.md_directory_indices[directory] = index;
-            }
+    // Create a new project in the database
+    // Set the handler project data accordingly
+    createProject = async () => {
+        // Create a new project
+        // DANI: El mdref está fuertemente hardcodeado, hay que pensarlo
+        this.project_data = { accession: null, published: false, mds: [], mdref: 0, files: [] };
+        this.startLog(`📝 Adding new database project`);
+        // Load the new project
+        const result = await this.projects.insertOne(this.project_data);
+        // If the operation failed
+        if (result.acknowledged === false) return this.failLog(`📝 Failed to add new database project`);
+        this.successLog(`📝 Added new database project -> ${this.project_id}`);
+        // Update the project id
+        this.project_data._id = result.insertedId;
+        this.project_id = result.insertedId;
+        // Update the inserted data in case we need to revert the change
+        this.inserted_data.push({
+            name: 'new project',
+            collection: this.projects,
+            id: this.project_id
         });
-        // Check the number of MD names and MD directories match
-        // This could mean MD names are so similar that they lead to identical directory name or vice versa
-        if (mdDirectories.length !== Object.keys(this.md_directory_names).length)
-            throw new Error('Number of MD names and MD directories must match');
+    }
+
+    // Find an already existing project in the database and set its data as the handler project data
+    syncProject = async idOrAccession => {
+        // If it is an accession we have to query in a specific format
+        // If it is an object id we can directly query with it
+        const query = accessionFormat.test(idOrAccession) ? { accession: idOrAccession } : idOrAccession;
+        // Find the already existing project in mongo
+        this.project_data = await this.projects.findOne(query);
+        if (!this.project_data) throw new Error(`No project found for ID/Accession '${idOrAccession}'`);
+        this.project_id = this.project_data._id;
+    }
+
+    // Add a new MD directory to the current project
+    addMDirectory = async name => {
+        // Create the new MD object and add it to project data
+        const md = { name: name, files: [], analyses: [] };
+        this.project_data.mds.push(md);
+        // Update the remote
+        await this.updateProject();
+    }
+
+    // Remove an existing MD directory
+    // Note that MDs are handled thorugh indices so we can not simply remove an MD object from the project MDs list
+    // Instead we remove its content and add a tag to mark it as removed
+    removeMDirectory = async mdIndex => {
+        // Falta borrar todos los datos ligados al MD
+        throw new Error('MD deletion is not yet fully supported');
+        // Replace the current MD object with a new object which conserves the name and is flagged as 'removed'
+        const currentMD = this.project_data.mds[mdIndex];
+        const residualMD = { name: currentMD.name, removed: true };
+        this.project_data.mds[mdIndex] = residualMD
+        // Update the remote
+        await this.updateProject();
     }
 
     // Update remote project by overwritting it al with current project data
@@ -177,6 +177,8 @@ class Database {
 
     // Delete a project
     deleteProject = async () => {
+        // Falta borrar todos los datos ligados al proyecto
+        throw new Error('Project deletion is not yet fully supported');
         this.startLog(`🗑️ Deleting project ${this.project_id}`);
         // Delete the remote project document
         const result = await this.projects.deleteOne({ _id: this.project_id });
@@ -337,7 +339,6 @@ class Database {
     // Set a handler to update metadata
     // If no MD directory is passed then update project metadata
     updateProjectMetadata = async (newMetadata, conserve, overwrite) => {
-        console.log('Loading project metadata');
         // Get current metadata
         // Note that project metadata is in a field called 'metadata'
         const previousMetadata = this.project_data.metadata;
@@ -358,7 +359,6 @@ class Database {
     // Set a handler to update metadata
     // If no MD directory is passed then update project metadata
     updateMdMetadata = async (newMetadata, mdIndex, conserve, overwrite) => {
-        console.log('Loading MD metadata');
         // Get current metadata
         // Note that MD metadata is in every MD object
         const mdData = this.project_data.mds[mdIndex];
@@ -398,10 +398,11 @@ class Database {
         // Anticipate the load and delete previous topology if necessary
         const userConsent = await this.forestallTopologyLoad(newTopology, conserve, overwrite);
         if (!userConsent) return;
+        this.startLog(`💽 Loading topology data`);
         // Upload the new topology
         const result = await this.topologies.insertOne(newTopology);
-        if (result.acknowledged === false) throw new Error(`Failed to insert new topology`);
-        console.log(`Loaded new topology -> ${result.insertedId}`);
+        if (result.acknowledged === false) return this.failLog(`💽 Failed to load new topology data`);
+        this.successLog(`💽 Loaded new topology data -> ${result.insertedId}`);
         // Update the inserted data in case we need to revert the change
         this.inserted_data.push({
             name: 'new topology',
@@ -412,9 +413,10 @@ class Database {
 
     // Delete the current project topology
     deleteTopology = async () => {
+        this.startLog(`🗑️ Deleting topology data`);
         const result = await this.topologies.deleteOne({ project: this.project_id });
-        console.log(result);
-        if (!result) throw new Error(`Failed to remove previous topology`);
+        if (!result) return this.failLog(`🗑️ Failed to delete topology data`);
+        this.successLog(`🗑️ Deleted topology data`);
     };
 
     // Get the MD index corresponding list of available files
@@ -649,10 +651,11 @@ class Database {
         // Find the file summary
         const currentFile = availableFiles.find(file => file.name === filename);
         if (!currentFile) throw new Error(`File ${filename} is not in the available files list (MD index ${mdIndex})`);
+        this.startLog(`📝 Renaming file ${filename} from MD with index ${mdIndex} (${currentFile.id}) as ${newFilename}`);
         // Update filename in the files collection document
-        const result = await this.files.findOneAndUpdate({ _id: currentFile.id }, { filename: newFilename });
-        console.log(result);
-        console.log(`Renamed file ${filename} (${currentFile.id}) as ${newFilename}`);
+        const result = await this.files.findOneAndUpdate({ _id: currentFile.id }, { $set: { filename: newFilename }});
+        if (result.acknowledged === false) return this.failLog(`📝 Failed to renamed file ${filename} from MD with index ${mdIndex} (${currentFile.id}) as ${newFilename}`);
+        this.successLog(`📝 Renamed file ${filename} from MD with index ${mdIndex} (${currentFile.id}) as ${newFilename}`);
         // Rename the file object name and update the project
         currentFile.name = newFilename;
         await this.updateProject();
@@ -681,7 +684,7 @@ class Database {
         // If the user has asked to conserve current data then abort the process
         if (!confirm) return false;
         // Delete the current analysis from the database
-        this.deleteAnalysis(analysis.name, mdIndex);
+        await this.deleteAnalysis(name, mdIndex);
         return true;
     };
 
@@ -693,10 +696,11 @@ class Database {
     loadAnalysis = async (analysis, mdIndex) => {
         analysis.project = this.project_id;
         analysis.md = mdIndex;
+        this.startLog(`💽 Loading analysis ${analysis.name}`);
         // Insert a new document in the analysis collection
         const result = await this.analyses.insertOne(analysis);
-        if (result.acknowledged === false) throw new Error('Failed to load analysis');
-        console.log(`💽 Loaded analysis ${analysis.name}`);
+        if (result.acknowledged === false) return this.failLog(`💽 Failed to load analysis ${analysis.name}`);
+        this.successLog(`💽 Loaded analysis ${analysis.name} -> ${result.insertedId}`);
         // Get a list of available analyses
         const availableAnalyses = this.getAvailableAnalyses(mdIndex);
         // Update the project to register that an analysis has been loaded
@@ -706,7 +710,7 @@ class Database {
         this.inserted_data.push({
             name: analysis.name + ' analysis',
             collection: this.analyses,
-            id: id
+            id: result.insertedId
         });
     }
 
@@ -716,14 +720,15 @@ class Database {
         const availableAnalyses = this.getAvailableAnalyses(mdIndex);
         const currentAnalysis = availableAnalyses.find(analysis => analysis.name === name);
         if (!currentAnalysis) throw new Error(`Analysis ${name} is not in the available analyses list (MD index ${mdIndex})`);
+        this.startLog(`🗑️ Deleting analysis ${name} (MD index ${mdIndex})`);
         // Delete the current analysis from the database
         const result = await this.analyses.deleteOne({
             name: name,
             project: this.project_id,
             md: mdIndex
         });
-        if (!result) throw new Error(`Failed to remove analysis ${name} (MD index ${mdIndex})`);
-        console.log(`🗑️ Deleted analysis ${name} from MD with index ${mdIndex} <- ${currentAnalysis.id}`);
+        if (!result) this.failLog(`🗑️ Failed to delete analysis ${name} (MD index ${mdIndex})`);
+        this.successLog(`🗑️ Deleted analysis ${name} from MD with index ${mdIndex} <- ${currentAnalysis.id}`);
         // Remove the current analysis entry from the analyses list and update the project
         const analysisIndex = availableAnalyses.indexOf(currentAnalysis);
         availableAnalyses.splice(analysisIndex, 1);
@@ -774,4 +779,11 @@ class Database {
 
 }
 
-module.exports = Database
+// Connect to the database
+// Then construct and return the database handler
+const getDatabase = async () => {
+    const { client, db, bucket } = await connectToMongo();
+    return new Database(client, db, bucket);
+};
+
+module.exports = getDatabase

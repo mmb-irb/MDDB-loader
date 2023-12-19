@@ -25,7 +25,7 @@ const deleteFunction = async (
     // ----- Analysis -----
     if (target.collection === database.analyses) {
         // Load remote project data in the database handler
-        await database.setupProject(id = target.document.project);
+        await database.syncProject(target.document.project);
         // Delete the analysis
         const name = target.document.name;
         const mdIndex = target.document.md;
@@ -34,7 +34,7 @@ const deleteFunction = async (
     // ----- Files -----
     if (target.collection === database.files) {
         // Load remote project data in the database handler
-        await database.setupProject(id = target.document.metadata.project);
+        await database.syncProject(target.document.metadata.project);
         // Delete the file
         const filename = target.document.filename;
         const mdIndex = target.document.metadata.md;

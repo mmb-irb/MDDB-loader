@@ -5,8 +5,7 @@ const dotenvLoad = require('dotenv').config({ path: __dirname + '/../.env' });
 if (dotenvLoad.error) throw dotenvLoad.error;
 
 const { ObjectId } = require('mongodb');
-const Database = require('../src/database');
-const connectToMongo = require('../src/utils/connect-to-mongo/index');
+const getDatabase = require('../src/database');
 
 // Save the object from mongo which is associated to the provided id
 // WARNING: If the argument passed to this function is null a new ObjectId is generated
@@ -72,11 +71,9 @@ const main = async () => {
 
   const idOrAccession = projectIdsOrAccessions[0];
 
-  // Connect to mongo
-  const { client, db, bucket } = await connectToMongo();
   // Set the database handler
-  const database = new Database(db, bucket);
-  await database.setupProject(id = idOrAccession);
+  const database = await getDatabase();
+  await database.setProject(id = idOrAccession);
 
 
   // Set a query for the coressponding project or id

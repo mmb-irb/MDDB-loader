@@ -19,6 +19,7 @@
     "cli-table3": "0.5.1",
     "dev-null": "0.1.1",
     "dotenv": "8.2.0",
+    "glob": "^7.2.3",
     "lodash.frompairs": "4.0.1",
     "lodash.throttle": "4.1.1",
     "mongodb": "^5.9.1",

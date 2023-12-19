@@ -1,43 +1,59 @@
 // Small functions used along the whole loader
 
+// Import some logic
+
 // Allows asking user for confirmation
 const prompts = require('prompts');
 // Add colors in console
 const chalk = require('chalk');
+// ObjectId return
+const { ObjectId } = require('mongodb');
+// Files system from node
+const fs = require('fs');
 // Allows to call a unix command or run another script
 // The execution of this code keeps running
 const { spawnSync } = require('child_process');
+// Used to read the current working directory through cwd
+const process = require('process');
+
+// Find some values
+const workingDirectory = process.cwd();
+// RegExp formula to check if a string is in accession format
+//const accessionFormat = /^MCNS\d{5}$/;
+const accessionFormat = new RegExp('^' + process.env.ACCESSION_PREFIX + '\\d{5}$');
 
 // Set some constants
 
 // Set problematic signs for directory/folder names
-FORBIDEN_DIRECTORY_CHARACTERS = ['.', ',', ';', ':']
+FORBIDEN_DIRECTORY_CHARACTERS = ['.', ',', ';', ':'];
+// RegExp formula to find multiple slashes
+const MULTIPLE_SLASHES = /\/+/g;
 
 // Throw a question for the user trough the console
 // Await for the user to confirm
 const userConfirm = async question => {
-  const response = await prompts({
-    type: 'text',
-    name: 'confirm',
-    message: question,
-  });
-  if (response.confirm) return response.confirm;
-  return null;
+    const response = await prompts({
+        type: 'text',
+        name: 'confirm',
+        message: question,
+    });
+    if (response.confirm) return response.confirm;
+    return null;
 };
 
 // Usual question
 const userConfirmDataLoad = async fieldname => {
-  const confirm = await userConfirm(
-    `'${fieldname}' already exists in the project. Confirm data loading:
-    Y - Overwrite previous data with new data
-    * - Conserve previous data and discard new data`
-  ) === 'Y';
-  // Warn the user about the consequences of its decision
-  const message = confirm
-    ? 'Previous data will be overwritten by the new data'
-    : 'Previous data is conserved and the new data will be discarded';
-  console.log(chalk.yellow(message));
-  return confirm;
+    const confirm = await userConfirm(
+        `'${fieldname}' already exists in the project. Confirm data loading:
+        Y - Overwrite previous data with new data
+        * - Conserve previous data and discard new data`
+    ) === 'Y';
+    // Warn the user about the consequences of its decision
+    const message = confirm
+        ? 'Previous data will be overwritten by the new data'
+        : 'Previous data is conserved and the new data will be discarded';
+    console.log(chalk.yellow(message));
+    return confirm;
 };
 
 // Check if gromacs excutable is in path
@@ -46,34 +62,89 @@ const userConfirmDataLoad = async fieldname => {
 // Return the working command
 const USUAL_GROMACS_COMMANDS = ['gmx', 'gmx_mpi']
 const getGromacsCommand = command => {
-  // Set the commands to try before we give up
-  const commandsToTry = command ? [ command ] : USUAL_GROMACS_COMMANDS;
-  for (const cmd of commandsToTry) {
-    // Check if a command is installed in the system
-    // WARNING: "error" is not used, but it must be declared in order to obtain the output
-    const process = spawnSync(cmd, ['/?'], {encoding: 'utf8'});
-    if (process.output !== null) return cmd;
-  }
-  // In case no grommacs command was found in the path we warn the user and stop here
-  throw new Error('Gromacs is not installed or its source is not in $PATH');
+    // Set the commands to try before we give up
+    const commandsToTry = command ? [ command ] : USUAL_GROMACS_COMMANDS;
+    for (const cmd of commandsToTry) {
+        // Check if a command is installed in the system
+        // WARNING: "error" is not used, but it must be declared in order to obtain the output
+        const process = spawnSync(cmd, ['/?'], {encoding: 'utf8'});
+        if (process.output !== null) return cmd;
+    }
+    // In case no grommacs command was found in the path we warn the user and stop here
+    throw new Error('Gromacs is not installed or its source is not in $PATH');
 };
 
 // Translate a MD name to a MD directory
 const mdNameToDirectory = name => {
-  // Make all letters lower and replace white spaces by underscores
-  let directory = name.toLowerCase().replace(' ', '_');
-  // Remove problematic characters
-  for (const character of FORBIDEN_DIRECTORY_CHARACTERS) {
-    directory = directory.replace(character, '');
-  }
-  return directory
+    // Make all letters lower and replace white spaces by underscores
+    let directory = name.toLowerCase().replace(' ', '_');
+    // Remove problematic characters
+    for (const character of FORBIDEN_DIRECTORY_CHARACTERS) {
+        directory = directory.replace(character, '');
+    }
+    return directory;
 }
+
+// Convert the input local path into a valid global path
+const resolvePath = (path, isDirectory) => {
+    const basepath = path.startsWith('/') ? '' : `${workingDirectory}/`;
+    const fullpath = `${basepath}${path}${isDirectory ? '/' : ''}`;
+    return fullpath.replace(MULTIPLE_SLASHES, '/');
+};
+
+// Convert a local directory path into a global path and check it is accessible
+const directoryCoerce = directory => {
+    // Path conversion
+    const fullPath = resolvePath(directory, isDirectory = true);
+    try {
+        // Check if directory is accessible and executable
+        // "X_OK" means directory must be executable and yes, directories were always executables
+        fs.accessSync(fullPath, fs.constants.X_OK);
+    } catch (_) {
+        throw new Error(`Unable to use directory '${directory}'`);
+    }
+    return fullPath;
+};
 
 // Given a path with any number of steps, return the last step
 const getBasename = path => {
-  const steps = path.split('/');
-  return steps[steps.length -1];
+    const steps = path.split('/');
+    const last = steps[steps.length -1]; // For when the path ends with no '/' (usually files)
+    if (last) return last;
+    return steps[steps.length -2]; // For when the path ends in '/' (usually directories)
 }
+
+// Save the object from mongo which is associated to the provided id
+// WARNING: If the argument passed to this function is null a new ObjectId is generated
+const idCoerce = id => new ObjectId(id);
+
+// Convert the input accession string into a valid accession format
+const accessionCoerce = accession => {
+    // Remove spaces from the accession argument and make all characters upper case
+    const output = accession.trim().toUpperCase();
+    // Check if the new accession (output) is a valid accession format. If not, send an error
+    if (!accessionFormat.test(output)) throw new Error('Not a valid accession');
+    return output;
+};
+
+// Try to coerce the input argument as a mongo id
+// If fails, try it as an accession
+const idOrAccessionCoerce = idOrAccession => {
+    let output;
+    // This is to prevent idCoerce() to generate a new ObjectId if the passed argument is null
+    if (!idOrAccession) return null;
+    try {
+        output = idCoerce(idOrAccession);
+    } catch (_) {
+        try {
+            output = accessionCoerce(idOrAccession);
+        } catch (_) {
+            /**/
+        }
+    }
+    if (output) return output;
+    throw new Error('Invalid ID or accession');
+};
 
 // This is just like an string array with the accepted formats
 const mimeMap = new Map([['.pdb', 'chemical/x-pdb']]);
@@ -81,18 +152,20 @@ const mimeMap = new Map([['.pdb', 'chemical/x-pdb']]);
 // Check if the provided filename has one of the accepted formats
 // If it is, return the type. If not, return the "octet-stream" format.
 const getMimeTypeFromFilename = filename => {
-  for (const [extension, type] of mimeMap.entries()) {
-    if (filename.toLowerCase().endsWith(extension)) return type;
-  }
-  // default
-  return 'application/octet-stream';
+    for (const [extension, type] of mimeMap.entries()) {
+        if (filename.toLowerCase().endsWith(extension)) return type;
+    }
+    // default
+    return 'application/octet-stream';
 };
 
 module.exports = {
-  userConfirm,
-  userConfirmDataLoad,
-  getGromacsCommand,
-  mdNameToDirectory,
-  getBasename,
-  getMimeTypeFromFilename
+    userConfirm,
+    userConfirmDataLoad,
+    getGromacsCommand,
+    mdNameToDirectory,
+    directoryCoerce,
+    getBasename,
+    idOrAccessionCoerce,
+    getMimeTypeFromFilename
 };

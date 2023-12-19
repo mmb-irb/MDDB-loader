@@ -3,9 +3,7 @@ const process = require('process');
 // Visual tool which allows to add colors in console
 const chalk = require('chalk');
 // The project manager class
-const Database = require('../database/index');
-// Connect to the actual database (MongoDB)
-const connectToMongo = require('../utils/connect-to-mongo/index');
+const getDatabase = require('../database/index');
 
 // This handler calls the requested command
 // Also contains common logic for all commands which is runned before and after the main command:
@@ -16,12 +14,10 @@ const connectToMongo = require('../utils/connect-to-mongo/index');
 // This object contains the input values of options and positionals from the command
 // e.g. in load command, argv contains the values of {folder, gromacs-path}
 const commonHandler = commandName => async argv => {
+  //console.log(argv);
 
-  // Connect to mongo
-  const { client, db, bucket } = await connectToMongo();
-
-  // Initialize the project handler
-  const database = new Database(db, bucket);
+  // Initialize the database handler
+  const database = await getDatabase();
   const spinnerRef = database.spinnerRef;
 
   // When the process is interrupted from the keyboard (Control + C)
@@ -68,6 +64,7 @@ const commonHandler = commandName => async argv => {
     await database.revertLoad();
   } finally {
     // End mongo client
+    const client = database.client;
     if (client && client.close) client.close();
     // Exit the node shell. The "0" argument stands for success
     process.exit(0);
