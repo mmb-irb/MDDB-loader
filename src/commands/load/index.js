@@ -102,7 +102,7 @@ const load = async (
   // Sequence should be same along the different MD directories
   const sampleMd = mdDirectories[0];
   const sampleMdFiles = categorizedMdFiles[sampleMd]
-  const sampleStructureFile = sampleMdFiles.structureFile;
+  const sampleStructureFile = sampleMdFiles && sampleMdFiles.structureFile;
   if ( !skipChains && sampleStructureFile && (await database.forestallChainsUpdate(conserve, overwrite)) ) {
     const sampleStructurePath = sampleMd + sampleStructureFile;
     EBIJobs = await analyzeProteins(sampleStructurePath, spinnerRef, checkAbort, database);
@@ -113,16 +113,14 @@ const load = async (
 
   // ---- Metadata ----
 
-  if (!skipMetadata) {
+  // Load project metadata, which is expected to have most of the metadata
+  const projectMetadataFile = categorizedProjectFiles.metadataFile;
+  if ( !skipMetadata && projectMetadataFile ) {
     console.log('Loading project metadata');
-    // Load project metadata, which is expected to have most of the metadata
-    const projectMetadataFile = categorizedProjectFiles.metadataFile;
-    if (projectMetadataFile) {
-      const projectMetadataFilepath = projectDirectory + '/' + projectMetadataFile;
-      const projectMetadata = await loadJSON(projectMetadataFilepath);
-      if (!projectMetadata) throw new Error('There is something wrong with the project metadata file');
-      await database.updateProjectMetadata(projectMetadata, conserve, overwrite);
-    }
+    const projectMetadataFilepath = projectDirectory + '/' + projectMetadataFile;
+    const projectMetadata = await loadJSON(projectMetadataFilepath);
+    if (!projectMetadata) throw new Error('There is something wrong with the project metadata file');
+    await database.updateProjectMetadata(projectMetadata, conserve, overwrite);
   }
 
   // Check if the load has been aborted at this point
@@ -173,6 +171,7 @@ const load = async (
       categorizedProjectFiles.topologyFile,
       ...categorizedProjectFiles.itpFiles,
       categorizedProjectFiles.populationsDataFile,
+      ...categorizedProjectFiles.uploadableFiles
     ].filter(file => file && file.length !== 0);
     // Iterate over loadable files
     let nfile = 0;

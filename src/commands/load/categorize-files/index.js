@@ -60,6 +60,10 @@ const categorizeProjectFiles = projectFiles => {
   const populationsDataFile = projectFiles.find(filename =>
     populationsDataFilePatternToLoad.test(filename),
   );
+  // Additional files to be uploaded (e.g. screenshots)
+  const uploadableFiles = projectFiles.filter(filename =>
+    uploadableFilesFilePatternToLoad.test(filename),
+  );
 
   // Finally, return all classified groups and the group which contain all files
   return {
@@ -69,6 +73,7 @@ const categorizeProjectFiles = projectFiles => {
     topologyDataFile,
     referencesDataFile,
     populationsDataFile,
+    uploadableFiles
   };
 };
 
