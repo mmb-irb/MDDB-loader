@@ -16,7 +16,6 @@ const readAndParseTrajectory = require('../utils/read-and-parse-trajectory');
 const {
     userConfirm,
     userConfirmDataLoad,
-    mdNameToDirectory,
     getBasename,
     getMimeTypeFromFilename
 } = require('../utils/auxiliar-functions');
@@ -41,24 +40,12 @@ class Database {
         this.client = client; // Client is not used by the database, but it is read from the database by others
         this.db = db;
         this.bucket = bucket;
-        // Set some collections
-        this.projects = db.collection('projects');
-        this.references = db.collection('references');
-        this.topologies = db.collection('topologies');
-        this.files = db.collection('fs.files');
-        this.analyses = db.collection('analyses');
-        this.chains = db.collection('chains');
-        this.chunks = db.collection('fs.chunks');
-        // List all collections together
-        this.collections = [
-            this.projects,
-            this.references,
-            this.topologies,
-            this.files,
-            this.analyses,
-            this.chains,
-            this.chunks,
-        ];
+        // Set some collections and list them all together
+        this.collections = [];
+        for (const [ collectionKey, collectionName ] of Object.entries(this.COLLECTION_NAMES)) {
+            this[collectionKey] = db.collection(collectionName);
+            this.collections.push(this[collectionKey]);
+        }
         // The spinner displays in console a dynamic loading status so it is useful for logs
         // This object saves the access (both read and write) to the spinner methods and variables
         // Since this object is sealed, attributes can be written but not added or deteled
@@ -77,6 +64,23 @@ class Database {
         // This way, in case anything goes wrong, we can delete orphan chunks
         this.currentUploadId = null;
     };
+
+    // ----- Constants -----
+
+    // Set the collection names
+    COLLECTION_NAMES = {
+        projects: 'projects',
+        references: 'references',
+        topologies: 'topologies',
+        files: 'fs.files',
+        chunks: 'fs.chunks',
+        analyses: 'analyses',
+        chains: 'chains',
+        counters: 'counters'
+    }
+
+    // ----------------------
+
 
     // Set some functions to easily handle the spinner logs
     startLog = message => this.spinnerRef.current = getSpinner().start(message);

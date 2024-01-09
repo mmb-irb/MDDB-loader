@@ -192,6 +192,14 @@ yargs
             }),
         handler: commonHandler('cleanup'),
     })
+    // setup
+    .command({
+        command: 'setup',
+        aliases: ['install'],
+        desc: 'Setup the database collections and configure their indexation',
+        builder: yargs => yargs,
+        handler: commonHandler('setup'),
+    })
     .demandCommand() // Demand a minimmum of 1 command
     // Display all descriptions when the command --help is asked or there is no command
     .help().argv; // "argv" is a normal object passed from yargs library
