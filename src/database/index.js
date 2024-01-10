@@ -124,7 +124,7 @@ class Database {
         const result = await this.projects.insertOne(this.project_data);
         // If the operation failed
         if (result.acknowledged === false) return this.failLog(`📝 Failed to add new database project`);
-        this.successLog(`📝 Added new database project -> ${this.project_id}`);
+        this.successLog(`📝 Added new database project -> ${result.insertedId}`);
         // Update the project id
         this.project_data._id = result.insertedId;
         this.project_id = result.insertedId;
@@ -350,6 +350,7 @@ class Database {
         if (!previousMetadata) {
             this.project_data.metadata = newMetadata;
             await this.updateProject();
+            return;
         }
         // If there is an already existing metadata then we modify it and send it back to mongo
         // WARNING: Note that values in current metadata which are missing in new metadata will remain
