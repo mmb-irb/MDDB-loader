@@ -76,6 +76,8 @@ const load = async (
 
   // Parse the included files
   const includedFiles = findWildcardPaths(projectDirectory, include);
+  if (include.length > 0 && includedFiles.length === 0) throw new Error('No files were found among included');
+
   // Parse the excluded files
   const excludedFiles = findWildcardPaths(projectDirectory, exclude);
 

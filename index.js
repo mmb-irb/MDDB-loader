@@ -129,7 +129,7 @@ yargs
             .positional('id', {
                 describe: 'ID to process',
                 type: 'string',
-                coerce: idCoerce,
+                coerce: idOrAccessionCoerce,
             }),
         handler: commonHandler('publish'),
     })
@@ -171,7 +171,7 @@ yargs
             .positional('id', {
                 describe: 'ID of document to delete',
                 type: 'string',
-                coerce: idCoerce,
+                coerce: idOrAccessionCoerce,
             }),
             handler: commonHandler('delete'),
     })
