@@ -26,13 +26,53 @@ yargs
         desc: 'load data from specified file or folder', // Command description. Useful for the help
         builder: yargs => yargs
             // All values from options and positionals are saved at the "argv" object (explained below)
-            // The order of declaration in these options and positionals is important (exemplified below)
-            // --gromacs-path
-            .option('gro', {
-                alias: 'gromacs-path', // Option name. Useful for the help
-                description: 'path to gromacs command-line tool', // Option description. Useful for the help
+            // project directory
+            .positional('pdir', {
+                alias: 'project-directory',
+                describe: 'Project directory containing all files to be loaded',
+                type: 'string'
+            })
+            // --append
+            .option('a', {
+                alias: 'append',
+                description: 'Append new data to an existing project',
                 type: 'string',
                 default: null,
+                coerce: idOrAccessionCoerce,
+            })
+            // --conserve
+            .option('c', {
+                alias: 'conserve',
+                description: 'Restrict the data append so the user is never asked and new data is loaded only when there is no conflict',
+                type: 'boolean',
+                default: false,
+            })
+            // --overwrite
+            .option('o', {
+                alias: 'overwrite',
+                description: 'Priorize the data append so the user is never asked and current data is overwritten when there is any conflict',
+                type: 'boolean',
+                default: false,
+            })
+            // --md-directories
+            .option('mdirs', {
+                alias: 'md-directories',
+                description: 'Set which MD directories are to be loaded',
+                type: 'array'
+            })
+            // --include
+            .option('i', {
+                alias: 'include',
+                description: 'Load only the specified files',
+                type: 'array',
+                default: []
+            })
+            // --exclude
+            .option('e', {
+                alias: 'exclude',
+                description: 'Load all but the specified files',
+                type: 'array',
+                default: []
             })
             // --skip-chains
             .option('sc', {
@@ -69,53 +109,13 @@ yargs
                 type: 'boolean',
                 default: false,
             })
-            // --append
-            .option('a', {
-                alias: 'append',
-                description: 'Append new data to an existing project',
+            // --gromacs-path
+            .option('gro', {
+                alias: 'gromacs-path', // Option name. Useful for the help
+                description: 'path to gromacs command-line tool', // Option description. Useful for the help
                 type: 'string',
                 default: null,
                 coerce: idOrAccessionCoerce,
-            })
-            // --conserve
-            .option('c', {
-                alias: 'conserve',
-                description: 'Restrict the data append so the user is never asked and new data is loaded only when there is no conflict',
-                type: 'boolean',
-                default: false,
-            })
-            // --overwrite
-            .option('o', {
-                alias: 'overwrite',
-                description: 'Priorize the data append so the user is never asked and current data is overwritten when there is any conflict',
-                type: 'boolean',
-                default: false,
-            })
-            // --include
-            .option('i', {
-                alias: 'include',
-                description: 'Load only the specified files',
-                type: 'array',
-                default: []
-            })
-            // --exclude
-            .option('e', {
-                alias: 'exclude',
-                description: 'Load all but the specified files',
-                type: 'array',
-                default: []
-            })
-            // --md-directories
-            .option('mdirs', {
-                alias: 'md-directories',
-                description: 'Set which MD directories are to be loaded',
-                type: 'array'
-            })
-            // project directory
-            .positional('pdir', {
-                alias: 'project-directory',
-                describe: 'Project directory containing all files to be loaded',
-                type: 'string'
             }),
         handler: commonHandler('load'), // Call the command script with the command name as argument
     })
