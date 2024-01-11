@@ -31,6 +31,8 @@ const findAllFiles = require('./find-all-files');
 const categorizeFiles = require('./categorize-files');
 const analyzeProteins = require('./protein-analyses');
 const nameAnalysis = require('./name-analysis');
+// Get project id trace handlers
+const { leaveTrace, findTrace } = require('./project-id-trace');
 
 // Load data from the specified folder into mongo
 const load = async (
@@ -88,12 +90,17 @@ const load = async (
   // Classification is performed according to file names
   const [categorizedProjectFiles, categorizedMdFiles] = await categorizeFiles(projectFiles, mdFiles);
 
-  // If an ID was passed (i.e. the project already exists in the database)
-  if (append) await database.syncProject(idOrAccession = append);
+  // If the project already exists in the database then get its id
+  // The project is considered to exist already if an id was passed or found by trace
+  const previousIdOrAccession = append || findTrace(projectDirectory);
+  if (previousIdOrAccession) await database.syncProject(previousIdOrAccession);
   // If no ID was passed (i.e. the project is not yet in the database)
   else await database.createProject();
   // Display the project id. It may be useful if the load is abruptly interrupted to clean
   console.log(chalk.cyan(`== Project '${database.project_id}'`));
+
+  // Leave a trace of the project id
+  leaveTrace(projectDirectory, database.project_id);
 
   // Send data to the IPS and HMMER web pages to get it analized and retrieve the results
   // One analysis is performed for each protein chain
@@ -210,7 +217,7 @@ const load = async (
     // Get the MD directory basename
     const mdirBasename = getBasename(mdir);
     const mdName = mdirBasename.replaceAll('_', ' ');
-    const mdIndex = append ? database.project_data.mds.findIndex(md => md.name === mdName) : mdCount;
+    const mdIndex = previousIdOrAccession ? database.project_data.mds.findIndex(md => md.name === mdName) : mdCount;
     if (mdIndex === -1) throw new Error(`Non-existent MD name: ${mdName}`);
     mdCount += 1;
     console.log(chalk.cyan(`== MD directory '${mdirBasename}' named as '${mdName}' (MD index ${mdIndex})`));
