@@ -19,6 +19,8 @@ const {
     getBasename,
     getMimeTypeFromFilename
 } = require('../utils/auxiliar-functions');
+// Get metadata handlers
+const { merge_metadata } = require('./metadata-handlers');
 
 // Constants
 const N_COORDINATES = 3; // x, y, z
@@ -288,58 +290,6 @@ class Database {
         await this.updateProject();
     };
 
-    // Given a current and a new metadata objects, add missing new fields to the current metadata
-    // Handle also conflicts when the new value already exists and it has a different value
-    _merge_metadata = async (previousMetadata, newMetadata, conserve = false, overwrite = false) => {
-        // Check the status of each new metadata key in the current metadata
-        for (const [key, newValue] of Object.entries(newMetadata)) {
-            const previousValue = previousMetadata[key];
-            // Missing keys are added from current metadata
-            if (previousValue === undefined) previousMetadata[key] = newValue;
-            // Keys with the same value are ignored since there is nothing to change
-            else if (previousValue === newValue) continue;
-            // Keys with different values are conflictive and we must ask the user for each one
-            else {
-                // Arrays and objects are not considered 'equal' even when they store identical values
-                // We have to check this is not the case
-                // NEVER FORGET: Both objects and arrays return 'object' when checked with 'typeof'
-                if (
-                    typeof previousValue === 'object' &&
-                    typeof newValue === 'object'
-                ) {
-                    if (JSON.stringify(previousValue) === JSON.stringify(newValue))
-                    continue;
-                }
-                // When this is a real conflict...
-                // If the 'conserve' option is passed
-                if (conserve) continue;
-                // Else, if the 'overwrite' option is passed
-                else if (overwrite) previousMetadata[key] = newValue;
-                // Else, ask the user
-                else {
-                    const confirm = await userConfirm(
-                        `Metadata '${key}' field already exists and its value does not match new metadata.
-                        Previous value: ${JSON.stringify(previousValue, null, 4)}
-                        New value: ${JSON.stringify(newValue, null, 4)}
-                        Confirm data loading:
-                        Y - Overwrite previous value with the new value
-                        * - Conserve previous value and discard new value`,
-                    );
-                    // If 'Y' the overwrite
-                    if (confirm === 'Y') {
-                        console.log(chalk.yellow('Previous value will be overwritten by the new value'));
-                        previousMetadata[key] = newValue;
-                    }
-                    // Otherwise, do nothing
-                    else {
-                        console.log(chalk.yellow('Previous value is conserved and the new value will be discarded'));
-                    }
-                }
-            }
-        }
-        return previousMetadata;
-    }
-
     // Set a handler to update metadata
     // If no MD directory is passed then update project metadata
     updateProjectMetadata = async (newMetadata, conserve, overwrite) => {
@@ -355,7 +305,9 @@ class Database {
         // If there is an already existing metadata then we modify it and send it back to mongo
         // WARNING: Note that values in current metadata which are missing in new metadata will remain
         // This makes sense since we are 'appending' new data
-        await this._merge_metadata(previousMetadata, newMetadata, conserve, overwrite);
+        const changed = await merge_metadata(previousMetadata, newMetadata, conserve, overwrite);
+        // If there were no changes in metadata then there is no need to update remote project data
+        if (!changed) return console.log(chalk.grey(`Project metadata is already up to date`));
         // Finally, load the modified current metadata object into mongo
         await this.updateProject();
     };
@@ -370,8 +322,9 @@ class Database {
         // At this point metadata should exist
         if (!mdData) throw new Error(`MD with index ${mdIndex} does not exist`);
         // Update the MD object with the MD metadata
-        await this._merge_metadata(mdData, newMetadata, conserve, overwrite);
-        this.project_data.mds[mdIndex] = mdData;
+        const changed = await merge_metadata(mdData, newMetadata, conserve, overwrite);
+        // If there were no changes in metadata then there is no need to update remote project data
+        if (!changed) return console.log(chalk.grey(`MD metadata is already up to date`));
         // Finally, load the new mds object into mongo
         await this.updateProject();
     };
