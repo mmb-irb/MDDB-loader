@@ -149,6 +149,90 @@ class Database {
         this.project_id = this.project_data._id;
     }
 
+    // Update remote project by overwritting it al with current project data
+    updateProject = async () => {
+        this.startLog(`📝 Updating database project data`);
+        // Replace remote project data by local project data
+        const result = await this.projects.replaceOne({ _id: this.project_id }, this.project_data);
+        if (result.acknowledged === false) return this.failLog('📝 Failed to update database project data');
+        this.successLog('📝 Updated database project data');
+    };
+
+    // Get a summary of the project contents
+    logProjectSummary = async () => {
+        console.log(`Project ${this.project_id} summary:`);
+        // Show if there is a topology
+        const topology = await this.getTopology();
+        if (topology) console.log('- Topology');
+        // Show the number of chains
+        const chains = this.project_data.chains;
+        const chainCount = (chains && chains.length) || 0;
+        if (chainCount > 0) console.log(`- Chains: ${chainCount}`);
+        // Show the number of project files and analyses
+        const projectFiles = this.project_data.files;
+        const projectFilesCount = (projectFiles && projectFiles.length) || 0;
+        if (projectFilesCount > 0) console.log(`- Project files: ${projectFilesCount}`);
+        const projectAnalyses = this.project_data.analyses;
+        const projectAnalysesCount = (projectAnalyses && projectAnalyses.length) || 0;
+        if (projectAnalysesCount > 0) console.log(`- Project analyses: ${projectAnalysesCount}`);
+        // Show the number of MDs
+        // Get MDs not flagged as removed
+        const mds = this.project_data.mds.filter(md => !md.removed);
+        const mdCount = (mds && mds.length) || 0;
+        if (mdCount > 0) console.log(`- MDs: ${mdCount}`);
+        // Show the number of MD files and analyses
+        let mdFilesCount = 0;
+        let mdAnalysesCount = 0;
+        for (const md of mds) {
+            const mdFiles = md.files;
+            mdFilesCount += (mdFiles && mdFiles.length) || 0;
+            const mdAnalyses = md.analyses;
+            mdAnalysesCount += (mdAnalyses && mdAnalyses.length) || 0;
+        }
+        if (mdFilesCount > 0) console.log(`- MD Files: ${mdFilesCount}`);
+        if (mdAnalysesCount > 0) console.log(`- MD Analyses: ${mdAnalysesCount}`);
+        // In case we produced no output say explicitly that the project is empty
+        if (!topology && chainCount === 0 && projectFilesCount === 0 && projectAnalysesCount === 0 &&
+            mdCount === 0 && mdFilesCount === 0 && mdAnalysesCount === 0) console.log('  Project is empty');
+    }
+
+    // Delete a project
+    deleteProject = async () => {
+        // Delete all project contents before deleteing the project itself to avoid having orphans in case of interruption
+        // Delete the topology
+        const topology = await this.getTopology();
+        if (topology) await this.deleteTopology();
+        // Delete chains
+        const chains = this.project_data.chains || [];
+        if (chains.length > 0) await this.deleteChains();
+        // Delete project files
+        const projectFiles = this.project_data.files || [];
+        for await (const file of projectFiles) {
+            await this.deleteFile(file.name, undefined);
+        }
+        // Delete project analyses
+        const projectAnalyses = this.project_data.analyses || [];
+        for await (const analysis of projectAnalyses) {
+            await this.deleteAnalysis(analysis.name, undefined);
+        }
+        // Delete every MD
+        for await (const [mdIndex, md] of Object.entries(this.project_data.mds)) {
+            // If the MD is flagged as removed then we skip it
+            if (md.removed) continue;
+            await this.removeMDirectory(mdIndex);
+        }
+        // Delete the remote project document
+        this.startLog(`🗑️ Deleting project ${this.project_id}`);
+        const result = await this.projects.deleteOne({ _id: this.project_id });
+        if (!result) return this.failLog(`🗑️ Failed to delete project ${this.project_id}`);
+        this.successLog(`🗑️ Deleted project ${this.project_id}`);
+        // Remove references if they are not used by other projects
+        for await (const reference of this.project_data.metadata.REFERENCES || []) {
+            const used = await this.isReferenceUsed(reference.uniprot);
+            if (used === false) await this.deleteReference(reference.uniprot);
+        }
+    }
+
     // Add a new MD directory to the current project
     addMDirectory = async name => {
         // Create the new MD object and add it to project data
@@ -162,46 +246,23 @@ class Database {
     // Note that MDs are handled thorugh indices so we can not simply remove an MD object from the project MDs list
     // Instead we remove its content and add a tag to mark it as removed
     removeMDirectory = async mdIndex => {
-        // Falta borrar todos los datos ligados al MD
-        throw new Error('MD deletion is not yet fully supported');
+        // Delete all MD contents before deleteing the project itself to avoid having orphans in case of interruption
+        const md = this.project_data.mds[mdIndex];
+        // Delete MD files
+        const mdFiles = md.files || [];
+        for await (const file of mdFiles) {
+            await this.deleteFile(file.name, mdIndex);
+        }
+        // Delete MD analyses
+        const mdAnalyses = md.analyses || [];
+        for await (const analysis of mdAnalyses) {
+            await this.deleteAnalysis(analysis.name, mdIndex);
+        }
         // Replace the current MD object with a new object which conserves the name and is flagged as 'removed'
-        const currentMD = this.project_data.mds[mdIndex];
-        const residualMD = { name: currentMD.name, removed: true };
+        const residualMD = { name: md.name, removed: true };
         this.project_data.mds[mdIndex] = residualMD
         // Update the remote
         await this.updateProject();
-    }
-
-    // Update remote project by overwritting it al with current project data
-    updateProject = async () => {
-        this.startLog(`📝 Updating database project data`);
-        // Replace remote project data by local project data
-        const result = await this.projects.replaceOne({ _id: this.project_id }, this.project_data);
-        if (result.acknowledged === false) return this.failLog('📝 Failed to update database project data');
-        this.successLog('📝 Updated database project data');
-    };
-
-    // Delete a project
-    deleteProject = async () => {
-        // Falta borrar todos los datos ligados al proyecto
-        throw new Error('Project deletion is not yet fully supported');
-        this.startLog(`🗑️ Deleting project ${this.project_id}`);
-        // Delete the remote project document
-        const result = await this.projects.deleteOne({ _id: this.project_id });
-        if (!result) return this.failLog(`🗑️ Failed to delete project ${this.project_id}`);
-        this.successLog(`🗑️ Deleted project ${this.project_id}`);
-        // // Now use the local project data to cleanup any project associated data
-        // // Remove references if they are not used by other projects
-        // for (const reference of this.project_data.metadata.REFERENCES) {
-        //     if (this.isReferenceUsed(reference.uniprot) === false) this.deleteReference(reference.uniprot);
-        // }
-        // // Remove the topology
-        // this.deleteTopology();
-        // // Remove project files
-        // for (const file of this.project_data.files) {
-        //     // DANI: Demasiados motivos para no usar la función del loadFile
-        //     this.deleteFile(file.name, undefined);
-        // }
     }
 
     // Add a new reference in the references collection in case it does not exist yet
@@ -281,9 +342,8 @@ class Database {
     deleteChains = async () => {
         this.startLog(`🗑️ Deleting chains`);
         // Delete previous chains
-        const results = this.chains.deleteMany({ project: this.project_id });
-        console.log(results);
-        if (!results) return this.failLog(`🗑️ Failed to delete chains`);
+        const result = await this.chains.deleteMany({ project: this.project_id });
+        if (result.acknowledged === false) return this.failLog(`🗑️ Failed to delete chains`);
         this.successLog(`🗑️ Deleted chains`);
         // Set project data chains as an empty list
         this.project_data.chains = [];
@@ -368,6 +428,11 @@ class Database {
             id: result.insertedId
         });
     };
+
+    // Get the current project topology
+    getTopology = async () => {
+        return await this.topologies.findOne({ project: this.project_id });
+    }
 
     // Delete the current project topology
     deleteTopology = async () => {

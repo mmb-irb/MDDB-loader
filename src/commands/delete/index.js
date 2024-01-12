@@ -1,5 +1,7 @@
 // Visual tool which allows to add colors in console
 const chalk = require('chalk');
+// Load auxiliar functions
+const { userConfirm } = require('../../utils/auxiliar-functions');
 
 // Delete anything in the database by its ID
 // Note that a function cannot be named 'delete' in node
@@ -16,12 +18,21 @@ const deleteFunction = async (
     if (!target) return console.error(chalk.yellow(`Nothing found for ID '${id}'`));
     // Warn the user about the document we are about to delete and ask for confirmation
     const documentName = database.nameCollectionDocument(target.collection);
-    // If the confirm argument has not been passed then ask the user for confirmation
-    if (!confirm) {
-        const confirmation = await userConfirm(`Confirm deletion of of ${documentName} with id ${id} [y/*]`);
-        if (confirmation !== 'y' && confirmation !== 'Y') return console.log('Data deletion has been aborted');
+    // If this is a project then we must log a summary of the project
+    if (target.collection === database.projects) {
+        await database.syncProject(target.document._id);
+        await database.logProjectSummary();
     }
+    // If the confirm argument has not been passed then ask the user for confirmation
+    const confirmation = confirm || await userConfirm(`Confirm deletion of of ${documentName} with id ${id} [y/*]`);
+    // If we have no confirmation then we abort here
+    if (confirmation !== 'y' && confirmation !== 'Y') return console.log('Data deletion has been aborted');
     // Use the right deleting protocol according to the type of document we are about to delete
+    // ----- Projects -----
+    if (target.collection === database.projects) {
+        // Remote project data should be loaded already
+        return await database.deleteProject();
+    }
     // ----- Analysis -----
     if (target.collection === database.analyses) {
         // Load remote project data in the database handler
