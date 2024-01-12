@@ -207,13 +207,19 @@ class Database {
         if (chains.length > 0) await this.deleteChains();
         // Delete project files
         const projectFiles = this.project_data.files || [];
-        for await (const file of projectFiles) {
-            await this.deleteFile(file.name, undefined);
+        // WARNING: The project files list is truncated as files are deleted and thus we can not iterate over it
+        // To avoid this problem we create a new list with project filenames
+        const projectFilenames = projectFiles.map(file => file.name);
+        for await (const filename of projectFilenames) {
+            await this.deleteFile(filename, undefined);
         }
         // Delete project analyses
         const projectAnalyses = this.project_data.analyses || [];
-        for await (const analysis of projectAnalyses) {
-            await this.deleteAnalysis(analysis.name, undefined);
+        // WARNING: The project analyses list is truncated as analyses are deleted and thus we can not iterate over it
+        // To avoid this problem we create a new list with project analysis names
+        const projectAnalysisNames = projectAnalyses.map(analysis => analysis.name);
+        for await (const analysisName of projectAnalysisNames) {
+            await this.deleteAnalysis(analysisName, undefined);
         }
         // Delete every MD
         for await (const [mdIndex, md] of Object.entries(this.project_data.mds)) {
@@ -250,15 +256,22 @@ class Database {
         const md = this.project_data.mds[mdIndex];
         // Delete MD files
         const mdFiles = md.files || [];
-        for await (const file of mdFiles) {
-            await this.deleteFile(file.name, mdIndex);
+        // WARNING: The MD files list is truncated as files are deleted and thus we can not iterate over it
+        // To avoid this problem we create a new list with MD filenames
+        const mdFilenames = mdFiles.map(file => file.name);
+        for await (const filename of mdFilenames) {
+            await this.deleteFile(filename, mdIndex);
         }
         // Delete MD analyses
         const mdAnalyses = md.analyses || [];
-        for await (const analysis of mdAnalyses) {
-            await this.deleteAnalysis(analysis.name, mdIndex);
+        // WARNING: The MD analyses list is truncated as analyses are deleted and thus we can not iterate over it
+        // To avoid this problem we create a new list with MD analysis names
+        const mdAnalysisNames = mdAnalyses.map(analysis => analysis.name);
+        for await (const analysisName of mdAnalysisNames) {
+            await this.deleteAnalysis(analysisName, mdIndex);
         }
         // Replace the current MD object with a new object which conserves the name and is flagged as 'removed'
+        console.log(`MD ${md.name} will be flagged as removed`);
         const residualMD = { name: md.name, removed: true };
         this.project_data.mds[mdIndex] = residualMD
         // Update the remote
