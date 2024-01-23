@@ -233,9 +233,9 @@ class Database {
         if (!result) return this.failLog(`🗑️ Failed to delete project ${this.project_id}`);
         this.successLog(`🗑️ Deleted project ${this.project_id}`);
         // Remove references if they are not used by other projects
-        for await (const reference of this.project_data.metadata.REFERENCES || []) {
-            const used = await this.isReferenceUsed(reference.uniprot);
-            if (used === false) await this.deleteReference(reference.uniprot);
+        for await (const uniprot of this.project_data.metadata.REFERENCES || []) {
+            const used = await this.isReferenceUsed(uniprot);
+            if (used === false) await this.deleteReference(uniprot);
         }
     }
 
@@ -302,7 +302,6 @@ class Database {
     // i.e. there is at least one project using it
     isReferenceUsed = async uniprot => {
         const projects = await this.projects.count({ 'metadata.REFERENCES': uniprot });
-        console.log('projects count: ' + projects);
         if (projects === 0) return false;
         return true;
     }
