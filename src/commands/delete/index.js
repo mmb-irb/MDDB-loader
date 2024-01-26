@@ -19,9 +19,10 @@ const deleteFunction = async (
     // Warn the user about the document we are about to delete and ask for confirmation
     const documentName = database.nameCollectionDocument(target.collection);
     // If this is a project then we must log a summary of the project
+    let project;
     if (target.collection === database.projects) {
-        await database.syncProject(target.document._id);
-        await database.logProjectSummary();
+        project = await database.syncProject(target.document._id);
+        await project.logProjectSummary();
     }
     // If the confirm argument has not been passed then ask the user for confirmation
     const confirmation = confirm || await userConfirm(`Confirm deletion of of ${documentName} with id ${id} [y/*]`);
@@ -31,25 +32,25 @@ const deleteFunction = async (
     // ----- Projects -----
     if (target.collection === database.projects) {
         // Remote project data should be loaded already
-        return await database.deleteProject();
+        return await project.deleteProject();
     }
     // ----- Analysis -----
     if (target.collection === database.analyses) {
         // Load remote project data in the database handler
-        await database.syncProject(target.document.project);
+        project = await database.syncProject(target.document.project);
         // Delete the analysis
         const name = target.document.name;
         const mdIndex = target.document.md;
-        return await database.deleteAnalysis(name, mdIndex);
+        return await project.deleteAnalysis(name, mdIndex);
     }
     // ----- Files -----
     if (target.collection === database.files) {
         // Load remote project data in the database handler
-        await database.syncProject(target.document.metadata.project);
+        project = await database.syncProject(target.document.metadata.project);
         // Delete the file
         const filename = target.document.filename;
         const mdIndex = target.document.metadata.md;
-        return await database.deleteFile(filename, mdIndex);
+        return await project.deleteFile(filename, mdIndex);
     }
     throw new Error(`Deletion of ${documentName} is not yet supported`);
 };

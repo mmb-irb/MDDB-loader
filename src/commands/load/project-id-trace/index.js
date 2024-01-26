@@ -18,7 +18,14 @@ const findTrace = directory => {
     return idOrAccessionCoerce(id);
 }
 
+// Remove a trace
+const removeTrace = directory => {
+    const tracePath = directory + TRACE_FILENAME;
+    if (fs.existsSync(tracePath)) fs.rmSync(tracePath);
+}
+
 module.exports = {
     leaveTrace,
-    findTrace
+    findTrace,
+    removeTrace
 }

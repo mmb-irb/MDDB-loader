@@ -4,7 +4,7 @@ const chalk = require('chalk');
 // (e.g. 1337000000 -> 15d 11h 23m 20s)
 const prettyMs = require('pretty-ms');
 // This utility displays in console a dynamic loading status
-const getSpinner = require('../../utils/get-spinner');
+const logger = require('../../utils/logger');
 // Load auxiliar functions
 const {
   getGromacsCommand,
@@ -32,7 +32,7 @@ const categorizeFiles = require('./categorize-files');
 const analyzeProteins = require('./protein-analyses');
 const nameAnalysis = require('./name-analysis');
 // Get project id trace handlers
-const { leaveTrace, findTrace } = require('./project-id-trace');
+const { leaveTrace, findTrace, removeTrace } = require('./project-id-trace');
 
 // Load data from the specified folder into mongo
 const load = async (
@@ -58,8 +58,6 @@ const load = async (
   // Get the correct gromacs command while checking it is installed in the system
   // If trajectories are to be skipped then skip this part as well since Gromacs is used for loading trajectories only
   const gromacsCommand = skipTrajectories ? null : getGromacsCommand(gromacsPath);
-  // Extract some fields from the database handler
-  const spinnerRef = database.spinnerRef;
   // Set the aborting function in case the load is interrupted further
   const checkAbort = getAbortingFunction(database);
 
@@ -90,17 +88,40 @@ const load = async (
   // Classification is performed according to file names
   const [categorizedProjectFiles, categorizedMdFiles] = await categorizeFiles(projectFiles, mdFiles);
 
-  // If the project already exists in the database then get its id
-  // The project is considered to exist already if an id was passed or found by trace
-  const previousIdOrAccession = append || findTrace(projectDirectory);
-  if (previousIdOrAccession) await database.syncProject(previousIdOrAccession);
-  // If no ID was passed (i.e. the project is not yet in the database)
-  else await database.createProject();
+  // If there is any available project id or accession then check if the project already exists in the database
+  let previousIdOrAccession;
+  // If we had an explicit append then check it exists
+  if (append) {
+    // If it exists then use it
+    if (await database.findProject(append)) previousIdOrAccession = append;
+    // If it does not exist then stop here and warn the user
+    else throw new Error(`Project ${append} was not found`);
+  }
+  // If we had not and append then search for a trace
+  else {
+    const trace = findTrace(projectDirectory);
+    if (trace) {
+      // If we had a trace and the project exists then use it
+      if (await database.findProject(trace)) previousIdOrAccession = trace;
+      // If we had a trace but the project does not exist then print a warning but keep going and create a new project
+      // Also remove the trace since it is not valid anymore
+      else {
+        console.log(chalk.yellow(`WARNING: There was a trace of project '${trace}' but it does not exist anymore`));
+        removeTrace(projectDirectory);
+      }
+    }
+  }
+
+  // If the project already exists in the database then sync it
+  // If no ID was passed (i.e. the project is not yet in the database) then create it
+  const project = previousIdOrAccession
+    ? await database.syncProject(previousIdOrAccession)
+    : await database.createProject();
   // Display the project id. It may be useful if the load is abruptly interrupted to clean
-  console.log(chalk.cyan(`== Project '${database.project_id}'`));
+  console.log(chalk.cyan(`== Project '${project.id}'`));
 
   // Leave a trace of the project id
-  leaveTrace(projectDirectory, database.project_id);
+  leaveTrace(projectDirectory, project.id);
 
   // Send data to the IPS and HMMER web pages to get it analized and retrieve the results
   // One analysis is performed for each protein chain
@@ -112,9 +133,9 @@ const load = async (
   const sampleMd = mdDirectories[0];
   const sampleMdFiles = categorizedMdFiles[sampleMd]
   const sampleStructureFile = sampleMdFiles && sampleMdFiles.structureFile;
-  if ( !skipChains && sampleStructureFile && (await database.forestallChainsUpdate(conserve, overwrite)) ) {
+  if ( !skipChains && sampleStructureFile && (await project.forestallChainsUpdate(conserve, overwrite)) ) {
     const sampleStructurePath = sampleMd + sampleStructureFile;
-    EBIJobs = await analyzeProteins(sampleStructurePath, spinnerRef, checkAbort, database);
+    EBIJobs = await analyzeProteins(sampleStructurePath, checkAbort, database);
   }
 
   // Check if the load has been aborted at this point
@@ -129,7 +150,7 @@ const load = async (
     const projectMetadataFilepath = projectDirectory + '/' + projectMetadataFile;
     const projectMetadata = await loadJSON(projectMetadataFilepath);
     if (!projectMetadata) throw new Error('There is something wrong with the project metadata file');
-    await database.updateProjectMetadata(projectMetadata, conserve, overwrite);
+    await project.updateProjectMetadata(projectMetadata, conserve, overwrite);
   }
 
   // Check if the load has been aborted at this point
@@ -163,9 +184,9 @@ const load = async (
     const topology = await loadJSON(topologyDataFilepath);
     if (!topology) throw new Error('There is something wrong with the topology data file')
     // Add the current project id to the topology object
-    topology.project = database.project_id;
+    topology.project = project.id;
     // Load it to mongo
-    await database.loadTopology(topology, conserve, overwrite);
+    await project.loadTopology(topology, conserve, overwrite);
   }
 
   // Note that there are no trajectories or analyses expected to be in the project nowadays
@@ -195,12 +216,12 @@ const load = async (
         databaseFilename = databaseFilename.slice(4);
       // Handle any conflicts and ask the user if necessary
       // Delete previous files in case we want to overwrite data
-      const confirm = await database.forestallFileLoad(databaseFilename, undefined, conserve, overwrite);
+      const confirm = await project.forestallFileLoad(databaseFilename, undefined, conserve, overwrite);
       if (!confirm) continue;
       // Set the path to the current file
       const filepath = projectDirectory + '/' + file;
       // Load the actual file
-      await database.loadFile(databaseFilename, undefined, filepath, checkAbort);
+      await project.loadFile(databaseFilename, undefined, filepath, checkAbort);
     }
   }
 
@@ -217,12 +238,12 @@ const load = async (
     // Get the MD directory basename
     const mdirBasename = getBasename(mdir);
     const mdName = mdirBasename.replaceAll('_', ' ');
-    const mdIndex = previousIdOrAccession ? database.project_data.mds.findIndex(md => md.name === mdName) : mdCount;
+    const mdIndex = previousIdOrAccession ? project.data.mds.findIndex(md => md.name === mdName) : mdCount;
     if (mdIndex === -1) throw new Error(`Non-existent MD name: ${mdName}`);
     mdCount += 1;
     console.log(chalk.cyan(`== MD directory '${mdirBasename}' named as '${mdName}' (MD index ${mdIndex})`));
     // If the MD does not exist then add it to the project data
-    if (!database.project_data.mds[mdIndex]) await database.addMDirectory(mdName);
+    if (!project.data.mds[mdIndex]) await project.addMDirectory(mdName);
     // Get the MD directory files
     const directoryFiles = categorizedMdFiles[mdir];
 
@@ -236,7 +257,7 @@ const load = async (
       // Load the metadata file
       const mdMetadata = await loadJSON(mdir + '/' + mdMetadataFile);
       if (!mdMetadata) throw new Error(`There is something wrong with the MD metadata file in ${mdirBasename}`);
-      await database.updateMdMetadata(mdMetadata, mdIndex, conserve, overwrite);
+      await project.updateMdMetadata(mdMetadata, mdIndex, conserve, overwrite);
     }
 
     // Check if the load has been aborted at this point
@@ -264,12 +285,12 @@ const load = async (
           databaseFilename = databaseFilename.slice(4);
         // Handle any conflicts and ask the user if necessary
         // Delete previous files in case we want to overwrite data
-        const confirm = await database.forestallFileLoad(databaseFilename, mdIndex, conserve, overwrite);
+        const confirm = await project.forestallFileLoad(databaseFilename, mdIndex, conserve, overwrite);
         if (!confirm) continue;
         // Set the path to the current file
         const trajectoryPath = mdir + '/' + file;
         // Load the trajectory parsedly
-        await database.loadTrajectoryFile(
+        await project.loadTrajectoryFile(
           databaseFilename,
           mdIndex,
           trajectoryPath,
@@ -301,12 +322,12 @@ const load = async (
           databaseFilename = databaseFilename.slice(4);
         // Handle any conflicts and ask the user if necessary
         // Delete previous files in case we want to overwrite data
-        const confirm = await database.forestallFileLoad(databaseFilename, mdIndex, conserve, overwrite);
+        const confirm = await project.forestallFileLoad(databaseFilename, mdIndex, conserve, overwrite);
         if (!confirm) continue;
         // Set the path to the current file
         const filepath = mdir + '/' + file;
         // Load the actual file
-        await database.loadFile(databaseFilename, mdIndex, filepath, checkAbort);
+        await project.loadFile(databaseFilename, mdIndex, filepath, checkAbort);
       }
     }
 
@@ -327,7 +348,7 @@ const load = async (
         if (!name) continue;
         // Handle any conflicts and ask the user if necessary
         // Delete previous analyses in case we want to overwrite data
-        const confirm = await database.forestallAnalysisLoad(name, mdIndex, conserve, overwrite);
+        const confirm = await project.forestallAnalysisLoad(name, mdIndex, conserve, overwrite);
         if (!confirm) continue;
         // Load the analysis
         const filepath = mdir + '/' + file;
@@ -337,7 +358,7 @@ const load = async (
         if (!content) throw new Error(`There is something wrong with the ${name} analysis file`);
         // Upload new data to the database
         const analysis = { name: name, value: content };
-        await database.loadAnalysis(analysis, mdIndex);
+        await project.loadAnalysis(analysis, mdIndex);
       }
     }
 
@@ -347,9 +368,7 @@ const load = async (
 
   // Load the chains as soon as they are retrieved from the EBI
   if (EBIJobs && EBIJobs.length) {
-    spinnerRef.current = getSpinner().start(
-      `Retrieving ${plural('chain', EBIJobs.length, true)}, including from InterProScan and HMMER`,
-    );
+    logger.startLog(`Retrieving ${plural('chain', EBIJobs.length, true)}, including from InterProScan and HMMER`);
 
     // Track the number of finished 'chains'
     let finished = 0;
@@ -357,13 +376,13 @@ const load = async (
       Promise.all(
         EBIJobs.map(([chain, job]) =>
           job.then(async document => {
-            spinnerRef.current.text = `Retrieved ${plural('chain', ++finished, true)} out of ${EBIJobs.length}, including from InterProScan and HMMER`;
+            logger.updateLog(`Retrieved ${plural('chain', ++finished, true)} out of ${EBIJobs.length}, including from InterProScan and HMMER`);
             // Sometimes, when chain sequences are repeated, chain may be e.g. 'A, B, C'
             // In those cases we must load a new chain for each chain letter
             const chains = chain.split(', ');
             chains.forEach(async c => {
               // Update the database with the new analysis
-              await database.loadChain({ name: c, ...document, project: database.project_id });
+              await project.loadChain({ name: c, ...document });
             });
 
             return [chain, document];
@@ -380,15 +399,15 @@ const load = async (
         }
       }),
     ]);
-    // Finish the spinner
-    spinnerRef.current.succeed(`Retrieved ${plural('chain', finished, true)}, including from InterProScan and HMMER`);
+    // Finish the logger
+    logger.successLog(`Retrieved ${plural('chain', finished, true)}, including from InterProScan and HMMER`);
   }
 
   return () => {
     console.log(
       chalk.cyan(`== finished loading '${projectDirectory}' in ${prettyMs(Date.now() - startTime)} with id:`),
     );
-    printHighlight(database.project_id);
+    printHighlight(project.id);
   };
 };
 

@@ -1,5 +1,7 @@
 // Allows to read some actions that user may call through the keyboard or exit the node shell
 const process = require('process');
+// This utility displays in console a dynamic loading status
+const logger = require('../utils/logger');
 // Visual tool which allows to add colors in console
 const chalk = require('chalk');
 // The project manager class
@@ -18,7 +20,6 @@ const commonHandler = commandName => async argv => {
 
   // Initialize the database handler
   const database = await getDatabase();
-  const spinnerRef = database.spinnerRef;
 
   // When the process is interrupted from the keyboard (Control + C)
   process.on('SIGINT', async () => {
@@ -31,9 +32,8 @@ const commonHandler = commandName => async argv => {
     // If this variable conatains any text, the load process will try to exit cleanly
     if (!process.env.abort) {
       process.env.abort = 'abort';
-      // In case of any error happening stop the spinner
-      if (spinnerRef.current && spinnerRef.current.running)
-        spinnerRef.current.fail(`Interrupted while doing: ${spinnerRef.current.text}`);
+      // In case of any error happening stop the logger
+      if (logger.isLogRunning()) logger.failLog(`Aborted while doing: ${logger.logText()}`);
     }
     // In case the abort was already in progress and we receive a new 'abort' request
     else {
@@ -56,9 +56,8 @@ const commonHandler = commandName => async argv => {
     if (finalMessage) finalMessage();
   } catch (error) {
     process.env.abort = 'abort';
-    // Stop the spinner
-    if (spinnerRef.current && spinnerRef.current.running)
-      spinnerRef.current.fail(`Interrupted while doing: ${spinnerRef.current.text}`);
+    // Stop the logger
+    if (logger.isLogRunning()) logger.failLog(`Interrupted while doing: ${logger.logText()}`);
     if (error) console.error(chalk.bgRed(error.stack));
     // Try to revert changes
     await database.revertLoad();

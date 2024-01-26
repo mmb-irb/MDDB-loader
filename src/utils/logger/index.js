@@ -5,8 +5,6 @@ const ora = require('ora');
 const prettyMs = require('pretty-ms');
 
 // This function displays in console a dynamic loading status
-// It is initially called by the commands index.js, which creates a reference (spinnerRef)
-// This reference is a sealed object which is then passed and used by other scripts
 const getSpinner = () => {
   const instance = ora();
   // Object.freeze prevents changing any propierties or their values inside the object
@@ -63,4 +61,22 @@ const getSpinner = () => {
   });
 };
 
-module.exports = getSpinner;
+// Set the spinner reference
+// Since this object is sealed, attributes can be written but not added or deteled
+let spinnerRef = Object.seal({ current: null });
+
+// Set the spinner handler
+const logger = {
+    startLog: message => spinnerRef.current = getSpinner().start(message),
+    updateLog: message => spinnerRef.current.text = message,
+    successLog: message => spinnerRef.current.succeed(message),
+    failLog: message => {
+        spinnerRef.current.fail(message);
+        throw new Error(message);
+    },
+    logText: () => spinnerRef.current.text,
+    logTime: () => spinnerRef.current.time,
+    isLogRunning: () => spinnerRef.current && spinnerRef.current.running
+};
+
+module.exports = logger;

@@ -20,7 +20,7 @@ const retry = require('../../../utils/retry');
 // - revertFunction: A function which is called after every failure
 const retryOptions = { maxRetries: 5, delay: waitTime(), backoff: true };
 // This utility displays in console a dynamic loading status
-const getSpinner = require('../../../utils/get-spinner');
+const logger = require('../../../utils/logger');
 // This is not the original NGL library, but a script which returns the original NGL library
 // This script executes a few logic before returning the library
 const ngl = require('../../../utils/ngl');
@@ -193,11 +193,9 @@ const analyseProtein = async (chain, sequence, database) => {
   return [chain, retrievalTask];
 };
 
-const analyzeProteins = async (structureFile, spinnerRef, abort, database) => {
+const analyzeProteins = async (structureFile, abort, database) => {
   // Displays in console the start of this process
-  spinnerRef.current = getSpinner().start(
-    'Submitting sequences to InterProScan and HMMER',
-  );
+  logger.startLog('Submitting sequences to InterProScan and HMMER');
 
   // Read and save the content of the .pdb file
   const fileContent = await readFile(structureFile, 'utf8');
@@ -230,8 +228,8 @@ const analyzeProteins = async (structureFile, spinnerRef, abort, database) => {
     }
   });
 
-  // Change the spinner text to display in console
-  spinnerRef.current.text = `Processed 0 sequence out of ${chains.size}, including submission to InterProScan and HMMER`;
+  // Change the logger text to display in console
+  logger.updateLog(`Processed 0 sequence out of ${chains.size}, including submission to InterProScan and HMMER`);
 
   let i = 0;
   // Done is true when the 'jobs' promise is returned and aborted is used to store a promise
@@ -243,13 +241,13 @@ const analyzeProteins = async (structureFile, spinnerRef, abort, database) => {
       Array.from(chains.entries()).map(([chain, sequence]) =>
         // For each row perform an analysis (function is declared above) and then report the progress
         analyseProtein(chain, sequence, database).then(output => {
-          // Change the spinner text to display in console:
+          // Change the logger text to display in console:
           // - Keep track of the current processing sequence
           // Plural returns a single string which contains the number "i++" and the word "sequence"
           // The word is pluralized when i++ is bigger than 1 (e.g. "1 sequence", "2 sequences")
           // true stands for displaying also the number
-          spinnerRef.current.text = `Processed ${plural('sequence', ++i, true)} out of ${
-            chains.size}, including submission to InterProScan and HMMER`;
+          logger.updateLog(`Processed ${plural('sequence', ++i, true)} out of ${
+            chains.size}, including submission to InterProScan and HMMER`);
           return output;
         }),
       ), // End of the map
@@ -270,8 +268,8 @@ const analyzeProteins = async (structureFile, spinnerRef, abort, database) => {
   done = true;
   // Check if the load has been aborted
   if ((await aborted) === 'abort') return 'abort';
-  // Finish the spinner process as succeed
-  spinnerRef.current.succeed(
+  // Finish the logger process as succeed
+  logger.successLog(
     `Processed ${plural('sequence', i, true)} out of ${chains.size}, including submission to InterProScan and HMMER`,
   );
 
