@@ -380,11 +380,10 @@ const load = async (
             // Sometimes, when chain sequences are repeated, chain may be e.g. 'A, B, C'
             // In those cases we must load a new chain for each chain letter
             const chains = chain.split(', ');
-            chains.forEach(async c => {
+            for await (const c of chains) {
               // Update the database with the new analysis
               await project.loadChain({ name: c, ...document });
-            });
-
+            }
             return [chain, document];
           }),
         ),

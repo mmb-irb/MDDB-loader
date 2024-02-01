@@ -199,7 +199,11 @@ class Project {
         logger.startLog(`💽 Loading chain ${chainContent.name}`);
         const result = await this.database.chains.insertOne(chainContent);
         if (result.acknowledged === false) return logger.failLog(`💽 Failed to load chain ${chainContent.name}`);
-        logger.successLog(`💽 Loaded chain ${chainContent.name}`);
+        logger.successLog(`💽 Loaded chain ${chainContent.name} -> ${result.insertedId}`);
+        // Update project data
+        if (!this.data.chains) this.data.chains = [];
+        this.data.chains.push(chainContent.name);
+        await this.updateRemote();
         // Update the inserted data in case we need to revert the change
         this.database.inserted_data.push({
             name: 'new chain',
