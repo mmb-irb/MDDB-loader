@@ -233,14 +233,16 @@ const load = async (
   // ---------------------------
 
   // Iterate over the different MD directores
-  let mdCount = 0;
   for await (const mdir of mdDirectories) {
     // Get the MD directory basename
     const mdirBasename = getBasename(mdir);
     const mdName = mdirBasename.replaceAll('_', ' ');
-    const mdIndex = previousIdOrAccession ? project.data.mds.findIndex(md => md.name === mdName) : mdCount;
+    // If the project already exists then search for an already existing MD with the same name
+    const alreadyExistingMdIndex = previousIdOrAccession && project.data.mds.findIndex(md => md.name === mdName);
+    const mdExists = typeof alreadyExistingMdIndex === 'number' && alreadyExistingMdIndex !== -1;
+    // Set the MD index both if it already exists or if it is a new MD
+    const mdIndex = mdExists ? alreadyExistingMdIndex : project.data.mds.length;
     if (mdIndex === -1) throw new Error(`Non-existent MD name: ${mdName}`);
-    mdCount += 1;
     console.log(chalk.cyan(`== MD directory '${mdirBasename}' named as '${mdName}' (MD index ${mdIndex})`));
     // If the MD does not exist then add it to the project data
     if (!project.data.mds[mdIndex]) await project.addMDirectory(mdName);
