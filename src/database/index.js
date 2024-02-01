@@ -2,6 +2,8 @@
 const connectToMongo = require('../utils/connect-to-mongo/index');
 // This utility displays in console a dynamic loading status
 const logger = require('../utils/logger');
+// Add colors in console
+const chalk = require('chalk');
 // Load auxiliar functions
 const { userConfirm } = require('../utils/auxiliar-functions');
 // The project class is used to handle database data from a specific project
