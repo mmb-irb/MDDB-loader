@@ -221,7 +221,7 @@ class Project {
         logger.successLog(`🗑️  Deleted chains`);
         // Set project data chains as an empty list
         this.data.chains = [];
-        await logger.updateRemote();
+        await this.updateRemote();
     };
 
     // Set a handler to update metadata
