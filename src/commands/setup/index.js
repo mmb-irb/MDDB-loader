@@ -18,8 +18,6 @@ const setup = async ({}, database) => {
     await database.analyses.createIndex({ project: 1 });
     await database.chains.createIndex({ project: 1 });
     await database.topologies.createIndex({ project: 1 });
-    // Set a document in the counters collection
-    await database.counters.insertOne({ name: 'identifier', count: 0 });
     // We are done :)
     console.log('Database has been setup successfully');
 };

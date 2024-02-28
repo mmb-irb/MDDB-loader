@@ -5,12 +5,18 @@ const logger = require('../utils/logger');
 // Add colors in console
 const chalk = require('chalk');
 // Load auxiliar functions
-const { userConfirm } = require('../utils/auxiliar-functions');
+const { mongoidFormat, userConfirm } = require('../utils/auxiliar-functions');
 // The project class is used to handle database data from a specific project
 const Project = require('./project');
 
-// Use regexp to check if 'append' is an accession or an object ID
-const accessionFormat = new RegExp('^' + process.env.ACCESSION_PREFIX + '\\d{5}$');
+// Get the environment prefix
+const ACCESSION_PREFIX = process.env.ACCESSION_PREFIX;
+// Set the first accession code
+// Accession codes are alphanumeric and the first value is to be letter
+const FIRST_ACCESSION_CODE = 'A0001';
+
+// Set the alhpanumeric number of characters: 36 (10 numbers + 24 letters)
+const ALPHANUMERIC = 36;
 
 // Set the project class
 class Database {
@@ -81,7 +87,7 @@ class Database {
     findProject = async idOrAccession => {
         // If it is an accession we have to query in a specific format
         // If it is an object id we can directly query with it
-        const query = accessionFormat.test(idOrAccession) ? { accession: idOrAccession } : idOrAccession;
+        const query = mongoidFormat.test(idOrAccession) ? idOrAccession : { accession: idOrAccession };
         // Find the already existing project in mongo
         const projectData = await this.projects.findOne(query);
         return projectData;
@@ -100,7 +106,8 @@ class Database {
     createProject = async () => {
         // Create a new project
         // DANI: El mdref está fuertemente hardcodeado, hay que pensarlo
-        const projectData = { accession: null, published: false, mds: [], mdref: 0, files: [] };
+        const newAccession = await this.issueNewAccession();
+        const projectData = { accession: newAccession, published: false, mds: [], mdref: 0, files: [] };
         logger.startLog(`📝 Adding new database project`);
         // Load the new project
         const result = await this.projects.insertOne(projectData);
@@ -193,6 +200,37 @@ class Database {
             }
             console.log(`🗑️  Deleted ${data.name} <- ${data.id}`);
         }
+    };
+
+    // Create a new accession and add 1 to the last accession count
+    // Note that this is the default accession but it is not mandatory to use this accession format
+    // A custom accession may be forced through command line
+    issueNewAccession = async () => {
+        // First we must find the next available accession number
+        const currentCounter = await this.counters.findOne({ prefix: ACCESSION_PREFIX });
+        // If prefix already exists then get the next number and update the counter
+        let accessionCode;
+        if (currentCounter) {
+            const nextAccessionCode = currentCounter.last + 1;
+            const result = await this.counters.updateOne(
+                { prefix: ACCESSION_PREFIX },
+                { $set: { last: nextAccessionCode } });
+            if (!result.acknowledged) throw Error(`Failed to update counter`);
+            accessionCode = nextAccessionCode.toString(ALPHANUMERIC).toUpperCase();
+            if (accessionCode.length > 5)
+                throw new Error(`You have reached the limit of accession codes. Next would be ${accessionCode}`);
+        }
+        // If the counter does not yet exist then create it
+        else {
+            const result = await this.counters.insertOne({
+                last: parseInt(FIRST_ACCESSION_CODE, ALPHANUMERIC),
+                prefix: ACCESSION_PREFIX
+            });
+            if (!result.acknowledged) throw Error(`Failed to create new counter`);
+            accessionCode = FIRST_ACCESSION_CODE;
+        }
+        // Return the new accession
+        return `${ACCESSION_PREFIX}:${accessionCode}`;
     };
 }
 

@@ -632,6 +632,15 @@ class Project {
         await this.updateRemote();
     }
 
+    // Set if the project is to be published
+    setPublished = async published => {
+        // If project is already in the desired status then do nothing
+        if (this.data.published === published) return;
+        // Update the project published status
+        this.data.published = published;
+        await this.updateRemote();
+    };
+
 }
 
 module.exports = Project

@@ -121,9 +121,8 @@ yargs
     })
     // publish
     .command({
-        command: 'publish <id>',
-        desc:
-        'publish and assign an accession (if not already existing) to the specified id(s)',
+        command: 'publish <id|accession>',
+        desc: 'publish and assign an accession (if not already existing) to the specified id(s)',
         builder: yargs => yargs
             // id
             .positional('id', {
@@ -136,8 +135,7 @@ yargs
     // unpublish
     .command({
         command: 'unpublish <id|accession>',
-        desc:
-        'publish and assign an accession to the specified id, or re-publish an existing accession',
+        desc: 'publish and assign an accession to the specified id, or re-publish an existing accession',
         builder: yargs => yargs
             // id
             .positional('id', {

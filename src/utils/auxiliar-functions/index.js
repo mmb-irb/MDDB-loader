@@ -18,9 +18,8 @@ const process = require('process');
 
 // Find some values
 const workingDirectory = process.cwd();
-// RegExp formula to check if a string is in accession format
-//const accessionFormat = /^MCNS\d{5}$/;
-const accessionFormat = new RegExp('^' + process.env.ACCESSION_PREFIX + '\\d{5}$');
+// RegExp formula to check if a string is a mongoid
+const mongoidFormat = new RegExp('^[0-9a-f]{24}$');
 
 // Set some constants
 
@@ -119,31 +118,14 @@ const getBasename = path => {
 const idCoerce = id => new ObjectId(id);
 
 // Convert the input accession string into a valid accession format
-const accessionCoerce = accession => {
-    // Remove spaces from the accession argument and make all characters upper case
-    const output = accession.trim().toUpperCase();
-    // Check if the new accession (output) is a valid accession format. If not, send an error
-    if (!accessionFormat.test(output)) throw new Error('Not a valid accession');
-    return output;
-};
+const accessionCoerce = accession => accession.trim();
 
 // Try to coerce the input argument as a mongo id
 // If fails, try it as an accession
 const idOrAccessionCoerce = idOrAccession => {
-    let output;
-    // This is to prevent idCoerce() to generate a new ObjectId if the passed argument is null
     if (!idOrAccession) return null;
-    try {
-        output = idCoerce(idOrAccession);
-    } catch (_) {
-        try {
-            output = accessionCoerce(idOrAccession);
-        } catch (_) {
-            /**/
-        }
-    }
-    if (output) return output;
-    throw new Error('Invalid ID or accession');
+    if (mongoidFormat.test(idOrAccession)) return idCoerce(idOrAccession);
+    return accessionCoerce(idOrAccession);
 };
 
 // This is just like an string array with the accepted formats
@@ -160,6 +142,7 @@ const getMimeTypeFromFilename = filename => {
 };
 
 module.exports = {
+    mongoidFormat,
     userConfirm,
     userConfirmDataLoad,
     getGromacsCommand,
