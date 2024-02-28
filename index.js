@@ -178,20 +178,20 @@ yargs
     // cleanup
     // NOTE: ask user to unpublish before cleaning up, to make them think twice
     // NOTE: about what they're about to do since there is no going back from that
-    .command({
-        command: 'cleanup',
-        aliases: ['clean', 'clear'],
-        desc: 'Remove orphan data',
-        builder: yargs => yargs
-            // --confirm
-            .option('y', {
-                alias: 'confirm',
-                description: 'Confirm already, so the user is never asked for confirmation before deletion',
-                type: 'boolean',
-                default: false,
-            }),
-        handler: commonHandler('cleanup'),
-    })
+    // .command({
+    //     command: 'cleanup',
+    //     aliases: ['clean', 'clear'],
+    //     desc: 'Remove orphan data',
+    //     builder: yargs => yargs
+    //         // --confirm
+    //         .option('y', {
+    //             alias: 'confirm',
+    //             description: 'Confirm already, so the user is never asked for confirmation before deletion',
+    //             type: 'boolean',
+    //             default: false,
+    //         }),
+    //     handler: commonHandler('cleanup'),
+    // })
     // setup
     .command({
         command: 'setup',
