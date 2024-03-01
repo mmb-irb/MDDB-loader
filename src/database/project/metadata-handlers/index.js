@@ -1,4 +1,7 @@
-
+// Function to ask the user for confirmation
+const { userConfirm } = require('../../../utils/auxiliar-functions');
+// Add colors in console
+const chalk = require('chalk');
 
 // Given a previous and a new metadata objects, add missing new fields to the previous metadata
 // Handle also conflicts when the new value already exists and it has a different value
