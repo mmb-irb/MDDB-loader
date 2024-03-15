@@ -85,6 +85,9 @@ class Database {
     // Find a project by its id or accession
     // Return null if project does not exist
     findProject = async idOrAccession => {
+        // WARNING: Here we must kill the process if the input id or accession is undefined or null
+        // WARNING: The query would just return the first project in the database which is very dangerous
+        if (!idOrAccession) throw new Error('Missing ID or Accession');
         // If it is an accession we have to query in a specific format
         // If it is an object id we can directly query with it
         const query = mongoidFormat.test(idOrAccession) ? idOrAccession : { accession: idOrAccession };
@@ -241,4 +244,4 @@ const getDatabase = async () => {
     return new Database(client, db, bucket);
 };
 
-module.exports = getDatabase
+module.exports = getDatabase;

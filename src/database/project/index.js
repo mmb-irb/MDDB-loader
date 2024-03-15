@@ -31,6 +31,7 @@ class Project {
     constructor (data, database) {
         // Store the current project data
         this.data = data;
+        this.accession = this.data.accession;
         this.id = this.data._id;
         // Store the database handler
         this.database = database;
@@ -50,7 +51,8 @@ class Project {
 
     // Get a summary of the project contents
     logProjectSummary = async () => {
-        console.log(`Project ${this.id} summary:`);
+        const accessionLabel = this.accession || 'with no accession';
+        console.log(`Project ${accessionLabel} (${this.id}) summary:`);
         // Show if there is a topology
         const topology = await this.getTopology();
         if (topology) console.log('- Topology');

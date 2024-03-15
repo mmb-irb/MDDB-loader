@@ -1,7 +1,7 @@
 // Visual tool which allows to add colors in console
 const chalk = require('chalk');
 // Load auxiliar functions
-const { userConfirm } = require('../../utils/auxiliar-functions');
+const { mongoidFormat, userConfirm } = require('../../utils/auxiliar-functions');
 
 // Delete anything in the database by its ID
 // Note that a function cannot be named 'delete' in node
@@ -12,14 +12,26 @@ const deleteFunction = async (
     database,
 ) => {
     console.log(chalk.cyan(`== Deletion of '${id}'`));
+    // Set the project affected by this deletion
+    let project;
     // Find the document with the requested Id, no matter in which collection it is
-    const target = await database.findId(id);
+    // Find also the collection it belongs to
+    let target;
+    // Check if the input id is actually an id
+    // If not then consider it is an accession
+    const isMongoId = mongoidFormat.test(id);
+    if (isMongoId) target = await database.findId(id);
+    else {
+        // Find the project this accession belongs to
+        project = await database.syncProject(id);
+        if (!project) return console.error(chalk.yellow(`No project found for accession '${id}'`));
+        target = { document: project.data, collection: database.projects };
+    }
     // If nothing is found then we are done
     if (!target) return console.error(chalk.yellow(`Nothing found for ID '${id}'`));
     // Warn the user about the document we are about to delete and ask for confirmation
     const documentName = database.nameCollectionDocument(target.collection);
     // If this is a project then we must log a summary of the project
-    let project;
     if (target.collection === database.projects) {
         project = await database.syncProject(target.document._id);
         await project.logProjectSummary();
