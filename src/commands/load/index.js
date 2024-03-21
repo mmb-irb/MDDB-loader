@@ -118,7 +118,7 @@ const load = async (
     ? await database.syncProject(previousIdOrAccession)
     : await database.createProject();
   // Display the project id. It may be useful if the load is abruptly interrupted to clean
-  console.log(chalk.cyan(`== Project '${project.id}'`));
+  console.log(chalk.cyan(`== Project '${project.data.accession}'`));
 
   // Leave a trace of the project id
   leaveTrace(projectDirectory, project.id);
@@ -408,7 +408,7 @@ const load = async (
     console.log(
       chalk.cyan(`== finished loading '${projectDirectory}' in ${prettyMs(Date.now() - startTime)} with id:`),
     );
-    printHighlight(project.id);
+    printHighlight(project.data.accession);
   };
 };
 

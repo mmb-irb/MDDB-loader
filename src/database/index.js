@@ -14,6 +14,7 @@ const ACCESSION_PREFIX = process.env.ACCESSION_PREFIX;
 // Set the first accession code
 // Accession codes are alphanumeric and the first value is to be letter
 const FIRST_ACCESSION_CODE = 'A0001';
+const ACCESSION_CHARACTERS_LIMIT = FIRST_ACCESSION_CODE.length;
 
 // Set the alhpanumeric number of characters: 36 (10 numbers + 24 letters)
 const ALPHANUMERIC = 36;
@@ -220,7 +221,7 @@ class Database {
                 { $set: { last: nextAccessionCode } });
             if (!result.acknowledged) throw Error(`Failed to update counter`);
             accessionCode = nextAccessionCode.toString(ALPHANUMERIC).toUpperCase();
-            if (accessionCode.length > 5)
+            if (accessionCode.length > ACCESSION_CHARACTERS_LIMIT)
                 throw new Error(`You have reached the limit of accession codes. Next would be ${accessionCode}`);
         }
         // If the counter does not yet exist then create it
