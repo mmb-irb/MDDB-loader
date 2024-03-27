@@ -9,8 +9,6 @@ const { mongoidFormat, userConfirm } = require('../utils/auxiliar-functions');
 // The project class is used to handle database data from a specific project
 const Project = require('./project');
 
-// Get the environment prefix
-const ACCESSION_PREFIX = process.env.ACCESSION_PREFIX;
 // Set the first accession code
 // Accession codes are alphanumeric and the first value is to be letter
 const FIRST_ACCESSION_CODE = 'A0001';
@@ -211,13 +209,13 @@ class Database {
     // A custom accession may be forced through command line
     issueNewAccession = async () => {
         // First we must find the next available accession number
-        const currentCounter = await this.counters.findOne({ prefix: ACCESSION_PREFIX });
+        const currentCounter = await this.counters.findOne({ accessions: true });
         // If prefix already exists then get the next number and update the counter
         let accessionCode;
         if (currentCounter) {
             const nextAccessionCode = currentCounter.last + 1;
             const result = await this.counters.updateOne(
-                { prefix: ACCESSION_PREFIX },
+                { accessions: true },
                 { $set: { last: nextAccessionCode } });
             if (!result.acknowledged) throw Error(`Failed to update counter`);
             accessionCode = nextAccessionCode.toString(ALPHANUMERIC).toUpperCase();
@@ -227,14 +225,14 @@ class Database {
         // If the counter does not yet exist then create it
         else {
             const result = await this.counters.insertOne({
-                last: parseInt(FIRST_ACCESSION_CODE, ALPHANUMERIC),
-                prefix: ACCESSION_PREFIX
+                accessions: true,
+                last: parseInt(FIRST_ACCESSION_CODE, ALPHANUMERIC)
             });
             if (!result.acknowledged) throw Error(`Failed to create new counter`);
             accessionCode = FIRST_ACCESSION_CODE;
         }
         // Return the new accession
-        return `${ACCESSION_PREFIX}:${accessionCode}`;
+        return `${accessionCode}`;
     };
 }
 
