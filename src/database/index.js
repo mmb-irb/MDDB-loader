@@ -36,6 +36,7 @@ class Database {
         // Keep track of the newly inserted data
         // This way, in case anything goes wrong, we can revert changes
         this.inserted_data = [];
+        this.new_accession_issued = false;
     };
 
     // ----- Constants -----
@@ -95,20 +96,27 @@ class Database {
         return projectData;
     }
 
-    // Find an already existing project in the database and set its data as the handler project data
+    // Find an already existing project in the database and return the project data handler
+    // Return null if the project does not exist
     syncProject = async idOrAccession => {
         // Find the already existing project in mongo
         const projectData = await this.findProject(idOrAccession);
-        if (!projectData) throw new Error(`No project found for ID/Accession '${idOrAccession}'`);
+        if (!projectData) return null;
         return new Project(projectData, this);
     }
 
-    // Create a new project in the database
-    // Set the handler project data accordingly
-    createProject = async () => {
+    // Create a new project in the database and return the project data handler
+    // An accession may be passed
+    // If no accession is passed then a new accession is issued with the default format
+    createProject = async (forcedAccession = null) => {
+        // If the accession was forced then check it does not exists
+        if (forcedAccession) {
+            const previousProjectData = await this.projects.findOne({ accession: forcedAccession });
+            if (previousProjectData) throw new Error(`Forced accession '${forcedAccession}' already exists`);
+        }
         // Create a new project
         // DANI: El mdref está fuertemente hardcodeado, hay que pensarlo
-        const newAccession = await this.issueNewAccession();
+        const newAccession = forcedAccession || await this.issueNewAccession();
         const projectData = { accession: newAccession, published: false, mds: [], mdref: 0, files: [] };
         logger.startLog(`📝 Adding new database project`);
         // Load the new project
@@ -175,35 +183,6 @@ class Database {
         return null;
     }
 
-    // Unload things loaded in the database during the last run
-    revertLoad = async (confirmed = false) => {
-        // Check if any data was loaded
-        // If not, there is no point in asking the user
-        if (this.inserted_data.length === 0) return;
-        // Stop the logs if it they are still alive
-        if (logger.isLogRunning()) logger.failLog(`Interrupted while doing: ${logger.logText}`);
-        // Ask the user if already loaded data is to be conserved or cleaned up
-        const confirm = confirmed || await userConfirm(
-            `There was some problem and load has been aborted. Confirm further instructions:
-            C - Conserve already loaded data
-            * - Delete already loaded data`);
-        // If data is to be conserved there is nothing to do here
-        if (confirm === 'C') return;
-        // Delete inserted data one by one
-        for (const data of this.inserted_data) {
-            const collection = data.collection;
-            if (collection === this.files) {
-                console.log('allright its a file');
-                await this.bucket.delete(currentFile.id);
-            } 
-            else {
-                const result = await data.collection.deleteOne({ _id: data.id });
-                if (result.acknowledged === false) throw new Error(`Failed to delete ${data.name}`);
-            }
-            console.log(`🗑️  Deleted ${data.name} <- ${data.id}`);
-        }
-    };
-
     // Create a new accession and add 1 to the last accession count
     // Note that this is the default accession but it is not mandatory to use this accession format
     // A custom accession may be forced through command line
@@ -231,8 +210,56 @@ class Database {
             if (!result.acknowledged) throw Error(`Failed to create new counter`);
             accessionCode = FIRST_ACCESSION_CODE;
         }
+        // Make sure the new accession does not exist yet in the database
+        const alreadyExistingProject = await this.projects.findOne({ accession: accessionCode });
+        if (alreadyExistingProject) throw Error(`New issued accession ${accessionCode} already exists`);
+        // Set the new accession issued flag as true
+        // This allows to substract 1 from the counter if load is aborted to dont burn accessions
+        this.new_accession_issued = true;
         // Return the new accession
         return `${accessionCode}`;
+    };
+
+    // Unload things loaded in the database during the last run
+    revertLoad = async (confirmed = false) => {
+        // Check if any data was loaded
+        // If not, there is no point in asking the user
+        if (this.inserted_data.length === 0 && this.new_accession_issued === false) return;
+        // Stop the logs if it they are still alive
+        if (logger.isLogRunning()) logger.failLog(`Interrupted while doing: ${logger.logText}`);
+        // Ask the user if already loaded data is to be conserved or cleaned up
+        const confirm = confirmed || await userConfirm(
+            `There was some problem and load has been aborted. Confirm further instructions:
+            C - Conserve already loaded data
+            * - Delete already loaded data`);
+        // If data is to be conserved there is nothing to do here
+        if (confirm === 'C') return;
+        // If a new accession was issued then substract 1 from the count
+        if (this.new_accession_issued) {
+            // First we must find the current count
+            const currentCounter = await this.counters.findOne({ accessions: true });
+            // Now substract 1
+            const previousAccessionCode = currentCounter.last - 1;
+            // Now update the counter
+            const result = await this.counters.updateOne(
+                { accessions: true },
+                { $set: { last: previousAccessionCode } });
+            if (!result.acknowledged) throw Error(`Failed to revert counter`);
+            console.log('Reverted accession counter');
+        }
+        // Delete inserted data one by one
+        for (const data of this.inserted_data) {
+            const collection = data.collection;
+            if (collection === this.files) {
+                console.log('allright its a file');
+                await this.bucket.delete(currentFile.id);
+            } 
+            else {
+                const result = await data.collection.deleteOne({ _id: data.id });
+                if (result.acknowledged === false) throw new Error(`Failed to delete ${data.name}`);
+            }
+            console.log(`🗑️  Deleted ${data.name} <- ${data.id}`);
+        }
     };
 }
 

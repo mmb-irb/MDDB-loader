@@ -88,35 +88,59 @@ const load = async (
   // Classification is performed according to file names
   const [categorizedProjectFiles, categorizedMdFiles] = await categorizeFiles(projectFiles, mdFiles);
 
-  // If there is any available project id or accession then check if the project already exists in the database
-  let previousIdOrAccession;
-  // If we had an explicit append then check it exists
-  if (append) {
-    // If it exists then use it
-    if (await database.findProject(append)) previousIdOrAccession = append;
-    // If it does not exist then stop here and warn the user
-    else throw new Error(`Project ${append} was not found`);
-  }
-  // If we had not and append then search for a trace
-  else {
-    const trace = findTrace(projectDirectory);
-    if (trace) {
-      // If we had a trace and the project exists then use it
-      if (await database.findProject(trace)) previousIdOrAccession = trace;
-      // If we had a trace but the project does not exist then print a warning but keep going and create a new project
-      // Also remove the trace since it is not valid anymore
-      else {
-        console.log(chalk.yellow(`WARNING: There was a trace of project '${trace}' but it does not exist anymore`));
-        removeTrace(projectDirectory);
-      }
-    }
+  // Read project metadata, which is expected to have most of the metadata
+  // Note that we read it even if it is not to be loaded since it may contain data useful for the loading process
+  let projectMetadata;
+  const projectMetadataFile = categorizedProjectFiles.metadataFile;
+  if (projectMetadataFile) {
+    const projectMetadataFilepath = projectDirectory + '/' + projectMetadataFile;
+    projectMetadata = await loadJSON(projectMetadataFilepath);
+    if (!projectMetadata) throw new Error('There is something wrong with the project metadata file');
   }
 
-  // If the project already exists in the database then sync it
-  // If no ID was passed (i.e. the project is not yet in the database) then create it
-  const project = previousIdOrAccession
-    ? await database.syncProject(previousIdOrAccession)
-    : await database.createProject();
+  // Find if there is a prefeined accession to use such as:
+  // 1 - A command line forced accession (append option)
+  // 2 - A metadata forced accession
+  // 3 - A trace from a previous run
+  // If no accession is predefined we asume it is a new project and we create it
+  // Set the project data handler and update the 'isNew' variable accordingly
+  // This part of the code is set as a function just to use return
+  let isNew = false;
+  const project = await (async () => {
+    // If we have an explicit append option in the command line then check it is valid
+    if (append) {
+      const alreadyExistingProject = await database.syncProject(append);
+      // If the project exists then use it
+      if (alreadyExistingProject) return alreadyExistingProject;
+      // If it does not exist then stop here and warn the user
+      throw new Error(`Project ${append} was not found`);
+    }
+    // If we have a forced accession in the metadata then use it
+    const metadataForcedAccession = projectMetadata && projectMetadata.FORCED_ACCESSION;
+    if (metadataForcedAccession) {
+      // If the project exists then we sync it
+      const alreadyExistingProject = await database.syncProject(metadataForcedAccession);
+      if (alreadyExistingProject) return alreadyExistingProject;
+      // If the project does not exist then create it and set its accession as requested
+      isNew = true;
+      return await database.createProject(metadataForcedAccession);
+    }
+    // If we had a trace then check it belongs to an existing project
+    const trace = findTrace(projectDirectory);
+    if (trace) {
+      const alreadyExistingProject = await database.syncProject(trace);
+      // If we had a trace and the project exists then use it
+      if (alreadyExistingProject) return alreadyExistingProject;
+      // If we had a trace but the project does not exist then print a warning but keep going and create a new project
+      // Also remove the trace since it is not valid anymore
+      console.log(chalk.yellow(`WARNING: There was a trace of project '${trace}' but it does not exist anymore`));
+      removeTrace(projectDirectory);
+    }
+    // If there is no valid predefined accession then create a new project with a default formatted accession
+    isNew = true;
+    return await database.createProject();
+  })();
+
   // Display the project id. It may be useful if the load is abruptly interrupted to clean
   console.log(chalk.cyan(`== Project '${project.data.accession}'`));
 
@@ -143,13 +167,9 @@ const load = async (
 
   // ---- Metadata ----
 
-  // Load project metadata, which is expected to have most of the metadata
-  const projectMetadataFile = categorizedProjectFiles.metadataFile;
-  if ( !skipMetadata && projectMetadataFile ) {
+  // Load project metadata
+  if ( !skipMetadata && projectMetadata ) {
     console.log('Loading project metadata');
-    const projectMetadataFilepath = projectDirectory + '/' + projectMetadataFile;
-    const projectMetadata = await loadJSON(projectMetadataFilepath);
-    if (!projectMetadata) throw new Error('There is something wrong with the project metadata file');
     await project.updateProjectMetadata(projectMetadata, conserve, overwrite);
   }
 
@@ -238,7 +258,7 @@ const load = async (
     const mdirBasename = getBasename(mdir);
     const mdName = mdirBasename.replaceAll('_', ' ');
     // If the project already exists then search for an already existing MD with the same name
-    const alreadyExistingMdIndex = previousIdOrAccession && project.data.mds.findIndex(md => md.name === mdName);
+    const alreadyExistingMdIndex = isNew === false && project.data.mds.findIndex(md => md.name === mdName);
     const mdExists = typeof alreadyExistingMdIndex === 'number' && alreadyExistingMdIndex !== -1;
     // Set the MD index both if it already exists or if it is a new MD
     const mdIndex = mdExists ? alreadyExistingMdIndex : project.data.mds.length;

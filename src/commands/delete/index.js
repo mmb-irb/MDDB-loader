@@ -33,7 +33,7 @@ const deleteFunction = async (
     const documentName = database.nameCollectionDocument(target.collection);
     // If this is a project then we must log a summary of the project
     if (target.collection === database.projects) {
-        project = await database.syncProject(target.document._id);
+        if (!project) project = await database.syncProject(target.document._id);
         await project.logProjectSummary();
     }
     // If the confirm argument has not been passed then ask the user for confirmation
@@ -49,7 +49,9 @@ const deleteFunction = async (
     // ----- Analysis -----
     if (target.collection === database.analyses) {
         // Load remote project data in the database handler
-        project = await database.syncProject(target.document.project);
+        const projectId = target.document.project;
+        project = await database.syncProject(projectId);
+        if (!project) throw new Error(`Parent project ${projectId} not found. Is the analysis orphan?`);
         // Delete the analysis
         const name = target.document.name;
         const mdIndex = target.document.md;
@@ -58,7 +60,9 @@ const deleteFunction = async (
     // ----- Files -----
     if (target.collection === database.files) {
         // Load remote project data in the database handler
-        project = await database.syncProject(target.document.metadata.project);
+        const projectId = target.document.metadata.project;
+        project = await database.syncProject(projectId);
+        if (!project) throw new Error(`Parent project ${projectId} not found. Is the file orphan?`);
         // Delete the file
         const filename = target.document.filename;
         const mdIndex = target.document.metadata.md;
