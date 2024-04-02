@@ -9,7 +9,9 @@ const logger = require('../../utils/logger');
 const {
   getGromacsCommand,
   directoryCoerce,
-  getBasename
+  getBasename,
+  loadJSON,
+  loadYAMLorJSON
 } = require('../../utils/auxiliar-functions');
 // Return a word's plural when the numeric argument is bigger than 1
 const plural = require('../../utils/plural');
@@ -17,9 +19,6 @@ const plural = require('../../utils/plural');
 const printHighlight = require('../../utils/print-highlight');
 // A function for just wait
 const { sleep } = require('timing-functions');
-// Read and parse a JSON file
-const loadJSON = require('../../utils/load-json');
-
 // Local scripts listed in order of execution
 const getAbortingFunction = require('./abort');
 const {
@@ -88,15 +87,10 @@ const load = async (
   // Classification is performed according to file names
   const [categorizedProjectFiles, categorizedMdFiles] = await categorizeFiles(projectFiles, mdFiles);
 
-  // Read project metadata, which is expected to have most of the metadata
-  // Note that we read it even if it is not to be loaded since it may contain data useful for the loading process
-  let projectMetadata;
-  const projectMetadataFile = categorizedProjectFiles.metadataFile;
-  if (projectMetadataFile) {
-    const projectMetadataFilepath = projectDirectory + '/' + projectMetadataFile;
-    projectMetadata = await loadJSON(projectMetadataFilepath);
-    if (!projectMetadata) throw new Error('There is something wrong with the project metadata file');
-  }
+  // Read the inputs file
+  // Inputs file is not to be loaded but it may contain parameters which are to be considered during the load
+  const inputsFile = categorizedProjectFiles.inputsFile;
+  const inputs = inputsFile && loadYAMLorJSON(projectDirectory + '/' + inputsFile);
 
   // Find if there is a prefeined accession to use such as:
   // 1 - A command line forced accession (append option)
@@ -116,14 +110,15 @@ const load = async (
       throw new Error(`Project ${append} was not found`);
     }
     // If we have a forced accession in the metadata then use it
-    const metadataForcedAccession = projectMetadata && projectMetadata.FORCED_ACCESSION;
-    if (metadataForcedAccession) {
+    const forcedAccession = inputs && inputs.accession;
+    console.log('forced accession -> ' + forcedAccession)
+    if (forcedAccession) {
       // If the project exists then we sync it
-      const alreadyExistingProject = await database.syncProject(metadataForcedAccession);
+      const alreadyExistingProject = await database.syncProject(forcedAccession);
       if (alreadyExistingProject) return alreadyExistingProject;
       // If the project does not exist then create it and set its accession as requested
       isNew = true;
-      return await database.createProject(metadataForcedAccession);
+      return await database.createProject(forcedAccession);
     }
     // If we had a trace then check it belongs to an existing project
     const trace = findTrace(projectDirectory);
@@ -167,9 +162,13 @@ const load = async (
 
   // ---- Metadata ----
 
-  // Load project metadata
-  if ( !skipMetadata && projectMetadata ) {
+  // Load project metadata, which is expected to have most of the metadata
+  const projectMetadataFile = categorizedProjectFiles.metadataFile;
+  if ( !skipMetadata && projectMetadataFile ) {
     console.log('Loading project metadata');
+    const projectMetadataFilepath = projectDirectory + '/' + projectMetadataFile;
+    const projectMetadata = await loadJSON(projectMetadataFilepath);
+    if (!projectMetadata) throw new Error('There is something wrong with the project metadata file');
     await project.updateProjectMetadata(projectMetadata, conserve, overwrite);
   }
 

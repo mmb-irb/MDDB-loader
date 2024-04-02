@@ -1,119 +1,100 @@
-// RegExp patterns
-// Metadata files
-// Note that there is one for the project + one for every MD directory
-const metadataFilePatternToLoad = /metadata.json$/i;
-// Structure file, one for every MD directory
-const structureFilePatternToLoad = /^structure.pdb$/i;
-// The main trajectory, one for every MD directory
-const mainTrajectoryFilePatternToLoad = /^trajectory.xtc$/i;
-// Analyses, any number for every MD directory
-const analysisFilePatternToLoad = /^mda.[\s\S]*.(json)$/i;
-// Topology files, one for project
-const topologyFilePatternToLoad = /^topology.(prmtop|top|psf|tpr)$/i;
-// Charges files, any number for project (for .top topologies only)
-const itpFilesPatternToLoad = /\.(itp)$/i;
-// The topology data file, one for project
-const topologyDataFilePatternToLoad = /^topology.json$/i;
-// The references data file, one for project
-const referencesDataFilePatternToLoad = /^references.json$/i;
-// The populations data file, one for project
-const populationsDataFilePatternToLoad = /^populations.json$/i;
-// Additional files to load, any number for every MD directory
-const uploadableFilesFilePatternToLoad = /^mdf./i;
-// Additional trajectory files to parse-load, any number for every MD directory
-const uploadableTrajectoriesFilePatternToLoad = /^mdt.[\s\S]*.xtc/i;
+// Set project files to be found and loaded
+const expectedProjectFiles = {
+  // Metadata file, one for project
+  metadataFile: {
+    pattern: /metadata.json$/i,
+    singleFile: true,
+  },
+  // Topology files, one for project
+  topologyFile: {
+    pattern: /^topology.(prmtop|top|psf|tpr)$/i,
+    singleFile: true,
+  },
+  // Charges files, any number for project (for .top topologies only)
+  itpFiles: {
+    pattern: /\.(itp)$/i,
+  },
+  // The topology data file, one for project
+  topologyDataFile: {
+    pattern: /^topology.json$/i,
+    singleFile: true,
+  },
+  // The references data file, one for project
+  referencesDataFile: {
+    pattern: /^references.json$/i,
+    singleFile: true,
+  },
+  // The populations data file, one for project
+  populationsDataFile: {
+    pattern: /^populations.json$/i,
+    singleFile: true,
+  },
+  // Additional files to load, any number
+  uploadableFiles: {
+    pattern: /^mdf./i,
+  },
+  // Inputs file, which is not to be loaded but simply readed
+  inputsFile: {
+    pattern: /^inputs.(yaml|yml|json)$/i,
+    singleFile: true,
+  }
+};
+
+// Set project files to be found and loaded
+const expectedMdFiles = {
+  // Metadata file, one for project
+  metadataFile: {
+    pattern: /metadata.json$/i,
+    singleFile: true,
+  },
+  // Structure file, one for every MD directory
+  structureFile: {
+    pattern: /^structure.pdb$/i,
+    singleFile: true,
+  },
+  // The main trajectory, one for every MD directory
+  mainTrajectory: {
+    pattern: /^trajectory.xtc$/i,
+    singleFile: true,
+  },
+  // Analyses, any number for every MD directory
+  analysisFiles: {
+    pattern: /^mda.[\s\S]*.(json)$/i,
+  },
+  // Additional files to load, any number
+  uploadableFiles: {
+    pattern: /^mdf./i,
+  },
+  // Additional trajectory files to parse-load, any number for every MD directory
+  uploadableTrajectories: {
+    pattern: /^mdt.[\s\S]*.xtc/i,
+  }
+}
 
 // This function classifies all files according to their names
 const categorizeFiles = (projectFiles, mdFiles) => {
-  const categorizedProjectFiles = categorizeProjectFiles(projectFiles);
+  // Classify project files
+  const categorizedProjectFiles = {};
+  // Iterate over the different expected project files
+  for (const [ fileKey, fileAttributes ] of Object.entries(expectedProjectFiles)) {
+    categorizedProjectFiles[fileKey] = fileAttributes.singleFile
+      ? projectFiles.find(filename => fileAttributes.pattern.test(filename))
+      : projectFiles.filter(filename => fileAttributes.pattern.test(filename));
+  }
+  // Classify MD files
   const categorizedMdFiles = {};
-  for (const [key, files] of Object.entries(mdFiles)) {
-    categorizedMdFiles[key] = categorizeMDFiles(files);
+  // Iterate over the different MDs
+  for (const [mdKey, currentMDfiles] of Object.entries(mdFiles)) {
+    const categorizedFiles = {};
+    // Iterate over the different expected MD files
+    for (const [ fileKey, fileAttributes ] of Object.entries(expectedMdFiles)) {
+      categorizedFiles[fileKey] = fileAttributes.singleFile
+        ? currentMDfiles.find(filename => fileAttributes.pattern.test(filename))
+        : currentMDfiles.filter(filename => fileAttributes.pattern.test(filename));
+    }
+    categorizedMdFiles[mdKey] = categorizedFiles;
   }
   return [categorizedProjectFiles, categorizedMdFiles];
-}
-
-// This function classifies project files according to their names
-const categorizeProjectFiles = projectFiles => {
-  if (!projectFiles) return {};
-  // Look for the metadata file
-  const metadataFile = projectFiles.find(filename =>
-    metadataFilePatternToLoad.test(filename),
-  );
-  // Look for the topology file
-  const topologyFile = projectFiles.find(filename =>
-    topologyFilePatternToLoad.test(filename),
-  );
-  // Look for itp files
-  const itpFiles = projectFiles.filter(filename =>
-    itpFilesPatternToLoad.test(filename),
-  );
-  // Look for a file which is called exactly 'topology.json'
-  const topologyDataFile = projectFiles.find(filename =>
-    topologyDataFilePatternToLoad.test(filename),
-  );
-  // Look for a file which is called exactly 'references.json'
-  const referencesDataFile = projectFiles.find(filename =>
-    referencesDataFilePatternToLoad.test(filename),
-  );
-  // Look for a file which is called exactly 'populations.json'
-  const populationsDataFile = projectFiles.find(filename =>
-    populationsDataFilePatternToLoad.test(filename),
-  );
-  // Additional files to be uploaded (e.g. screenshots)
-  const uploadableFiles = projectFiles.filter(filename =>
-    uploadableFilesFilePatternToLoad.test(filename),
-  );
-
-  // Finally, return all classified groups and the group which contain all files
-  return {
-    metadataFile,
-    topologyFile,
-    itpFiles,
-    topologyDataFile,
-    referencesDataFile,
-    populationsDataFile,
-    uploadableFiles
-  };
-};
-
-// This function classifies MD files according to their names
-const categorizeMDFiles = mdFiles => {
-  // Look for the metadata file
-  const metadataFile = mdFiles.find(filename =>
-    metadataFilePatternToLoad.test(filename),
-  );
-  // Now classify all files according to their names
-  // Look for a file which matches de structureFile regular expression
-  const structureFile = mdFiles.find(filename =>
-    structureFilePatternToLoad.test(filename),
-  );
-  // Trajectory files are those which end in ".xtc". Some other restrictions are taken
-  const mainTrajectory = mdFiles.find(filename =>
-    mainTrajectoryFilePatternToLoad.test(filename),
-  );
-  // Look for analysis files
-  const analysisFiles = mdFiles.filter(filename =>
-    analysisFilePatternToLoad.test(filename),
-  );
-  // Additional files to be uploaded
-  const uploadableFiles = mdFiles.filter(filename =>
-    uploadableFilesFilePatternToLoad.test(filename),
-  );
-  // Additional trajectories to be uploaded while parsed to binary coordinates
-  const uploadableTrajectories = mdFiles.filter(filename =>
-    uploadableTrajectoriesFilePatternToLoad.test(filename),
-  );
-
-  // Finally, return all classified groups and the group which contain all files
-  return {
-    metadataFile,
-    structureFile,
-    mainTrajectory,
-    analysisFiles,
-    uploadableFiles,
-    uploadableTrajectories
-  };
 };
 
 module.exports = categorizeFiles;

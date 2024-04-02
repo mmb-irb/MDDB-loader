@@ -16,6 +16,9 @@ const { spawnSync } = require('child_process');
 // Used to read the current working directory through cwd
 const process = require('process');
 
+// YAML parser
+const YAML = require('yaml')
+
 // Find some values
 const workingDirectory = process.cwd();
 // RegExp formula to check if a string is a mongoid
@@ -141,6 +144,40 @@ const getMimeTypeFromFilename = filename => {
     return 'application/octet-stream';
 };
 
+// Read and parse a JSON file
+const loadJSON = filepath => {
+    try {
+        const fileContent = fs.readFileSync(filepath, 'utf8');
+        const output = JSON.parse(fileContent);
+        return output;
+    } catch (error) {
+        console.error(error);
+        return null;
+    }
+};
+
+// Read and parse a YAML file
+const loadYAML = filepath => {
+    try {
+        const fileContent = fs.readFileSync(filepath, 'utf8');
+        const output = YAML.parse(fileContent);
+        return output;
+    } catch (error) {
+        console.error(error);
+        return null;
+    }
+};
+
+// Read a file which may be a YAML or a JSON
+const loadYAMLorJSON = filepath => {
+    const splits = filepath.split('.');
+    const extension = splits[splits.length-1];
+    if (extension.length === filepath.length) throw new Error(`File ${filepath} has no extension`);
+    if (extension === 'yaml' || extension === 'yml') return loadYAML(filepath);
+    if (extension === 'json') return loadJSON(filepath);
+    throw new Error(`File ${filepath} has a non supported extension`);
+}
+
 module.exports = {
     mongoidFormat,
     userConfirm,
@@ -150,5 +187,8 @@ module.exports = {
     directoryCoerce,
     getBasename,
     idOrAccessionCoerce,
-    getMimeTypeFromFilename
+    getMimeTypeFromFilename,
+    loadJSON,
+    loadYAML,
+    loadYAMLorJSON,
 };
