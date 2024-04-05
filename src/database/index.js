@@ -275,52 +275,6 @@ class Database {
     }
 
     // Get the ids of orphan documents to be deleted in a given collection
-    // WARNING: Although it should work, this functions is slower than functions below
-    // WARNING: It is written here for conservation reason but it will be deleted in further commits
-    DEPRECATEDfindOrphanData = async collectionKey => {
-        // Get the collection
-        const collection = this[collectionKey];
-        if (!collection) throw new Error(`Collection ${collectionKey} does not exist`);
-        // Get the collection parental details
-        const parent = this.COLLECTION_PARENTS[collectionKey];
-        if (!parent) throw new Error(`Collection ${collectionKey} has no parenting`); 
-        const parentCollectionName = this.COLLECTION_NAMES[parent.collectionKey];
-        // Set a complex query
-        const cursor = await collection.aggregate([
-            // Get documents in the parent collection whose reference value matches/contains the local value
-            { $lookup: {
-                from: parentCollectionName, as: 'foreign',
-                localField: parent.localField, foreignField: parent.referenceField,
-                // WARNING
-                // The lookup returns, for each document, the doucment itself and all foreign matches
-                // The $match step below consumes the whole lookup output to start working which may be a lot
-                // If this intermediate result exceeds the MongoDB limit of 16 Mb then we have an error
-                // To prevent this we must reduce the lookup output by projecting minimal data in foreign matches
-                // Note that we could actually project nothing since we are interested in the number of foreigns
-                pipeline:[{ $project:{ _id: true } }]
-            }},
-            // In order to further reduce the output we remove also all the original document data but the id
-            // Get only the internal id and the foreign field from each result
-            { $project: { _id: true, foreign: true } },
-            // Get only those documents who what no matching results in the lookup (i.e. they have no parent document)
-            { $match: { foreign: { $size: 0 } } }
-        ]);
-        // Warn the user we are about to start the search since this may take a long time
-        console.log(`Searching for orphan ${this.nameCollectionDocuments(collectionKey)}`);
-        // Consume the cursor thus running the aggregate
-        const result = await cursor.toArray();
-        // Get only the internal ids
-        const resultIds = result.map(r => r._id);
-        // Log the number of documents found
-        const documentsName = this.nameCollectionDocuments(collectionKey, resultIds.length);
-        console.log(`Found ${resultIds.length} orphan ${documentsName} to delete`);
-        // If there are no documents then we return null
-        if (resultIds.length === 0) return null;
-        console.log(`   e.g. ${resultIds[0]}`);
-        return resultIds
-    }
-
-    // Get the ids of orphan documents to be deleted in a given collection
     findOrphanData = async collectionKey => {
         // Get the collection
         const collection = this[collectionKey];
