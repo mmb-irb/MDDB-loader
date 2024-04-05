@@ -25,29 +25,29 @@ const deleteFunction = async (
         // Find the project this accession belongs to
         project = await database.syncProject(id);
         if (!project) return console.error(chalk.yellow(`No project found for accession '${id}'`));
-        target = { document: project.data, collection: database.projects };
+        target = { document: project.data, collectionKey: 'projects' };
     }
     // If nothing is found then we are done
     if (!target) return console.error(chalk.yellow(`Nothing found for ID '${id}'`));
     // If this is a project then we must log a summary of the project
-    if (target.collection === database.projects) {
+    if (target.collectionKey === 'projects') {
         if (!project) project = await database.syncProject(target.document._id);
         await project.logProjectSummary();
     }
     // Warn the user about the document we are about to delete and ask for confirmation
-    const documentName = database.nameCollectionDocuments(target.collection);
+    const documentName = database.nameCollectionDocuments(target.collectionKey);
     // If the confirm argument has not been passed then ask the user for confirmation
-    const confirmation = confirm || await userConfirm(`Confirm deletion of ${documentName} with id ${id} [y/*]`);
+    const confirmation = confirm || await userConfirm(`Confirm deletion of ${documentName} with ${isMongoId ? 'id' : 'accession'} ${id} [y/*]`);
     // If we have no confirmation then we abort here
     if (confirmation !== 'y' && confirmation !== 'Y') return console.log('Data deletion has been aborted');
     // Use the right deleting protocol according to the type of document we are about to delete
     // ----- Projects -----
-    if (target.collection === database.projects) {
+    if (target.collectionKey === 'projects') {
         // Remote project data should be loaded already
         return await project.deleteProject();
     }
     // ----- Analysis -----
-    if (target.collection === database.analyses) {
+    if (target.collectionKey === 'analyses') {
         // Load remote project data in the database handler
         const projectId = target.document.project;
         project = await database.syncProject(projectId);
@@ -58,7 +58,7 @@ const deleteFunction = async (
         return await project.deleteAnalysis(name, mdIndex);
     }
     // ----- Files -----
-    if (target.collection === database.files) {
+    if (target.collectionKey === 'files') {
         // Load remote project data in the database handler
         const projectId = target.document.metadata.project;
         project = await database.syncProject(projectId);

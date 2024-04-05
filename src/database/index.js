@@ -174,9 +174,9 @@ class Database {
     // Given an id, find the document and the collection it belongs to
     findId = async id => {
         // Iterate over all collections until we find the id
-        for await (const collection of this.collections) {
+        for await (const [ collectionKey, collection ] of Object.entries(this.collections)) {
             const document = await collection.findOne({ _id: id });
-            if (document) return { document, collection };
+            if (document) return { document, collectionKey };
         }
         // If there was no result then null is returned
         return null;
