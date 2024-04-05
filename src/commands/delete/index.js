@@ -29,15 +29,15 @@ const deleteFunction = async (
     }
     // If nothing is found then we are done
     if (!target) return console.error(chalk.yellow(`Nothing found for ID '${id}'`));
-    // Warn the user about the document we are about to delete and ask for confirmation
-    const documentName = database.nameCollectionDocument(target.collection);
     // If this is a project then we must log a summary of the project
     if (target.collection === database.projects) {
         if (!project) project = await database.syncProject(target.document._id);
         await project.logProjectSummary();
     }
+    // Warn the user about the document we are about to delete and ask for confirmation
+    const documentName = database.nameCollectionDocuments(target.collection);
     // If the confirm argument has not been passed then ask the user for confirmation
-    const confirmation = confirm || await userConfirm(`Confirm deletion of of ${documentName} with id ${id} [y/*]`);
+    const confirmation = confirm || await userConfirm(`Confirm deletion of ${documentName} with id ${id} [y/*]`);
     // If we have no confirmation then we abort here
     if (confirmation !== 'y' && confirmation !== 'Y') return console.log('Data deletion has been aborted');
     // Use the right deleting protocol according to the type of document we are about to delete

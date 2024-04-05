@@ -5,7 +5,9 @@ const logger = require('../utils/logger');
 // Add colors in console
 const chalk = require('chalk');
 // Load auxiliar functions
-const { mongoidFormat, userConfirm } = require('../utils/auxiliar-functions');
+const { mongoidFormat, userConfirm, userConfirmOrphanDataDeletion } = require('../utils/auxiliar-functions');
+// Mongo ObjectId class
+const { ObjectId } = require('mongodb');
 // The project class is used to handle database data from a specific project
 const Project = require('./project');
 
@@ -56,30 +58,27 @@ class Database {
     // Set the collection document names
     // This is used for displaying only
     COLLECTION_DOCUMENT_NAMES = {
-        projects: 'project',
-        references: 'reference',
-        topologies: 'topology',
-        files: 'file',
-        chunks: 'chunk',
-        analyses: 'analysis',
-        chains: 'chain',
-        counters: 'counter'
+        projects: { singular: 'project', plural: 'projects' },
+        references: { singular: 'reference', plural: 'references' },
+        topologies: { singular: 'topology', plural: 'topologies' },
+        files: { singular: 'file', plural: 'files' },
+        chunks: { singular: 'chunk', plural: 'chunks' },
+        analyses: { singular: 'analysis', plural: 'analyses' },
+        chains: { singular: 'chain', plural: 'chains' },
+        counters: { singular: 'counter', plural: 'counters' }
     }
 
     // ----------------------
 
 
     // Get the generic name of a document by the collection it belongs to
+    // Plural is returned by default but you can provide the number of ducments
+    // Thus in case it is a single document the singular is returned
     // This is used for displaying only
-    nameCollectionDocument = collection => {
-        if (collection === this.projects) return 'project';
-        if (collection === this.references) return 'reference';
-        if (collection === this.topologies) return 'topology';
-        if (collection === this.files) return 'file';
-        if (collection === this.analyses) return 'analysis';
-        if (collection === this.chains) return 'chain';
-        if (collection === this.chunks) return 'chunk';
-        throw new Error('Not supported collection');
+    nameCollectionDocuments = (collectionKey, numberOfDocuments = 0) => {
+        const documentNames = this.COLLECTION_DOCUMENT_NAMES[collectionKey];
+        if (!documentNames) throw new Error(`Not supported collection ${collectionKey}`);
+        return numberOfDocuments === 1 ? documentNames.singular : documentNames.plural;
     }
 
     // Find a project by its id or accession
@@ -244,7 +243,7 @@ class Database {
             const result = await this.counters.updateOne(
                 { accessions: true },
                 { $set: { last: previousAccessionCode } });
-            if (!result.acknowledged) throw Error(`Failed to revert counter`);
+            if (!result.acknowledged) throw new Error(`Failed to revert counter`);
             console.log('Reverted accession counter');
         }
         // Delete inserted data one by one
@@ -261,6 +260,227 @@ class Database {
             console.log(`🗑️  Deleted ${data.name} <- ${data.id}`);
         }
     };
+
+    // Define for each collection its parental relationship
+    // This allows to identify when a document is orphan
+    COLLECTION_PARENTS = {
+        projects: null, // Projects have no parent
+        references: { collectionKey: 'projects', referenceField: 'metadata.REFERENCES', localField: 'uniprot' },
+        topologies: { collectionKey: 'projects', referenceField: '_id', localField: 'project' },
+        files: { collectionKey: 'projects', referenceField: '_id', localField: 'metadata.project' },
+        chunks: { collectionKey: 'files', referenceField: '_id', localField: 'files_id' },
+        analyses: { collectionKey: 'projects', referenceField: '_id', localField: 'project' },
+        chains: { collectionKey: 'projects', referenceField: '_id', localField: 'project' },
+        counters: null // Counters are not related to anything
+    }
+
+    // Get the ids of orphan documents to be deleted in a given collection
+    // WARNING: Although it should work, this functions is slower than functions below
+    // WARNING: It is written here for conservation reason but it will be deleted in further commits
+    DEPRECATEDfindOrphanData = async collectionKey => {
+        // Get the collection
+        const collection = this[collectionKey];
+        if (!collection) throw new Error(`Collection ${collectionKey} does not exist`);
+        // Get the collection parental details
+        const parent = this.COLLECTION_PARENTS[collectionKey];
+        if (!parent) throw new Error(`Collection ${collectionKey} has no parenting`); 
+        const parentCollectionName = this.COLLECTION_NAMES[parent.collectionKey];
+        // Set a complex query
+        const cursor = await collection.aggregate([
+            // Get documents in the parent collection whose reference value matches/contains the local value
+            { $lookup: {
+                from: parentCollectionName, as: 'foreign',
+                localField: parent.localField, foreignField: parent.referenceField,
+                // WARNING
+                // The lookup returns, for each document, the doucment itself and all foreign matches
+                // The $match step below consumes the whole lookup output to start working which may be a lot
+                // If this intermediate result exceeds the MongoDB limit of 16 Mb then we have an error
+                // To prevent this we must reduce the lookup output by projecting minimal data in foreign matches
+                // Note that we could actually project nothing since we are interested in the number of foreigns
+                pipeline:[{ $project:{ _id: true } }]
+            }},
+            // In order to further reduce the output we remove also all the original document data but the id
+            // Get only the internal id and the foreign field from each result
+            { $project: { _id: true, foreign: true } },
+            // Get only those documents who what no matching results in the lookup (i.e. they have no parent document)
+            { $match: { foreign: { $size: 0 } } }
+        ]);
+        // Warn the user we are about to start the search since this may take a long time
+        console.log(`Searching for orphan ${this.nameCollectionDocuments(collectionKey)}`);
+        // Consume the cursor thus running the aggregate
+        const result = await cursor.toArray();
+        // Get only the internal ids
+        const resultIds = result.map(r => r._id);
+        // Log the number of documents found
+        const documentsName = this.nameCollectionDocuments(collectionKey, resultIds.length);
+        console.log(`Found ${resultIds.length} orphan ${documentsName} to delete`);
+        // If there are no documents then we return null
+        if (resultIds.length === 0) return null;
+        console.log(`   e.g. ${resultIds[0]}`);
+        return resultIds
+    }
+
+    // Get the ids of orphan documents to be deleted in a given collection
+    findOrphanData = async collectionKey => {
+        // Get the collection
+        const collection = this[collectionKey];
+        if (!collection) throw new Error(`Collection ${collectionKey} does not exist`);
+        // Get the collection parental details
+        const parent = this.COLLECTION_PARENTS[collectionKey];
+        if (!parent) throw new Error(`Collection ${collectionKey} has no parenting`);
+        console.log(`Searching for orphan ${this.nameCollectionDocuments(collectionKey)}`);
+        // Get parent reference field values
+        const parentCollection = this[parent.collectionKey];
+        const projection = {};
+        projection[parent.referenceField] = true;
+        const parentCursor = await parentCollection.find({}, { projection });
+        // Warn the user we are about to start the search since this may take a long time
+        console.log(`  Searching for parent collection (${parent.collectionKey}) reference field (${parent.referenceField}) values`);
+        // Consume the cursor thus running the query
+        const parentResults = await parentCursor.toArray();
+        // Mine the parent reference field values
+        const parentValues = new Set();
+        parentResults.forEach(result => {
+            // Get the actual value
+            // The reference field may be declared as 'metadata.REFERENCES' and thus we have to parse it
+            const fields = parent.referenceField.split('.');
+            let value = result;
+            for (const field of fields) { value = value[field] };
+            // Skip null/undefined values
+            if (value === null || value === undefined) return;
+            // If the value is an array then add every value on it
+            if (value.constructor === Array) value.forEach(v => parentValues.add(v));
+            // Otherwise simply add the value
+            else parentValues.add(value);
+        });
+        // Get documents in the requested collection not having any parent value in their local fields
+        const query = {};
+        query[parent.localField] = { $nin: Array.from(parentValues) };
+        console.log(`  Searching for current collection (${collectionKey}) documents not including any parent value in their local field (${parent.localField})`);
+        const cursor = await collection.find(query, { projection: { _id: true } });
+        const results = await cursor.toArray();
+        // Get only the internal ids
+        const resultIds = results.map(r => r._id);
+        // Log the number of documents found
+        const documentsName = this.nameCollectionDocuments(collectionKey, resultIds.length);
+        console.log(`  Found ${resultIds.length} orphan ${documentsName} to delete`);
+        // If there are no documents then we return null
+        if (resultIds.length === 0) return null;
+        console.log(`    e.g. ${resultIds[0]}`);
+        return resultIds;
+    }
+
+    // Get the ids of orphan documents to be deleted in a given collection
+    // DANI: This is the fastest aproach to the problem and it would show the progress
+    // DANI: However it is not working properly and I think it is a Mongo problem
+    // DANI: For some reason teh find command does not behave normally with the fs.chunks collection
+    // DANI: It takes a lot to iterate over documents
+    // DANI: Other collections also have this problem if a batch size is not specified
+    // DANI: In the other hand, the aggregate command responds inmediately but it is not able to project iteratively
+    // DANI: Chunks are heavy so it is very slow if not projected
+    // DANI: If we project then the aggregate processes all docuemnts before responding
+    // DANI: The distinc command has been tried and it is killed by overcoming a 64 Mb limit somewhere
+    EXPERIMENTALfindOrphanData = async collectionKey => {
+        // Get the collection
+        const collection = this[collectionKey];
+        if (!collection) throw new Error(`Collection ${collectionKey} does not exist`);
+        // Get the collection parental details
+        const parent = this.COLLECTION_PARENTS[collectionKey];
+        if (!parent) throw new Error(`Collection ${collectionKey} has no parenting`);
+        console.log(`Searching for orphan ${this.nameCollectionDocuments(collectionKey)}`);
+        // Get parent reference field values
+        const parentCollection = this[parent.collectionKey];
+        const parentProjection = {};
+        parentProjection[parent.referenceField] = true;
+        const parentCursor = await parentCollection.find({}, { projection: parentProjection });
+        // Warn the user we are about to start the search since this may take a long time
+        console.log(`  Getting all parent collection (${parent.collectionKey}) reference field (${parent.referenceField}) values`);
+        // Consume the cursor thus running the query
+        const parentResults = await parentCursor.toArray();
+        // The reference field may be declared as 'metadata.REFERENCES' and thus we have to parse it
+        const referenceFields = parent.referenceField.split('.');
+        // Mine the parent reference field values
+        const parentValues = new Set();
+        parentResults.forEach(result => {
+            // Get the actual value
+            let value = result;
+            for (const field of referenceFields) { value = value[field] };
+            // Skip null/undefined values
+            if (value === null || value === undefined) return;
+            // If the value is an array then add every value on it
+            if (value.constructor === Array) value.forEach(v => parentValues.add(v));
+            // If the value is a mongo object id then keep only the id string
+            if (value.constructor === ObjectId) parentValues.add(value.toString());
+            // Otherwise simply add the value
+            else parentValues.add(value);
+        });
+        // Get documents in the requested collection not having any parent value in their local fields
+        console.log(`  Getting all current collection (${collectionKey}) local field (${parent.localField}) values per id`);
+        const projection = {};
+        projection[parent.localField] = true;
+        const cursor = await collection.find({}, { projection: projection });
+        const totalCount = await collection.count();
+        // Set the singular name of a document to be deleted, for the logs
+        const singleDocumentName = this.nameCollectionDocuments(collectionKey, 1);
+        // The reference field may be declared as 'metadata.REFERENCES' and thus we have to parse it
+        const localFields = parent.localField.split('.');
+        // Set a counter to keep the user updated of the processing progress
+        let count = 1;
+        logger.startLog(`Processing ${totalCount} ${this.nameCollectionDocuments(collectionKey)}`);
+        // Now filter the results
+        const filteredResultIds = [];
+        // Get only ids from those results whose local field is not found among the parent values
+        for await (const doc of cursor) {
+            logger.updateLog(`Processing ${singleDocumentName} ${count}/${totalCount}`);
+            count += 1;
+            // Get the actual value
+            let value = doc;
+            for (const field of localFields) { value = value[field] };
+            // If the value is a mongo object id then make it a string
+            if (value.constructor === ObjectId) value = value.toString();
+            // If value is among the parent values then skip to the next
+            if (parentValues.has(value)) continue;
+            // If the value is not among the parent values then add the result id to the list of orphan ids
+            filteredResultIds.push(doc._id);
+        };
+        // Log the number of documents found
+        const documentsName = this.nameCollectionDocuments(collectionKey, filteredResultIds.length);
+        logger.successLog(`Found ${filteredResultIds.length} orphan ${documentsName} to delete`);
+        // If there are no documents then we return null
+        if (filteredResultIds.length === 0) return null;
+        console.log(`  e.g. ${filteredResultIds[0]}`);
+        return filteredResultIds;
+    }
+
+    // Find and delete all orphan documents in a collection
+    deleteOrphanData = async (collectionKey, confirmed = false) => {
+        // Get orphan document ids
+        const resultIds = await this.findOrphanData(collectionKey);
+        if (!resultIds) return;
+        // Ask the user before deleting
+        const documentsName = this.nameCollectionDocuments(collectionKey, resultIds.length);
+        const confirm = confirmed || await userConfirmOrphanDataDeletion(documentsName);
+        if (!confirm) return;
+        // Get the collection
+        const collection = this[collectionKey];
+        // If data deletion is confirmed then go ahead
+        // Set the deleting function, which is different if we are to delete a bucket file
+        // Note that deleting a file using the bucket also deletes all its chunks
+        const deleteDocument = collectionKey === 'files'
+            ? async id => this.bucket.delete(id)
+            : async id => collection.deleteOne({ _id: id });
+        // Set the singular name of a document to be deleted, for the logs
+        const singleDocumentName = this.nameCollectionDocuments(collectionKey, 1);
+        // Iterate over the found Ids
+        let count = 1;
+        for await (const id of resultIds) {
+            const label = `${singleDocumentName} ${count}/${resultIds.length} <- ${id}`;
+            logger.startLog(`🗑️  Deleting orphan ${label}`);
+            await deleteDocument(id);
+            logger.successLog(`🗑️  Deleted orphan ${label}`);
+            count += 1;
+        }
+    }
 }
 
 // Connect to the database

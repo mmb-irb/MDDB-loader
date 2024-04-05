@@ -176,20 +176,20 @@ yargs
     // cleanup
     // NOTE: ask user to unpublish before cleaning up, to make them think twice
     // NOTE: about what they're about to do since there is no going back from that
-    // .command({
-    //     command: 'cleanup',
-    //     aliases: ['clean', 'clear'],
-    //     desc: 'Remove orphan data',
-    //     builder: yargs => yargs
-    //         // --confirm
-    //         .option('y', {
-    //             alias: 'confirm',
-    //             description: 'Confirm already, so the user is never asked for confirmation before deletion',
-    //             type: 'boolean',
-    //             default: false,
-    //         }),
-    //     handler: commonHandler('cleanup'),
-    // })
+    .command({
+        command: 'cleanup',
+        aliases: ['clean', 'clear'],
+        desc: 'Remove orphan data',
+        builder: yargs => yargs
+            // --confirm
+            .option('y', {
+                alias: 'confirm',
+                description: 'Confirm already, so the user is never asked for confirmation before deletion',
+                type: 'boolean',
+                default: false,
+            }),
+        handler: commonHandler('cleanup'),
+    })
     // setup
     .command({
         command: 'setup',
@@ -199,6 +199,7 @@ yargs
         handler: commonHandler('setup'),
     })
     .demandCommand() // Demand a minimmum of 1 command
+    .strict()
     // Display all descriptions when the command --help is asked or there is no command
     .help().argv; // "argv" is a normal object passed from yargs library
 // This object contains the input values of options and positionals from the command

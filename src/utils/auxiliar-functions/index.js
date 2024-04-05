@@ -58,6 +58,22 @@ const userConfirmDataLoad = async fieldname => {
     return confirm;
 };
 
+// Usual question
+const userConfirmOrphanDataDeletion = async fieldname => {
+    const confirm = await userConfirm(
+        `Delete orphan ${fieldname}?
+        Y - Yes, delete
+        * - Not now
+        `
+    ) === 'Y';
+    // Warn the user about the consequences of its decision
+    const message = confirm
+        ? `Orphan ${fieldname} will be deleted`
+        : `Orphan ${fieldname} will be conserved`;
+    console.log(chalk.yellow(message));
+    return confirm;
+};
+
 // Check if gromacs excutable is in path
 // If a command is passed then use it
 // Otherwiese, guess the gromacs command by try and fail
@@ -182,6 +198,7 @@ module.exports = {
     mongoidFormat,
     userConfirm,
     userConfirmDataLoad,
+    userConfirmOrphanDataDeletion,
     getGromacsCommand,
     mdNameToDirectory,
     directoryCoerce,
