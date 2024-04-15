@@ -24,6 +24,11 @@ const expectedProjectFiles = {
     pattern: /^references.json$/i,
     singleFile: true,
   },
+  // Inputs file, which is not to be loaded but simply readed
+  ligandsDataFile: {
+    pattern: /^ligands.json$/i,
+    singleFile: true,
+  },
   // The populations data file, one for project
   populationsDataFile: {
     pattern: /^populations.json$/i,

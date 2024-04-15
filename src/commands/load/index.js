@@ -193,6 +193,24 @@ const load = async (
   // Check if the load has been aborted at this point
   await checkAbort();
 
+  // ---- Ligands ----
+
+  // Load ligands
+  const ligandsDataFile = categorizedProjectFiles.ligandsDataFile;
+  if (ligandsDataFile) {
+    // Read the ligands data file
+    const ligandsFilepath = projectDirectory + '/' + ligandsDataFile;
+    const ligands = await loadJSON(ligandsFilepath);
+    if (!ligands) throw new Error('There is something wrong with the ligands file');
+    // Iterate over the different ligands
+    for await (const ligand of ligands) {
+      await database.loadLigand(ligand);
+    }
+  }
+
+  // Check if the load has been aborted at this point
+  await checkAbort();
+
   // ---- Topology ----
 
   // Load the basic topology using the pdb file

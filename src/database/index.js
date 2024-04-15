@@ -47,6 +47,7 @@ class Database {
     COLLECTION_NAMES = {
         projects: 'projects',
         references: 'references',
+        ligands: 'ligands',
         topologies: 'topologies',
         files: 'fs.files',
         chunks: 'fs.chunks',
@@ -60,6 +61,7 @@ class Database {
     COLLECTION_DOCUMENT_NAMES = {
         projects: { singular: 'project', plural: 'projects' },
         references: { singular: 'reference', plural: 'references' },
+        ligands: { singular: 'ligand', plural: 'ligands' },
         topologies: { singular: 'topology', plural: 'topologies' },
         files: { singular: 'file', plural: 'files' },
         chunks: { singular: 'chunk', plural: 'chunks' },
@@ -171,6 +173,42 @@ class Database {
         logger.successLog(`🗑️  Deleted referece ${uniprot}`);
     }
 
+    // Add a new ligand in the ligands collection in case it does not exist yet
+    loadLigand = async ligand => {
+        // Check if the ligand is already in the database and, if so, skip the load
+        const current = await this.ligands.findOne({ pubchem: ligand.pubchem });
+        if (current) return console.log(chalk.grey(`Ligand ${ligand.pubchem} is already in the database`));
+        logger.startLog(`💽 Loading ligand ${ligand.pubchem}`);
+        // Load the new ligand
+        const result = await this.ligands.insertOne(ligand);
+        // If the operation failed
+        if (result.acknowledged === false) return logger.failLog(`💽 Failed to load ligand ${ligand.pubchem}`);
+        logger.successLog(`💽 Loaded ligand ${ligand.pubchem}`);
+        console.log(chalk.green(`  Loaded new ligand ${ligand.pubchem} -> ${result.insertedId}`));
+        // Update the inserted data in case we need to revert the change
+        this.inserted_data.push({
+            name: 'new ligand',
+            collection: this.ligands,
+            id: result.insertedId
+        });
+    };
+
+    // Check if a ligand is still under usage
+    // i.e. there is at least one project using it
+    isLigandUsed = async pubchem => {
+        const projects = await this.projects.count({ 'metadata.LIGANDS': pubchem });
+        if (projects === 0) return false;
+        return true;
+    }
+
+    // Delete a ligand
+    deleteLigand = async pubchem => {
+        logger.startLog(`🗑️  Deleting referece ${pubchem}`);
+        const result = await this.ligands.deleteOne({ pubchem: pubchem });
+        if (!result) return logger.failLog(`🗑️  Failed to delete referece ${pubchem}`);
+        logger.successLog(`🗑️  Deleted referece ${pubchem}`);
+    }
+
     // Given an id, find the document and the collection it belongs to
     findId = async id => {
         // Iterate over all collections until we find the id
@@ -266,6 +304,7 @@ class Database {
     COLLECTION_PARENTS = {
         projects: null, // Projects have no parent
         references: { collectionKey: 'projects', referenceField: 'metadata.REFERENCES', localField: 'uniprot' },
+        ligands: { collectionKey: 'projects', referenceField: 'metadata.LIGANDS', localField: 'pubchem' },
         topologies: { collectionKey: 'projects', referenceField: '_id', localField: 'project' },
         files: { collectionKey: 'projects', referenceField: '_id', localField: 'metadata.project' },
         chunks: { collectionKey: 'files', referenceField: '_id', localField: 'files_id' },

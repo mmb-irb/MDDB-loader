@@ -127,9 +127,15 @@ class Project {
         // Remove references if they are not used by other projects
         const metadata = this.data.metadata;
         if (!metadata) return;
+        // Remove protein references
         for await (const uniprot of metadata.REFERENCES || []) {
             const used = await this.database.isReferenceUsed(uniprot);
             if (used === false) await this.database.deleteReference(uniprot);
+        }
+        // Remove ligand references
+        for await (const pubchem of metadata.LIGANDS || []) {
+            const used = await this.database.isLigandUsed(pubchem);
+            if (used === false) await this.database.deleteLigand(pubchem);
         }
     }
 
