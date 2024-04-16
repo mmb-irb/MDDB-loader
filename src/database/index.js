@@ -137,6 +137,14 @@ class Database {
         return new Project(projectData, this);
     }
 
+    // Iterate over all projects in the database
+    iterateProjects = async function* (query = {}) {
+        const availableProjects = this.projects.find(query, { projection: { _id: true } });
+        for await (const project of availableProjects) {
+            yield this.syncProject(project._id);
+        }
+    }
+
     // Add a new reference in the references collection in case it does not exist yet
     loadReference = async reference => {
         // Check if the reference is already in the database and, if so, skip the load
