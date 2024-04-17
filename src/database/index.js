@@ -30,10 +30,10 @@ class Database {
         this.db = db;
         this.bucket = bucket;
         // Set some collections and list them all together
-        this.collections = [];
+        this.collections = {};
         for (const [ collectionKey, collectionName ] of Object.entries(this.COLLECTION_NAMES)) {
             this[collectionKey] = db.collection(collectionName);
-            this.collections.push(this[collectionKey]);
+            this.collections[collectionKey] = this[collectionKey];
         }
         // Keep track of the newly inserted data
         // This way, in case anything goes wrong, we can revert changes
