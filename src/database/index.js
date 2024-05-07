@@ -31,8 +31,8 @@ class Database {
         this.bucket = bucket;
         // Set some collections and list them all together
         this.collections = {};
-        for (const [ collectionKey, collectionName ] of Object.entries(this.COLLECTION_NAMES)) {
-            this[collectionKey] = db.collection(collectionName);
+        for (const [ collectionKey, collectionConfig ] of Object.entries(this.COLLECTION_CONFIGURATIONS)) {
+            this[collectionKey] = db.collection(collectionConfig.name);
             this.collections[collectionKey] = this[collectionKey];
         }
         // Keep track of the newly inserted data
@@ -43,42 +43,85 @@ class Database {
 
     // ----- Constants -----
 
-    // Set the collection names
-    COLLECTION_NAMES = {
-        projects: 'projects',
-        references: 'references',
-        ligands: 'ligands',
-        topologies: 'topologies',
-        files: 'fs.files',
-        chunks: 'fs.chunks',
-        analyses: 'analyses',
-        chains: 'chains',
-        counters: 'counters'
-    }
-
-    // Set the collection document names
-    // This is used for displaying only
-    COLLECTION_DOCUMENT_NAMES = {
-        projects: { singular: 'project', plural: 'projects' },
-        references: { singular: 'reference', plural: 'references' },
-        ligands: { singular: 'ligand', plural: 'ligands' },
-        topologies: { singular: 'topology', plural: 'topologies' },
-        files: { singular: 'file', plural: 'files' },
-        chunks: { singular: 'chunk', plural: 'chunks' },
-        analyses: { singular: 'analysis', plural: 'analyses' },
-        chains: { singular: 'chain', plural: 'chains' },
-        counters: { singular: 'counter', plural: 'counters' }
-    }
+    // Set the collection configuration
+    // name - Actual name of the collection inside the database
+    // index - Index configuration in the database, for the collections setup
+    // documentNames - Document names used for displaying only
+    COLLECTION_CONFIGURATIONS = {
+        projects: {
+            name: 'projects',
+            index: { published: 1 },
+            documentNames: { singular: 'project', plural: 'projects' },
+        },
+        references: {
+            name: 'references',
+            documentNames: { singular: 'reference', plural: 'references' },
+        },
+        ligands: {
+            name: 'ligands',
+            documentNames: { singular: 'ligand', plural: 'ligands' },
+        },
+        topologies: {
+            name: 'topologies',
+            index: { project: 1 },
+            documentNames: { singular: 'topology', plural: 'topologies' },
+        },
+        files: {
+            name: 'fs.files',
+            index: { 'metadata.project': 1 },
+            documentNames: { singular: 'file', plural: 'files' },
+        },
+        chunks: {
+            name: 'fs.chunks',
+            documentNames: { singular: 'chunk', plural: 'chunks' },
+        },
+        analyses: {
+            name: 'analyses',
+            index: { project: 1 },
+            documentNames: { singular: 'analysis', plural: 'analyses' },
+        },
+        chains: {
+            name: 'chains',
+            index: { project: 1 },
+            documentNames: { singular: 'chain', plural: 'chains' },
+        },
+        counters: {
+            name: 'counters',
+            documentNames: { singular: 'counter', plural: 'counters' }
+        },
+    };
 
     // ----------------------
 
+    // Setup the database by creating and indexing the configured collections
+    setup = async () => {
+        // Check the number of collections already existing in the database
+        const currentCollections = await this.db.listCollections().toArray()
+        const currentCollectionNames = currentCollections.map(collection => collection.name);
+        // Iterate over the configured collections
+        for await (const [collectionKey, collectionConfig] of Object.entries(this.COLLECTION_CONFIGURATIONS)) {
+            // If the collection already exists then do nothing
+            if (currentCollectionNames.includes(collectionConfig.name)) {
+                // DANI: Habría que mejorar un poco la lógica para que compruebe si los index coinciden
+                // DANI: Y si no coinciden que lo arregle
+                // console.log(await this[collectionKey].indexes());
+                continue;
+            }
+            console.log(`Setting up ${collectionKey} collection`);
+            // Create the collection
+            await this.db.createCollection(collectionConfig.name);
+            // Set some indices if specified to accelerate specific queries
+            if (collectionConfig.index) await this[collectionKey].createIndex(collectionConfig.index)
+        }
+    };
 
     // Get the generic name of a document by the collection it belongs to
     // Plural is returned by default but you can provide the number of ducments
     // Thus in case it is a single document the singular is returned
     // This is used for displaying only
     nameCollectionDocuments = (collectionKey, numberOfDocuments = 0) => {
-        const documentNames = this.COLLECTION_DOCUMENT_NAMES[collectionKey];
+        const collectionConfig = this.COLLECTION_CONFIGURATIONS[collectionKey];
+        const documentNames = collectionConfig.documentNames;
         if (!documentNames) throw new Error(`Not supported collection ${collectionKey}`);
         return numberOfDocuments === 1 ? documentNames.singular : documentNames.plural;
     }

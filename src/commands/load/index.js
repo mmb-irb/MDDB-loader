@@ -54,6 +54,9 @@ const load = async (
   // Database handler
   database,
 ) => {
+  // Run the database setup
+  // This makes only sense the first time but it is run always just in case there is a new collection
+  await database.setup();
   // Get the correct gromacs command while checking it is installed in the system
   // If trajectories are to be skipped then skip this part as well since Gromacs is used for loading trajectories only
   const gromacsCommand = skipTrajectories ? null : getGromacsCommand(gromacsPath);
