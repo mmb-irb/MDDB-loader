@@ -29,15 +29,45 @@ const deleteFunction = async (
     }
     // If nothing is found then we are done
     if (!target) return console.error(chalk.yellow(`Nothing found for ID '${id}'`));
+    // Get the name of the type of document we are about to delete
+    const documentName = database.nameCollectionDocuments(target.collectionKey, 1);
+    // Now log some details about the found document
     // If this is a project then we must log a summary of the project
     if (target.collectionKey === 'projects') {
         if (!project) project = await database.syncProject(target.document._id);
+        // Log the summary
         await project.logProjectSummary();
     }
-    // Warn the user about the document we are about to delete and ask for confirmation
-    const documentName = database.nameCollectionDocuments(target.collectionKey);
-    // If the confirm argument has not been passed then ask the user for confirmation
-    const confirmation = confirm || await userConfirm(`Confirm deletion of ${documentName} with ${isMongoId ? 'id' : 'accession'} ${id} [y/*]`);
+    // If it is an analysis then log its name and the project it belongs to
+    else if (target.collectionKey === 'analyses') {
+        // Load remote project data in the database handler
+        const projectId = target.document.project;
+        project = await database.syncProject(projectId);
+        if (!project) throw new Error(`Parent project ${projectId} not found. Is the analysis orphan?`);
+        // Get the MD name
+        const mdIndex = target.document.md;
+        const mdName = project.data.mds[mdIndex].name;
+        // Get the analysis name
+        const analysisName = target.document.name;
+        // Log the summary
+        console.log(`About to delete ${documentName} "${analysisName}" of project ${project.accession}, ${mdName}`);
+    }
+    // If it is a file log its filename and the project it belongs to
+    else if (target.collectionKey === 'files') {
+        // Load remote project data in the database handler
+        const projectId = target.document.metadata.project;
+        project = await database.syncProject(projectId);
+        if (!project) throw new Error(`Parent project ${projectId} not found. Is the file orphan?`);
+        // Get the MD name
+        const mdIndex = target.document.metadata.md;
+        const mdName = project.data.mds[mdIndex].name;
+        // Get the analysis name
+        const filename = target.document.filename;
+        // Log the summary
+        console.log(`About to delete ${documentName} "${filename}" of project ${project.accession}, ${mdName}`);
+    }
+    // If the confirm argument has not been passed then warn and ask the user for confirmation
+    const confirmation = confirm || await userConfirm(`Confirm deletion of document with ${isMongoId ? 'id' : 'accession'} ${id} [y/*]`);
     // If we have no confirmation then we abort here
     if (confirmation !== 'y' && confirmation !== 'Y') return console.log('Data deletion has been aborted');
     // Use the right deleting protocol according to the type of document we are about to delete
@@ -48,22 +78,12 @@ const deleteFunction = async (
     }
     // ----- Analysis -----
     if (target.collectionKey === 'analyses') {
-        // Load remote project data in the database handler
-        const projectId = target.document.project;
-        project = await database.syncProject(projectId);
-        if (!project) throw new Error(`Parent project ${projectId} not found. Is the analysis orphan?`);
-        // Delete the analysis
         const name = target.document.name;
         const mdIndex = target.document.md;
         return await project.deleteAnalysis(name, mdIndex);
     }
     // ----- Files -----
     if (target.collectionKey === 'files') {
-        // Load remote project data in the database handler
-        const projectId = target.document.metadata.project;
-        project = await database.syncProject(projectId);
-        if (!project) throw new Error(`Parent project ${projectId} not found. Is the file orphan?`);
-        // Delete the file
         const filename = target.document.filename;
         const mdIndex = target.document.metadata.md;
         return await project.deleteFile(filename, mdIndex);
