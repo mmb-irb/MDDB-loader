@@ -39,7 +39,7 @@ const load = async (
   {
     pdir,
     mdirs,
-    append,
+    accession,
     include,
     exclude,
     conserve,
@@ -96,7 +96,7 @@ const load = async (
   const inputs = inputsFile && loadYAMLorJSON(projectDirectory + '/' + inputsFile);
 
   // Find if there is a prefeined accession to use such as:
-  // 1 - A command line forced accession (append option)
+  // 1 - A command line forced accession (-a)
   // 2 - A metadata forced accession
   // 3 - A trace from a previous run
   // If no accession is predefined we asume it is a new project and we create it
@@ -104,18 +104,10 @@ const load = async (
   // This part of the code is set as a function just to use return
   let isNew = false;
   const project = await (async () => {
-    // If we have an explicit append option in the command line then check it is valid
-    if (append) {
-      const alreadyExistingProject = await database.syncProject(append);
-      // If the project exists then use it
-      if (alreadyExistingProject) return alreadyExistingProject;
-      // If it does not exist then stop here and warn the user
-      throw new Error(`Project ${append} was not found`);
-    }
-    // If we have a forced accession in the metadata then use it
-    const forcedAccession = inputs && inputs.accession;
-    console.log('forced accession -> ' + forcedAccession)
+    // If we have a forced accession in the coomand line or in the metadata then use it
+    const forcedAccession = accession || (inputs && inputs.accession);
     if (forcedAccession) {
+      console.log('Forced accession: ' + forcedAccession);
       // If the project exists then we sync it
       const alreadyExistingProject = await database.syncProject(forcedAccession);
       if (alreadyExistingProject) return alreadyExistingProject;

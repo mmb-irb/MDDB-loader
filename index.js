@@ -32,10 +32,12 @@ yargs
                 describe: 'Project directory containing all files to be loaded',
                 type: 'string'
             })
-            // --append
+            // --accession
             .option('a', {
-                alias: 'append',
-                description: 'Append new data to an existing project',
+                alias: 'accession',
+                description: 'Set the accession.\n' +
+                    'Use this to append new data to an already existing project.\n' +
+                    'Also use this to create a new project with a specific accession.',
                 type: 'string',
                 default: null,
                 coerce: idOrAccessionCoerce,
