@@ -31,7 +31,7 @@ class Database {
         this.bucket = bucket;
         // Set some collections and list them all together
         this.collections = {};
-        for (const [ collectionKey, collectionConfig ] of Object.entries(this.COLLECTION_CONFIGURATIONS)) {
+        for (const [ collectionKey, collectionConfig ] of Object.entries(this.COLLECTIONS)) {
             this[collectionKey] = db.collection(collectionConfig.name);
             this.collections[collectionKey] = this[collectionKey];
         }
@@ -47,7 +47,7 @@ class Database {
     // name - Actual name of the collection inside the database
     // index - Index configuration in the database, for the collections setup
     // documentNames - Document names used for displaying only
-    COLLECTION_CONFIGURATIONS = {
+    COLLECTIONS = {
         projects: {
             name: 'projects',
             index: { published: 1 },
@@ -91,15 +91,32 @@ class Database {
         },
     };
 
+    // Set every reference configuration
+    // collection - The collection key in the COLLECTIONS object
+    // idField - The field in every reference document which stands for its id
+    // projectIdsField - The field in every project document which lists the included reference ids
+    REFERENCES = {
+        proteins: {
+            collection: 'references',
+            idField: 'uniprot',
+            projectIdsField: 'metadata.REFERENCES'
+        },
+        ligands: {
+            collection: 'ligands',
+            idField: 'pubchem',
+            projectIdsField: 'metadata.LIGANDS'
+        }
+    };
+
     // ----------------------
 
     // Setup the database by creating and indexing the configured collections
     setup = async () => {
-        // Check the number of collections already existing in the database
+        // Check the collections already existing in the database
         const currentCollections = await this.db.listCollections().toArray()
         const currentCollectionNames = currentCollections.map(collection => collection.name);
         // Iterate over the configured collections
-        for await (const [collectionKey, collectionConfig] of Object.entries(this.COLLECTION_CONFIGURATIONS)) {
+        for await (const [collectionKey, collectionConfig] of Object.entries(this.COLLECTIONS)) {
             // If the collection already exists then do nothing
             if (currentCollectionNames.includes(collectionConfig.name)) {
                 // DANI: Habría que mejorar un poco la lógica para que compruebe si los index coinciden
@@ -120,7 +137,7 @@ class Database {
     // Thus in case it is a single document the singular is returned
     // This is used for displaying only
     nameCollectionDocuments = (collectionKey, numberOfDocuments = 0) => {
-        const collectionConfig = this.COLLECTION_CONFIGURATIONS[collectionKey];
+        const collectionConfig = this.COLLECTIONS[collectionKey];
         const documentNames = collectionConfig.documentNames;
         if (!documentNames) throw new Error(`Not supported collection ${collectionKey}`);
         return numberOfDocuments === 1 ? documentNames.singular : documentNames.plural;
@@ -189,75 +206,47 @@ class Database {
     }
 
     // Add a new reference in the references collection in case it does not exist yet
-    loadReference = async reference => {
-        // Check if the reference is already in the database and, if so, skip the load
-        const current = await this.references.findOne({ uniprot: reference.uniprot });
-        if (current) return console.log(chalk.grey(`Reference ${reference.uniprot} is already in the database`));
-        logger.startLog(`💽 Loading reference ${reference.uniprot}`);
+    loadReferenceIfProper = async (referenceName, referenceData) => {
+        // Set the reference configuration
+        const refereceConfig = this.REFERENCES[referenceName];
+        const collection = this[refereceConfig.collection];
+        const idField = refereceConfig.idField;
+        const label = `${referenceName} reference ${referenceData[idField]}`;
+        // If the reference is already in the database then skip the load
+        const current = await collection.findOne({ [idField]: referenceData[idField] });
+        if (current) return console.log(chalk.grey(`  The ${label} is already in the database`));
+        logger.startLog(`💽 Loading ${label}`);
         // Load the new reference
-        const result = await this.references.insertOne(reference);
+        const result = await collection.insertOne(referenceData);
         // If the operation failed
-        if (result.acknowledged === false) return logger.failLog(`💽 Failed to load reference ${reference.uniprot}`);
-        logger.successLog(`💽 Loaded reference ${reference.uniprot}`);
-        console.log(chalk.green(`  Loaded new reference ${reference.uniprot} -> ${result.insertedId}`));
+        if (result.acknowledged === false) return logger.failLog(`💽 Failed to load ${label}`);
+        logger.successLog(`💽 Loaded new ${label} -> ${result.insertedId}`);
         // Update the inserted data in case we need to revert the change
         this.inserted_data.push({
-            name: 'new reference',
-            collection: this.references,
+            name: `new ${label}`,
+            collection: collection,
             id: result.insertedId
         });
     };
 
     // Check if a reference is still under usage
     // i.e. there is at least one project using it
-    isReferenceUsed = async uniprot => {
-        const projects = await this.projects.count({ 'metadata.REFERENCES': uniprot });
-        if (projects === 0) return false;
-        return true;
-    }
-
-    // Delete a reference
-    deleteReference = async uniprot => {
-        logger.startLog(`🗑️  Deleting referece ${uniprot}`);
-        const result = await this.references.deleteOne({ uniprot: uniprot });
-        if (!result) return logger.failLog(`🗑️  Failed to delete referece ${uniprot}`);
-        logger.successLog(`🗑️  Deleted referece ${uniprot}`);
-    }
-
-    // Add a new ligand in the ligands collection in case it does not exist yet
-    loadLigand = async ligand => {
-        // Check if the ligand is already in the database and, if so, skip the load
-        const current = await this.ligands.findOne({ pubchem: ligand.pubchem });
-        if (current) return console.log(chalk.grey(`Ligand ${ligand.pubchem} is already in the database`));
-        logger.startLog(`💽 Loading ligand ${ligand.pubchem}`);
-        // Load the new ligand
-        const result = await this.ligands.insertOne(ligand);
-        // If the operation failed
-        if (result.acknowledged === false) return logger.failLog(`💽 Failed to load ligand ${ligand.pubchem}`);
-        logger.successLog(`💽 Loaded ligand ${ligand.pubchem}`);
-        console.log(chalk.green(`  Loaded new ligand ${ligand.pubchem} -> ${result.insertedId}`));
-        // Update the inserted data in case we need to revert the change
-        this.inserted_data.push({
-            name: 'new ligand',
-            collection: this.ligands,
-            id: result.insertedId
-        });
-    };
-
-    // Check if a ligand is still under usage
-    // i.e. there is at least one project using it
-    isLigandUsed = async pubchem => {
-        const projects = await this.projects.count({ 'metadata.LIGANDS': pubchem });
-        if (projects === 0) return false;
-        return true;
-    }
-
-    // Delete a ligand
-    deleteLigand = async pubchem => {
-        logger.startLog(`🗑️  Deleting referece ${pubchem}`);
-        const result = await this.ligands.deleteOne({ pubchem: pubchem });
-        if (!result) return logger.failLog(`🗑️  Failed to delete referece ${pubchem}`);
-        logger.successLog(`🗑️  Deleted referece ${pubchem}`);
+    // Delete the reference otherwise
+    deleteReferenceIfProper = async (referenceName, referenceId) => {
+        // Set the reference configuration
+        const refereceConfig = this.REFERENCES[referenceName];
+        const projectIdsField = refereceConfig.projectIdsField;
+        const label = `${referenceName} reference ${referenceId}`;
+        const collection = this[refereceConfig.collection];
+        const idField = refereceConfig.idField;
+        // If the reference is still used by at least 1 project then stop here
+        const count = await this.projects.count({ [projectIdsField]: referenceId });
+        if (count > 0) return console.log(chalk.grey(`  The ${label} is still used by ${count} other projects`));
+        // Delete the reference
+        logger.startLog(`🗑️  Deleting ${label}`);
+        const result = await collection.deleteOne({ [idField]: referenceId });
+        if (!result) return logger.failLog(`🗑️  Failed to delete ${label}`);
+        logger.successLog(`🗑️  Deleted ${label}`);
     }
 
     // Given an id, find the document and the collection it belongs to

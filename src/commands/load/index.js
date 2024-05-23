@@ -172,34 +172,25 @@ const load = async (
 
   // ---- References ----
 
-  // Load references
-  const referencesDataFile = categorizedProjectFiles.referencesDataFile;
-  if (referencesDataFile) {
-    // Read the references data file
-    const referencesFilepath = projectDirectory + '/' + referencesDataFile;
-    const references = await loadJSON(referencesFilepath);
-    if (!references) throw new Error('There is something wrong with the references file');
-    // Iterate over the different references
-    for await (const reference of references) {
-      await database.loadReference(reference);
-    }
-  }
+  // Set the input files to be read for every different reference type
+  const referenceInputDataFilepaths = {
+    proteins: categorizedProjectFiles.referencesDataFile,
+    ligands: categorizedProjectFiles.ligandsDataFile
+  };
 
-  // Check if the load has been aborted at this point
-  await checkAbort();
-
-  // ---- Ligands ----
-
-  // Load ligands
-  const ligandsDataFile = categorizedProjectFiles.ligandsDataFile;
-  if (ligandsDataFile) {
-    // Read the ligands data file
-    const ligandsFilepath = projectDirectory + '/' + ligandsDataFile;
-    const ligands = await loadJSON(ligandsFilepath);
-    if (!ligands) throw new Error('There is something wrong with the ligands file');
-    // Iterate over the different ligands
-    for await (const ligand of ligands) {
-      await database.loadLigand(ligand);
+  // Iterate the different type of references (proteins, ligands)
+  for await (const referenceName of Object.keys(database.REFERENCES)) {
+    // Get the input data filepath
+    const referenceInputDataFilepath = referenceInputDataFilepaths[referenceName];
+    // If there is no input data filepath then go to the next reference
+    if (!referenceInputDataFilepath) continue;
+    // Load the reference input data
+    const referenceInputData = await loadJSON(referenceInputDataFilepath);
+    if (!referenceInputData)
+      throw new Error(`There is something wrong with the references file ${referenceInputDataFilepath}`);
+    // Iterate over the different references among the input data
+    for await (const referenceData of referenceInputData) {
+      await database.loadReferenceIfProper(referenceName, referenceData);
     }
   }
 

@@ -14,7 +14,8 @@ const readAndParseTrajectory = require('../../utils/read-and-parse-trajectory');
 const {
     userConfirmDataLoad,
     getBasename,
-    getMimeTypeFromFilename
+    getMimeTypeFromFilename,
+    getValueGetter
 } = require('../../utils/auxiliar-functions');
 // Get metadata handlers
 const { merge_metadata } = require('./metadata-handlers');
@@ -127,15 +128,19 @@ class Project {
         // Remove references if they are not used by other projects
         const metadata = this.data.metadata;
         if (!metadata) return;
-        // Remove protein references
-        for await (const uniprot of metadata.REFERENCES || []) {
-            const used = await this.database.isReferenceUsed(uniprot);
-            if (used === false) await this.database.deleteReference(uniprot);
-        }
-        // Remove ligand references
-        for await (const pubchem of metadata.LIGANDS || []) {
-            const used = await this.database.isLigandUsed(pubchem);
-            if (used === false) await this.database.deleteLigand(pubchem);
+        // Iterate the different reference types
+        // Iterate the different type of references (proteins, ligands)
+        for await (const referenceName of Object.keys(this.database.REFERENCES)) {
+            // Set the reference configuration
+            const refereceConfig = this.database.REFERENCES[referenceName];
+            const projectIdsField = refereceConfig.projectIdsField;
+            const referenceIdsGetter = getValueGetter(projectIdsField);
+            // Iterate the project reference ids
+            const referenceIds = referenceIdsGetter(this.data);
+            for await (const referenceId of referenceIds || []) {
+                // Delete the reference if it is not used by other projects
+                await this.database.deleteReferenceIfProper(referenceName, referenceId);
+            }
         }
     }
 
