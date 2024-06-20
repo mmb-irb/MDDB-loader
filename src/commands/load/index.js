@@ -93,7 +93,7 @@ const load = async (
   // Read the inputs file
   // Inputs file is not to be loaded but it may contain parameters which are to be considered during the load
   const inputsFile = categorizedProjectFiles.inputsFile;
-  const inputs = inputsFile && loadYAMLorJSON(projectDirectory + '/' + inputsFile);
+  const inputs = inputsFile && loadYAMLorJSON(projectDirectory + inputsFile);
 
   // Find if there is a prefeined accession to use such as:
   // 1 - A command line forced accession (-a)
@@ -161,7 +161,7 @@ const load = async (
   const projectMetadataFile = categorizedProjectFiles.metadataFile;
   if ( !skipMetadata && projectMetadataFile ) {
     console.log('Loading project metadata');
-    const projectMetadataFilepath = projectDirectory + '/' + projectMetadataFile;
+    const projectMetadataFilepath = projectDirectory + projectMetadataFile;
     const projectMetadata = await loadJSON(projectMetadataFilepath);
     if (!projectMetadata) throw new Error('There is something wrong with the project metadata file');
     await project.updateProjectMetadata(projectMetadata, conserve, overwrite);
@@ -173,7 +173,7 @@ const load = async (
   // ---- References ----
 
   // Set the input files to be read for every different reference type
-  const referenceInputDataFilepaths = {
+  const referenceInputDataFiles = {
     proteins: categorizedProjectFiles.referencesDataFile,
     ligands: categorizedProjectFiles.ligandsDataFile
   };
@@ -181,10 +181,11 @@ const load = async (
   // Iterate the different type of references (proteins, ligands)
   for await (const referenceName of Object.keys(database.REFERENCES)) {
     // Get the input data filepath
-    const referenceInputDataFilepath = referenceInputDataFilepaths[referenceName];
+    const referenceInputDataFile = referenceInputDataFiles[referenceName];
     // If there is no input data filepath then go to the next reference
-    if (!referenceInputDataFilepath) continue;
+    if (!referenceInputDataFile) continue;
     // Load the reference input data
+    const referenceInputDataFilepath = projectDirectory + referenceInputDataFile;
     const referenceInputData = await loadJSON(referenceInputDataFilepath);
     if (!referenceInputData)
       throw new Error(`There is something wrong with the references file ${referenceInputDataFilepath}`);
@@ -203,7 +204,7 @@ const load = async (
   const topologyDataFile = categorizedProjectFiles.topologyDataFile;
   if (topologyDataFile) {
     // Load topology
-    const topologyDataFilepath = projectDirectory + '/' + topologyDataFile;
+    const topologyDataFilepath = projectDirectory + topologyDataFile;
     const topology = await loadJSON(topologyDataFilepath);
     if (!topology) throw new Error('There is something wrong with the topology data file')
     // Add the current project id to the topology object
@@ -242,7 +243,7 @@ const load = async (
       const confirm = await project.forestallFileLoad(databaseFilename, undefined, conserve, overwrite);
       if (!confirm) continue;
       // Set the path to the current file
-      const filepath = projectDirectory + '/' + file;
+      const filepath = projectDirectory + file;
       // Load the actual file
       await project.loadFile(databaseFilename, undefined, filepath, checkAbort);
     }
