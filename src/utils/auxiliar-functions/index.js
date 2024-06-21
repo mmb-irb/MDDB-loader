@@ -213,6 +213,17 @@ const getValueGetter = path => {
     return valueGetter;
 };
 
+// Test if we have write permissions somewhere
+const canWrite = path => {
+    try {
+        fs.accessSync(path, fs.constants.W_OK);
+        return true
+    }
+    catch {
+        return false
+    }
+}
+
 module.exports = {
     mongoidFormat,
     userConfirm,
@@ -228,4 +239,5 @@ module.exports = {
     loadYAML,
     loadYAMLorJSON,
     getValueGetter,
+    canWrite
 };
