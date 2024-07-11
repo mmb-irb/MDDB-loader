@@ -111,6 +111,9 @@ const load = async (
       // Make sure the forced accession has no white spaces
       // This would be a problem further in the web client
       if (forcedAccession.includes(' ')) throw new Error(`Accessions must not include white spaces`);
+      // Make sure the forced accession has no white spaces
+      // This would be a problem further when separating the accession from the MD number
+      if (forcedAccession.includes('.')) throw new Error(`Accessions must not include dots`);
       // If the project exists then we sync it
       const alreadyExistingProject = await database.syncProject(forcedAccession);
       if (alreadyExistingProject) return alreadyExistingProject;
