@@ -108,6 +108,9 @@ const load = async (
     const forcedAccession = accession || (inputs && inputs.accession);
     if (forcedAccession) {
       console.log('Forced accession: ' + forcedAccession);
+      // Make sure the forced accession has no white spaces
+      // This would be a problem further in the web client
+      if (forcedAccession.includes(' ')) throw new Error(`Accessions must not include white spaces`);
       // If the project exists then we sync it
       const alreadyExistingProject = await database.syncProject(forcedAccession);
       if (alreadyExistingProject) return alreadyExistingProject;
