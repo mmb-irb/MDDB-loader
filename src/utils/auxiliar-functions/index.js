@@ -39,6 +39,7 @@ const userConfirm = async question => {
         name: 'confirm',
         message: question,
     });
+    // Note that the response is always a string so there is so '0' is also true
     if (response.confirm) return response.confirm;
     return null;
 };

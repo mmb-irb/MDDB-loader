@@ -12,6 +12,7 @@ const throttle = require('lodash.throttle');
 const readAndParseTrajectory = require('../../utils/read-and-parse-trajectory');
 // Load auxiliar functions
 const {
+    userConfirm,
     userConfirmDataLoad,
     getBasename,
     getMimeTypeFromFilename,
@@ -89,6 +90,22 @@ class Project {
             mdCount === 0 && mdFilesCount === 0 && mdAnalysesCount === 0) console.log('  Project is empty');
     }
 
+    // Get a summary of some specific MD contents
+    logMDSummary = async mdIndex => {
+        const accessionLabel = this.accession || 'with no accession';
+        const md = this.data.mds[mdIndex];
+        console.log(`MD ${md.name} from project ${accessionLabel} (${this.id}) summary:`);
+        // Show the number of MD files and analyses
+        const mdFiles = md.files;
+        const mdFilesCount = (mdFiles && mdFiles.length) || 0;
+        const mdAnalyses = md.analyses;
+        const mdAnalysesCount = (mdAnalyses && mdAnalyses.length) || 0;
+        if (mdFilesCount > 0) console.log(`- MD Files: ${mdFilesCount}`);
+        if (mdAnalysesCount > 0) console.log(`- MD Analyses: ${mdAnalysesCount}`);
+        // In case we produced no output say explicitly that the MD is empty
+        if (mdFilesCount === 0 && mdAnalysesCount === 0) console.log('  MD is empty');
+    }
+
     // Delete a project
     deleteProject = async () => {
         // Delete all project contents before deleteing the project itself to avoid having orphans in case of interruption
@@ -118,7 +135,8 @@ class Project {
         for await (const [mdIndex, md] of Object.entries(this.data.mds)) {
             // If the MD is flagged as removed then we skip it
             if (md.removed) continue;
-            await this.removeMDirectory(mdIndex);
+            // Set the MD as removed and force it so we do not ask the user every time the reference MD is removed
+            await this.removeMDirectory(+mdIndex, true);
         }
         // Delete the remote project document
         logger.startLog(`🗑️  Deleting project ${this.id}`);
@@ -156,7 +174,7 @@ class Project {
     // Remove an existing MD directory
     // Note that MDs are handled thorugh indices so we can not simply remove an MD object from the project MDs list
     // Instead we remove its content and add a tag to mark it as removed
-    removeMDirectory = async mdIndex => {
+    removeMDirectory = async (mdIndex, forced = false) => {
         // Delete all MD contents before deleteing the project itself to avoid having orphans in case of interruption
         const md = this.data.mds[mdIndex];
         // Delete MD files
@@ -179,8 +197,84 @@ class Project {
         console.log(`MD ${md.name} will be flagged as removed`);
         const residualMD = { name: md.name, removed: true };
         this.data.mds[mdIndex] = residualMD
+        // If this was the reference MD then we must change the reference MD
+        // WARNING: This is to be done after the MD has been marked as removed
+        // Otherwise the MD would still be 'available' as reference MD
+        if (this.data.mdref === mdIndex) {
+            // If this is forced then we automatically assign a new reference MD
+            if (forced) this.data.mdref = this.findAvailableMDIndex();
+            // Otherwise we ask the user which is to be the next reference MD
+            else this.data.mdref = await this.setNewReferenceMD();
+        }
         // Update the remote
         await this.updateRemote();
+    }
+
+    // Find the first available (i.e. not removed) MD index
+    // Return null if all MDs are removed
+    findAvailableMDIndex = () => {
+        for (const [mdIndex, md] of Object.entries(this.data.mds)) {
+            if (md.removed) continue;
+            return +mdIndex;
+        }
+        return null;
+    }
+
+    // Find all available (i.e. not removed) MD indices
+    findAvailableMDIndices = () => {
+        const availableMDIndices = [];
+        for (const [mdIndex, md] of Object.entries(this.data.mds)) {
+            if (md.removed) continue;
+            availableMDIndices.push(+mdIndex);
+        }
+        return availableMDIndices;
+    }
+
+    // Return a new referece MD index after asking the user
+    // Return null if all MDs are removed
+    setNewReferenceMD = async () => {
+        // Get available MDs to offer to the user as possible reference MDs
+        const availableMDIndices = findAvailableMDIndices();
+        // If there are no available MDs then return null
+        if (availableMDIndices.length === 0) {
+            console.log('There are no more available MDs left. Reference MD will become null');
+            return null;
+        }
+        // If there is just one available MDs then return it
+        if (availableMDIndices.length === 1) {
+            const newReferenceMDIndex = availableMDIndices[0];
+            const newReferenceMD = this.data.mds[newReferenceMDIndex];
+            console.log(`There is only one available MD left: ${newReferenceMD.name}. This will become the new reference MD`);
+            return newReferenceMD;
+        }
+        // List all available (i.e. not removed) MDs
+        const availableMDTitles = [];
+        for (const mdIndex of availableMDIndices) {
+            const md = this.data.mds[mdIndex];
+            availableMDTitles.push(`  ${mdIndex} - ${md.name}`);
+        }
+        // Ask for user confirm until we get an acceptable answer
+        while (true) {
+            // Ask the user
+            const userAnswer = await userConfirm(
+                `The MD we are deleting is the reference MD. A new reference MD is to be assigned:\n${
+                    availableMDTitles.join('\n')
+                }`
+            );
+            // Make sure the user response is a number (an MD index)
+            const userRequestedMdIndex = +userAnswer;
+            if (Number.isNaN(userRequestedMdIndex)) {
+                console.log('The answer is expected to be a number.')
+                continue;
+            }
+            // Make sure the user requested MD index is among the available MDs
+            if (!availableMDIndices.includes(userRequestedMdIndex)) {
+                console.log(`The requested MD index (${userRequestedMdIndex}) is not available.`);
+                continue;
+            }
+            // Return the requested MD index
+            return userRequestedMdIndex;
+        }
     }
 
     // Anticipate chains update

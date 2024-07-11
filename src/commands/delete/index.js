@@ -17,15 +17,37 @@ const deleteFunction = async (
     // Find the document with the requested Id, no matter in which collection it is
     // Find also the collection it belongs to
     let target;
-    // Check if the input id is actually an id
-    // If not then consider it is an accession
+    // Check if the input id is actually a mongo id
     const isMongoId = mongoidFormat.test(id);
     if (isMongoId) target = await database.findId(id);
+    // If not then consider it is an accession
     else {
+        // Get the accession and the MD number, if any
+        const idSplits = id.split('.');
+        if (idSplits.length > 2) throw new Error(`ID ${id} has more dots than an accession would`);
+        const accession = idSplits[0];
+        const mdNumber = idSplits[1];
         // Find the project this accession belongs to
-        project = await database.syncProject(id);
-        if (!project) return console.error(chalk.yellow(`No project found for accession '${id}'`));
-        target = { document: project.data, collectionKey: 'projects' };
+        project = await database.syncProject(accession);
+        if (!project) return console.error(chalk.yellow(`No project found for accession '${accession}'`));
+        target = { document: project.data, collectionKey: 'projects', mdIndex: null };
+        // If a MD number was passed then include the corresponding MD index in the target object
+        if (mdNumber) {
+            // Make sure the MD number is actually a number
+            const parsedMdNumber = +mdNumber;
+            if (Number.isNaN(parsedMdNumber)) throw new Error(`MD Number ${mdNumber} should be a number`);
+            // Set the corresponding MD index
+            const mdIndex = parsedMdNumber - 1;
+            // If the MD is the last available MD then stop here
+            // It makes not sense having an empty project with no MDs
+            // Ask the user to delete the project instead
+            const availableMDs = project.findAvailableMDIndices();
+            console.log(availableMDs);
+            if (availableMDs.length === 1 && availableMDs.includes(mdIndex))
+                throw new Error(`You are about to delete the last available MD in this project. Please delete the whole project instead.`);
+            // Add the MD index to the target object
+            target.mdIndex = mdIndex;
+        }
     }
     // If nothing is found then we are done
     if (!target) return console.error(chalk.yellow(`Nothing found for ID '${id}'`));
@@ -36,7 +58,8 @@ const deleteFunction = async (
     if (target.collectionKey === 'projects') {
         if (!project) project = await database.syncProject(target.document._id);
         // Log the summary
-        await project.logProjectSummary();
+        if (target.mdIndex === null) await project.logProjectSummary();
+        else await project.logMDSummary(target.mdIndex);
     }
     // If it is an analysis then log its name and the project it belongs to
     else if (target.collectionKey === 'analyses') {
@@ -74,7 +97,10 @@ const deleteFunction = async (
     // ----- Projects -----
     if (target.collectionKey === 'projects') {
         // Remote project data should be loaded already
-        return await project.deleteProject();
+        // If no MD number was passed then we asume that the whole project is to be deleted
+        if (target.mdIndex === null) return await project.deleteProject();
+        // If a MD number was passed then we asume that only the specified MD is to be deleted
+        return await project.removeMDirectory(target.mdIndex, forced=confirm);
     }
     // ----- Analysis -----
     if (target.collectionKey === 'analyses') {
