@@ -27,7 +27,7 @@ const main = async () => {
   // Get all available projects
   const allProjects = await database.projects.find({},{_id:true}).toArray();
   const allProjectsIds = allProjects.map(project => project._id);
-  console.log(`${allProjectsIds.length} projects where found`);
+  console.log(`${allProjectsIds.length} projects were found`);
 
   // Iterate over every project
   for await (const projectId of allProjectsIds) {
