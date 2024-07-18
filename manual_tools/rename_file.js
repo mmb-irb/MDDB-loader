@@ -33,14 +33,14 @@ const main = async () => {
   for await (const projectId of allProjectsIds) {
     console.log('   Project ID: ' + projectId);
     // Get the current project
-    await database.syncProject(projectId);
+    const project = await database.syncProject(projectId);
     // Find the target file among project files
-    const targetFile = database.project_data.files.find(file => file.name === oldFilename);
-    if (targetFile) await database.renameFile(oldFilename, undefined, newFilename);
+    const targetFile = project.data.files.find(file => file.name === oldFilename);
+    if (targetFile) await project.renameFile(oldFilename, undefined, newFilename);
     // Iterate over MDs
-    for (const [mdIndex, md] of Object.entries(database.project_data.mds)) {
+    for (const [mdIndex, md] of Object.entries(project.data.mds)) {
       const mdTargetFile = md.files.find(file => file.name === oldFilename);
-      if (mdTargetFile) await database.renameFile(oldFilename, mdIndex, newFilename);
+      if (mdTargetFile) await project.renameFile(oldFilename, mdIndex, newFilename);
     }
   }
 

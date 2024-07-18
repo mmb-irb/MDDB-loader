@@ -33,22 +33,22 @@ const main = async () => {
   for await (const projectId of allProjectsIds) {
     console.log('   Project ID: ' + projectId);
     // Get the current project
-    await database.syncProject(projectId);
+    const project = await database.syncProject(projectId);
     // Iterate over project pca files (there should be none, but just in case)
-    const files = database.project_data.files.filter(file => file.name.includes(oldString));
+    const files = project.data.files.filter(file => file.name.includes(oldString));
     for await (const file of files) {
       const oldFilename = file.name;
       const newFilename = file.name.replace(oldString, newString);
-      await database.renameFile(oldFilename, undefined, newFilename);
+      await project.renameFile(oldFilename, undefined, newFilename);
     }
     // Iterate over MDs
-    for (const [mdIndex, md] of Object.entries(database.project_data.mds)) {
+    for (const [mdIndex, md] of Object.entries(project.data.mds)) {
       // Iterate over MD pca files
       const files = md.files.filter(file => file.name.includes(oldString));
       for await (const file of files) {
         const oldFilename = file.name;
         const newFilename = file.name.replace(oldString, newString);
-        await database.renameFile(oldFilename, mdIndex, newFilename);
+        await project.renameFile(oldFilename, mdIndex, newFilename);
       }
     }
   }
