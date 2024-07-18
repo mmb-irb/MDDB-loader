@@ -97,7 +97,7 @@ const deleteFunction = async (
     if (target.collectionKey === 'projects') {
         // Remote project data should be loaded already
         // If no MD number was passed then we asume that the whole project is to be deleted
-        if (target.mdIndex === null) return await project.deleteProject();
+        if (target.mdIndex === undefined) return await project.deleteProject();
         // If a MD number was passed then we asume that only the specified MD is to be deleted
         return await project.removeMDirectory(target.mdIndex, forced=confirm);
     }
