@@ -30,7 +30,7 @@ const deleteFunction = async (
         // Find the project this accession belongs to
         project = await database.syncProject(accession);
         if (!project) return console.error(chalk.yellow(`No project found for accession '${accession}'`));
-        target = { document: project.data, collectionKey: 'projects', mdIndex: null };
+        target = { document: project.data, collectionKey: 'projects' };
         // If a MD number was passed then include the corresponding MD index in the target object
         if (mdNumber) {
             // Make sure the MD number is actually a number
@@ -42,7 +42,6 @@ const deleteFunction = async (
             // It makes not sense having an empty project with no MDs
             // Ask the user to delete the project instead
             const availableMDs = project.findAvailableMDIndices();
-            console.log(availableMDs);
             if (availableMDs.length === 1 && availableMDs.includes(mdIndex))
                 throw new Error(`You are about to delete the last available MD in this project. Please delete the whole project instead.`);
             // Add the MD index to the target object
@@ -58,7 +57,7 @@ const deleteFunction = async (
     if (target.collectionKey === 'projects') {
         if (!project) project = await database.syncProject(target.document._id);
         // Log the summary
-        if (target.mdIndex === null) await project.logProjectSummary();
+        if (target.mdIndex === undefined) await project.logProjectSummary();
         else await project.logMDSummary(target.mdIndex);
     }
     // If it is an analysis then log its name and the project it belongs to
