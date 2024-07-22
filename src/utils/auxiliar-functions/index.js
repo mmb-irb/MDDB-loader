@@ -10,6 +10,8 @@ const chalk = require('chalk');
 const { ObjectId } = require('mongodb');
 // Files system from node
 const fs = require('fs');
+// Utilities for working with file and directory paths
+const nodePath = require('node:path');
 // Allows to call a unix command or run another script
 // The execution of this code keeps running
 const { spawnSync } = require('child_process');
@@ -19,8 +21,6 @@ const process = require('process');
 // YAML parser
 const YAML = require('yaml')
 
-// Find some values
-const workingDirectory = process.cwd();
 // RegExp formula to check if a string is a mongoid
 const mongoidFormat = new RegExp('^[0-9a-f]{24}$');
 
@@ -28,8 +28,6 @@ const mongoidFormat = new RegExp('^[0-9a-f]{24}$');
 
 // Set problematic signs for directory/folder names
 FORBIDEN_DIRECTORY_CHARACTERS = ['.', ',', ';', ':'];
-// RegExp formula to find multiple slashes
-const MULTIPLE_SLASHES = /\/+/g;
 
 // Throw a question for the user trough the console
 // Await for the user to confirm
@@ -104,17 +102,10 @@ const mdNameToDirectory = name => {
     return directory;
 }
 
-// Convert the input local path into a valid global path
-const resolvePath = (path, isDirectory) => {
-    const basepath = path.startsWith('/') ? '' : `${workingDirectory}/`;
-    const fullpath = `${basepath}${path}${isDirectory ? '/' : ''}`;
-    return fullpath.replace(MULTIPLE_SLASHES, '/');
-};
-
 // Convert a local directory path into a global path and check it is accessible
 const directoryCoerce = directory => {
     // Path conversion
-    const fullPath = resolvePath(directory, isDirectory = true);
+    const fullPath = nodePath.resolve(directory) + '/';
     try {
         // Check if directory is accessible and executable
         // "X_OK" means directory must be executable and yes, directories were always executables
@@ -127,10 +118,13 @@ const directoryCoerce = directory => {
 
 // Given a path with any number of steps, return the last step
 const getBasename = path => {
-    const steps = path.split('/');
-    const last = steps[steps.length -1]; // For when the path ends with no '/' (usually files)
-    if (last) return last;
-    return steps[steps.length -2]; // For when the path ends in '/' (usually directories)
+    const steps = path.split('/').reverse();
+    // In case the path ends in any number of '/'s, return the last actual step
+    for (const step of steps) {
+        if (step) return step;
+    }
+    // If no step is returned something is wrong with the path
+    throw new Error('Invalid path ' + path);
 }
 
 // Save the object from mongo which is associated to the provided id

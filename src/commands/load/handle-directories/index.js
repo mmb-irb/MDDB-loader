@@ -31,7 +31,7 @@ const findMdDirectories = projectDirectory => {
 
 // Given a list of directories relative to the project directory, parse these directories by adding the whole path
 const parseDirectories = (projectDirectory, mdDirectories) => {
-    return mdDirectories.map(dir => projectDirectory + dir + '/');
+    return mdDirectories.map(dir => projectDirectory + dir);
 }
 
 module.exports = {
