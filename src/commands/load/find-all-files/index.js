@@ -1,5 +1,7 @@
 // Files system from node
 const fs = require('fs');
+// Get project files to be found and loaded
+const { EXPECTED_PROJECT_FILE } = require('../../../utils/constants');
 
 // Find all files according to the input path, which may be a file or a directory
 const findAllFiles = (projectDirectory, mdirs, included, excluded) => {
@@ -12,12 +14,19 @@ const findAllFiles = (projectDirectory, mdirs, included, excluded) => {
     const filterCreator = directory => {
         // If there is nothing to filter than set a redundant filter
         if (!hasIncludes && !hasExcludes) return () => true;
+        // Make sure this filter does not exclude the inputs file
+        // Note that this file is not to be loaded anyway
+        const inputsFilePattern = EXPECTED_PROJECT_FILE.inputsFile.pattern;
         // Otherwise set the actual filter
         if (hasIncludes) return filename => {
+            if (inputsFilePattern.test(filename)) return true;
             const fullpath = directory + filename;
             return included.includes(fullpath);
         }
         if (hasExcludes) return filename => {
+            // DANI: Including the inputs file when it is exlcuded is a bit shaddy
+            // DANI: I don't think this will ever happen anyway
+            if (inputsFilePattern.test(filename)) return true;
             const fullpath = directory + filename;
             return !excluded.includes(fullpath);
         }

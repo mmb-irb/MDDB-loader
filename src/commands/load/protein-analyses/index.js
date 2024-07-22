@@ -31,7 +31,7 @@ const plural = require('../../../utils/plural');
 // Fetch is used to retrieve data from web pages
 const fetchAndFail = require('../../../utils/fetch-and-fail');
 // These 2 are just URLs
-const { interProScanURL, hmmerURL } = require('../../../constants');
+const { interProScanURL, hmmerURL } = require('../../../utils/constants');
 
 // See InterProScan and HMMER Web documentations for expected objects from
 // these external APIs
