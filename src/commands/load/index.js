@@ -93,7 +93,6 @@ const load = async (
   // Read the inputs file
   // Inputs file is not to be loaded but it may contain parameters which are to be considered during the load
   const inputsFile = categorizedProjectFiles.inputsFile;
-  console.log(inputsFile);
   const inputs = inputsFile && loadYAMLorJSON(projectDirectory + inputsFile);
 
   // Find if there is a prefeined accession to use such as:
