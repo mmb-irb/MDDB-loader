@@ -9,6 +9,7 @@ const REGISTER_FILENAME = '.register.json';
 
 // Parse a list of file paths including wildcards to the real paths
 const findWildcardPaths = (projectDirectory, paths) => {
+    if (paths === undefined) return [];
     let finalPaths = [];
     // Iterate over the input paths
     for (const path of paths) {

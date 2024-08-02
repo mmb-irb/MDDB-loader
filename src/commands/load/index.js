@@ -72,13 +72,23 @@ const load = async (
   // Guess MD directories in case they are missing
   const mdDirectories = mdirs ? parseDirectories(projectDirectory, mdirs) : findMdDirectories(projectDirectory);
 
+  // Note that include and exclude arguments are 'undefined' when not passed by the user
+  // If passed empty, which should not happen, they become an empty array
+  // This may happen when using an empty variable as input (e.g. -i $accidentally_empty_variable)
+  // This may be dangerous because an empty include becomes all files and an empty exlcude will not exclude
+  // For this reason, if this happens we must stop here and warn the user
+  if (include && include.length === 0)
+    throw new Error(`The 'include' option is empty. This should not happen. Load has been stopped to prevent damage.`);
+  if (exclude && exclude.length === 0)
+    throw new Error(`The 'exclude' option is empty. This should not happen. Load has been stopped to prevent damage.`);
+
   // Make sure both include and exclude options are not passed together since they are not compatible
-  if (include && include.length > 0 && exclude && exclude.length > 0)
+  if (include && exclude)
     throw new Error(`Options 'include' and 'exclude' are not compatible. Please use only one of them at a time`);
 
   // Parse the included files
   const includedFiles = findWildcardPaths(projectDirectory, include);
-  if (include.length > 0 && includedFiles.length === 0) throw new Error('No files were found among included');
+  if (include && includedFiles.length === 0) throw new Error('No files were found among included');
 
   // Parse the excluded files
   const excludedFiles = findWildcardPaths(projectDirectory, exclude);

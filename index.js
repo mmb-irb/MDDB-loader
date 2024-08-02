@@ -67,14 +67,12 @@ yargs
                 alias: 'include',
                 description: 'Load only the specified files',
                 type: 'array',
-                default: []
             })
             // --exclude
             .option('e', {
                 alias: 'exclude',
                 description: 'Load all but the specified files',
                 type: 'array',
-                default: []
             })
             // --skip-chains
             .option('sc', {
