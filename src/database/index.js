@@ -10,6 +10,7 @@ const { mongoidFormat, userConfirm, userConfirmOrphanDataDeletion } = require('.
 const { ObjectId } = require('mongodb');
 // The project class is used to handle database data from a specific project
 const Project = require('./project');
+const { merge_metadata } = require('./project/metadata-handlers');
 
 // Set the first accession code
 // Accession codes are alphanumeric and the first value is to be letter
@@ -206,27 +207,44 @@ class Database {
     }
 
     // Add a new reference in the references collection in case it does not exist yet
-    loadReferenceIfProper = async (referenceName, referenceData) => {
+    loadReferenceIfProper = async (referenceName, referenceData, conserve, overwrite) => {
         // Set the reference configuration
         const refereceConfig = this.REFERENCES[referenceName];
         const collection = this[refereceConfig.collection];
         const idField = refereceConfig.idField;
         const label = `${referenceName} reference ${referenceData[idField]}`;
-        // If the reference is already in the database then skip the load
-        const current = await collection.findOne({ [idField]: referenceData[idField] });
-        if (current) return console.log(chalk.grey(`  The ${label} is already in the database`));
-        logger.startLog(`💽 Loading ${label}`);
-        // Load the new reference
-        const result = await collection.insertOne(referenceData);
-        // If the operation failed
-        if (result.acknowledged === false) return logger.failLog(`💽 Failed to load ${label}`);
-        logger.successLog(`💽 Loaded new ${label} -> ${result.insertedId}`);
-        // Update the inserted data in case we need to revert the change
-        this.inserted_data.push({
-            name: `new ${label}`,
-            collection: collection,
-            id: result.insertedId
-        });
+        // Check if the reference is already in the database
+        const referenceQuery = { [idField]: referenceData[idField] };
+        const previousData = await collection.findOne(referenceQuery);
+        // If so we must compare previous and new reference data
+        if (previousData) {
+            // Check if there is anything new or different in the current reference
+            const changed = await merge_metadata(previousData, referenceData, conserve, overwrite);
+            // If there are no changes then there is nothing to upload
+            if (!changed) return console.log(chalk.grey(`  The ${label} is already in the database and updated`));
+            // Otherwise we must load the updated reference data
+            logger.startLog(`💽 Updating ${label}`);
+            // Replace the old reference with the updated data
+            const result = await collection.replaceOne(referenceQuery, previousData);
+            // If the operation failed
+            if (result.acknowledged === false) return logger.failLog(`💽 Failed to update ${label}`);
+            logger.successLog(`💽 Updated ${label}`);
+        }
+        else {
+            // Otherwise load the new reference data as it is
+            logger.startLog(`💽 Loading ${label}`);
+            // Load the new reference
+            const result = await collection.insertOne(referenceData);
+            // If the operation failed
+            if (result.acknowledged === false) return logger.failLog(`💽 Failed to load ${label}`);
+            logger.successLog(`💽 Loaded new ${label} -> ${result.insertedId}`);
+            // Update the inserted data in case we need to revert the change
+            this.inserted_data.push({
+                name: `new ${label}`,
+                collection: collection,
+                id: result.insertedId
+            });
+        }
     };
 
     // Check if a reference is still under usage

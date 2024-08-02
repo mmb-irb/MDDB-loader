@@ -38,7 +38,7 @@ merge_metadata = async (previousMetadata, newMetadata, conserve = false, overwri
         }
         // If we have no force instruction then we must ask the user
         const confirm = await userConfirm(
-            `Metadata '${key}' field already exists and its value does not match new metadata.
+            `The field '${key}' already exists and its previous value does not match the new value.
             Previous value: ${JSON.stringify(previousValue, null, 4)}
             New value: ${JSON.stringify(newValue, null, 4)}
             Confirm data loading:

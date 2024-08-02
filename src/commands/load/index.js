@@ -207,7 +207,7 @@ const load = async (
       throw new Error(`There is something wrong with the references file ${referenceInputDataFilepath}`);
     // Iterate over the different references among the input data
     for await (const referenceData of referenceInputData) {
-      await database.loadReferenceIfProper(referenceName, referenceData);
+      await database.loadReferenceIfProper(referenceName, referenceData, conserve, overwrite);
     }
   }
 
