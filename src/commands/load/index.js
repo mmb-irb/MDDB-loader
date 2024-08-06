@@ -29,9 +29,19 @@ const {
 const findAllFiles = require('./find-all-files');
 const categorizeFiles = require('./categorize-files');
 const analyzeProteins = require('./protein-analyses');
-const nameAnalysis = require('./name-analysis');
 // Get project id trace handlers
 const { leaveTrace, findTrace, removeTrace } = require('./project-id-trace');
+
+// Given a analysis filename, get the name of the analysis from the filename itself
+const ANALYSIS_PATTERN = new RegExp('mda.([A-Za-z0-9_-]*).json$');
+const nameAnalysis = filename => {
+  const match = filename.match(ANALYSIS_PATTERN);
+  if (!match) throw new Error(`Filename ${filename} has not the expected analysis filename format`);
+  const name = match[1];
+  // Legacy fix
+  if (name === 'rmsf') return 'fluctuation';
+  return name;
+};
 
 // Load data from the specified folder into mongo
 const load = async (
