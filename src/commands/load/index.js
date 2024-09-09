@@ -35,11 +35,14 @@ const { leaveTrace, findTrace, removeTrace } = require('./project-id-trace');
 // Given a analysis filename, get the name of the analysis from the filename itself
 const ANALYSIS_PATTERN = new RegExp('mda.([A-Za-z0-9_-]*).json$');
 const nameAnalysis = filename => {
+  // Mine the file name without header and without extension tail
   const match = filename.match(ANALYSIS_PATTERN);
   if (!match) throw new Error(`Filename ${filename} has not the expected analysis filename format`);
-  const name = match[1];
-  // Legacy fix
-  if (name === 'rmsf') return 'fluctuation';
+  let name = match[1];
+  // Legacy fixes
+  if (name === 'rmsf') name = 'fluctuation';
+  name = name.replace('_', '-');
+  // Return the final name
   return name;
 };
 
