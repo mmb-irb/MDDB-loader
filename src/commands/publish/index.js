@@ -4,6 +4,7 @@ const chalk = require('chalk');
 const publish = async ({ id: idOrAccession }, database, publish = true) => {
   // Sync the requested project
   const project = await database.syncProject(id = idOrAccession);
+  if (!project) return () => { console.log( chalk.yellow(`Project with id or accession "${idOrAccession}" not found`) ) };
   // If the new published status is the current status then warn the user and stop here
   if (publish === project.data.published) return () => {
     console.log( chalk.yellow(`Project ${project.data.accession} is already ${publish ? 'published' : 'not published'}`) );
