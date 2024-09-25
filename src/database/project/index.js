@@ -591,6 +591,11 @@ class Project {
             uploadStream.end(async () => {
                 // Remove the timeout
                 if (timeout) clearTimeout(timeout);
+                // Check we actually loaded any frame
+                if (frameCount === 0) {
+                    logger.failLog(`💽 Failed to load any frame in trajectory file '${basename}' as '${filename}' [${uploadStream.id}] -> Check Gromacs is working fine`);
+                    reject();
+                }
                 // Display the end of this process as success in console
                 logger.successLog(
                     `💽 Loaded trajectory file '${basename}' as '${filename}' [${uploadStream.id}]\n(${frameCount} frames)`);
