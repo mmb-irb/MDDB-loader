@@ -432,7 +432,7 @@ class Project {
     // If so, check if we must delete it or conserve it
     forestallFileLoad = async (filename, mdIndex, conserve, overwrite) => {
         // Find the file summary
-        const alreadyExistingFile = findFile(filename, mdIndex);
+        const alreadyExistingFile = this.findFile(filename, mdIndex);
         // If the new file is not among the current files then there is no problem
         if (!alreadyExistingFile) return true;
         // In case it exists and the 'conserve' flag has been passed we end here
@@ -647,7 +647,7 @@ class Project {
     // Delete a file both from fs.files / fs.chunks and from the project data
     deleteFile = async (filename, mdIndex) => {
         // Find the file summary
-        const currentFile = findFile(filename, mdIndex);
+        const currentFile = this.findFile(filename, mdIndex);
         if (!currentFile) throw new Error(`File ${filename} is not in the available files list (MD index ${mdIndex})`);
         logger.startLog(`🗑️  Deleting file ${filename} <- ${currentFile.id}`);
         // Delete the file from fs.files and its chunks from fs.chunks using the file id
@@ -664,7 +664,7 @@ class Project {
     // Rename a file, both in the files collection and in project data
     renameFile = async (filename, mdIndex, newFilename) => {
         // Find the file summary
-        const currentFile = findFile(filename, mdIndex);
+        const currentFile = this.findFile(filename, mdIndex);
         if (!currentFile) throw new Error(`File ${filename} is not in the available files list (MD index ${mdIndex})`);
         logger.startLog(`📝 Renaming file ${filename} from MD with index ${mdIndex} (${currentFile.id}) as ${newFilename}`);
         // Update filename in the files collection document
@@ -686,7 +686,7 @@ class Project {
     // DANI: En teoría no existen los análisis de proyecto, pero le doy soporte porque me los pedirán pronto (imagino)
     forestallAnalysisLoad = async (name, mdIndex, conserve, overwrite) => {
         // Find the already existing analysis, if any
-        const alreadyExistingAnalysis = findAnalysis(name, mdIndex);;
+        const alreadyExistingAnalysis = this.findAnalysis(name, mdIndex);;
         // If the new analysis is not among the current analyses then there is no problem
         if (!alreadyExistingAnalysis) return true;
         // In case it exists and the 'conserve' flag has been passed we end here
@@ -738,7 +738,7 @@ class Project {
     // Delete an analysis both from its collection and from the project data
     deleteAnalysis = async (name, mdIndex) => {
         // Get the current analysis
-        const currentAnalysis = findAnalysis(name, mdIndex);
+        const currentAnalysis = this.findAnalysis(name, mdIndex);
         if (!currentAnalysis) throw new Error(`Analysis ${name} is not in the available analyses list (MD index ${mdIndex})`);
         logger.startLog(`🗑️  Deleting analysis ${name} (MD index ${mdIndex})`);
         // Delete the current analysis from the database
