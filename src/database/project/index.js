@@ -234,7 +234,7 @@ class Project {
     // Return null if all MDs are removed
     setNewReferenceMD = async () => {
         // Get available MDs to offer to the user as possible reference MDs
-        const availableMDIndices = findAvailableMDIndices();
+        const availableMDIndices = this.findAvailableMDIndices();
         // If there are no available MDs then return null
         if (availableMDIndices.length === 0) {
             console.log('There are no more available MDs left. Reference MD will become null');
