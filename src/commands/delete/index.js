@@ -66,11 +66,18 @@ const deleteFunction = async (
         const projectId = target.document.project;
         project = await database.syncProject(projectId);
         if (!project) throw new Error(`Parent project ${projectId} not found. Is the analysis orphan?`);
-        // Get the MD name
-        const mdIndex = target.document.md;
-        const mdName = project.data.mds[mdIndex].name;
         // Get the analysis name
         const analysisName = target.document.name;
+        // Get the MD index
+        const mdIndex = target.document.md;
+        // Make sure the parent recognizes this analysis as one of its own
+        const currentAnalysis = await project.findAnalysis(analysisName, mdIndex);
+        if (!currentAnalysis || currentAnalysis.id.toString() !== id.toString()) {
+            console.log('WARNING: The parent project does not recognize this analysis as one of its own');
+            target.collectionKey = 'bastardAnalyses';
+        }
+        // Get the MD name
+        const mdName = project.data.mds[mdIndex].name;
         // Log the summary
         console.log(`About to delete ${documentName} "${analysisName}" of project ${project.accession}, ${mdName}`);
     }
@@ -80,11 +87,18 @@ const deleteFunction = async (
         const projectId = target.document.metadata.project;
         project = await database.syncProject(projectId);
         if (!project) throw new Error(`Parent project ${projectId} not found. Is the file orphan?`);
-        // Get the MD name
-        const mdIndex = target.document.metadata.md;
-        const mdName = project.data.mds[mdIndex].name;
         // Get the analysis name
         const filename = target.document.filename;
+        // Get the MD index
+        const mdIndex = target.document.metadata.md;
+        // Make sure the parent recognizes this file as one of its own
+        const currentFile = await project.findFile(filename, mdIndex);  
+        if (!currentFile || currentFile.id.toString() !== id.toString()) {
+            console.log('WARNING: The parent project does not recognize this file as one of its own');
+            target.collectionKey = 'bastardFiles';
+        }
+        // Get the MD name
+        const mdName = project.data.mds[mdIndex].name;
         // Log the summary
         console.log(`About to delete ${documentName} "${filename}" of project ${project.accession}, ${mdName}`);
     }
@@ -107,11 +121,21 @@ const deleteFunction = async (
         const mdIndex = target.document.md;
         return await project.deleteAnalysis(name, mdIndex);
     }
-    // ----- Files -----
+    // ----- Analysis not recognized by their parent -----
+    if (target.collectionKey === 'bastardAnalyses') {
+        const result = await database.analyses.deleteOne(id);
+        if (!result) throw new Error(`Failed to delete analysis with internal ID ${id}`);
+        return;
+    }
+    // ----- File -----
     if (target.collectionKey === 'files') {
         const filename = target.document.filename;
         const mdIndex = target.document.metadata.md;
         return await project.deleteFile(filename, mdIndex);
+    }
+    // ----- File not recognized by their parent -----
+    if (target.collectionKey === 'bastardFiles') {
+        return await database.bucket.delete(id);
     }
     throw new Error(`Deletion of ${documentName} is not yet supported`);
 };
