@@ -234,7 +234,7 @@ class Project {
     // Return null if all MDs are removed
     setNewReferenceMD = async () => {
         // Get available MDs to offer to the user as possible reference MDs
-        const availableMDIndices = findAvailableMDIndices();
+        const availableMDIndices = this.findAvailableMDIndices();
         // If there are no available MDs then return null
         if (availableMDIndices.length === 0) {
             console.log('There are no more available MDs left. Reference MD will become null');
@@ -431,9 +431,8 @@ class Project {
     // Check if there is a previous file with the same name
     // If so, check if we must delete it or conserve it
     forestallFileLoad = async (filename, mdIndex, conserve, overwrite) => {
-        // Get a list of available files
-        const availableFiles = this.getAvailableFiles(mdIndex);
-        const alreadyExistingFile = availableFiles.find(file => file.name === filename);
+        // Find the file summary
+        const alreadyExistingFile = await this.findFile(filename, mdIndex);
         // If the new file is not among the current files then there is no problem
         if (!alreadyExistingFile) return true;
         // In case it exists and the 'conserve' flag has been passed we end here
@@ -591,6 +590,14 @@ class Project {
             uploadStream.end(async () => {
                 // Remove the timeout
                 if (timeout) clearTimeout(timeout);
+                // Check we actually loaded any frame
+                if (frameCount === 0) {
+                    // Delete the wrong trajectory entry
+                    // WARNING: If not deleted here, it would create a duplicate entry
+                    await this.database.bucket.delete(uploadStream.id);
+                    logger.failLog(`💽 Failed to load any frame in trajectory file '${basename}' as '${filename}' [${uploadStream.id}] -> Check Gromacs is working fine`);
+                    reject();
+                }
                 // Display the end of this process as success in console
                 logger.successLog(
                     `💽 Loaded trajectory file '${basename}' as '${filename}' [${uploadStream.id}]\n(${frameCount} frames)`);
@@ -629,12 +636,19 @@ class Project {
         });
     };
 
-    // Delete a file both from fs.files / fs.chunks and from the project data
-    deleteFile = async (filename, mdIndex) => {
+    // Find a file in this project
+    findFile = async (filename, mdIndex) => {
         // Get a list of available files
         const availableFiles = this.getAvailableFiles(mdIndex);
         // Find the file summary
-        const currentFile = availableFiles.find(file => file.name === filename);
+        return availableFiles.find(file => file.name === filename);
+    }
+
+    // Delete a file both from fs.files / fs.chunks and from the project data
+    deleteFile = async (filename, mdIndex) => {
+        // Find the file summary
+        const currentFile = await this.findFile(filename, mdIndex);
+        console.log(currentFile);
         if (!currentFile) throw new Error(`File ${filename} is not in the available files list (MD index ${mdIndex})`);
         logger.startLog(`🗑️  Deleting file ${filename} <- ${currentFile.id}`);
         // Delete the file from fs.files and its chunks from fs.chunks using the file id
@@ -650,10 +664,8 @@ class Project {
 
     // Rename a file, both in the files collection and in project data
     renameFile = async (filename, mdIndex, newFilename) => {
-        // Get a list of available files
-        const availableFiles = this.getAvailableFiles(mdIndex);
         // Find the file summary
-        const currentFile = availableFiles.find(file => file.name === filename);
+        const currentFile = await this.findFile(filename, mdIndex);
         if (!currentFile) throw new Error(`File ${filename} is not in the available files list (MD index ${mdIndex})`);
         logger.startLog(`📝 Renaming file ${filename} from MD with index ${mdIndex} (${currentFile.id}) as ${newFilename}`);
         // Update filename in the files collection document
@@ -674,10 +686,8 @@ class Project {
     // If so, check if we must delete it or conserve it
     // DANI: En teoría no existen los análisis de proyecto, pero le doy soporte porque me los pedirán pronto (imagino)
     forestallAnalysisLoad = async (name, mdIndex, conserve, overwrite) => {
-        // Check the current available analyses
-        // Get a list of available analyses
-        const availableAnalyses = this.getAvailableAnalyses(mdIndex);
-        const alreadyExistingAnalysis = availableAnalyses.find(analysis => analysis.name === name);
+        // Find the already existing analysis, if any
+        const alreadyExistingAnalysis = await this.findAnalysis(name, mdIndex);;
         // If the new analysis is not among the current analyses then there is no problem
         if (!alreadyExistingAnalysis) return true;
         // In case it exists and the 'conserve' flag has been passed we end here
@@ -718,11 +728,18 @@ class Project {
         });
     }
 
+    // Find an analysis in this project
+    findAnalysis = async (name, mdIndex) => {
+        // Get a list of available analyses
+        const availableAnalyses = this.getAvailableAnalyses(mdIndex);
+        // Find the analysis summary
+        return availableAnalyses.find(analysis => analysis.name === name);
+    }
+
     // Delete an analysis both from its collection and from the project data
     deleteAnalysis = async (name, mdIndex) => {
-        // Get the current analysis entry analyses
-        const availableAnalyses = this.getAvailableAnalyses(mdIndex);
-        const currentAnalysis = availableAnalyses.find(analysis => analysis.name === name);
+        // Get the current analysis
+        const currentAnalysis = await this.findAnalysis(name, mdIndex);
         if (!currentAnalysis) throw new Error(`Analysis ${name} is not in the available analyses list (MD index ${mdIndex})`);
         logger.startLog(`🗑️  Deleting analysis ${name} (MD index ${mdIndex})`);
         // Delete the current analysis from the database
