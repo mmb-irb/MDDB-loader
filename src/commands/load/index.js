@@ -58,7 +58,6 @@ const load = async (
     conserve,
     overwrite,
     skipChains,
-    skipMetadata,
     skipTrajectories,
     skipFiles,
     skipAnalyses,
@@ -188,7 +187,7 @@ const load = async (
 
   // Load project metadata, which is expected to have most of the metadata
   const projectMetadataFile = categorizedProjectFiles.metadataFile;
-  if ( !skipMetadata && projectMetadataFile ) {
+  if (projectMetadataFile) {
     console.log('Loading project metadata');
     const projectMetadataFilepath = projectDirectory + projectMetadataFile;
     const projectMetadata = await loadJSON(projectMetadataFilepath);
@@ -287,33 +286,42 @@ const load = async (
 
   // Iterate over the different MD directores
   for await (const mdir of mdDirectories) {
-    // Get the MD directory basename
-    const mdirBasename = getBasename(mdir);
-    const mdName = mdirBasename.replaceAll('_', ' ');
+
+    // Get the MD directory files
+    const directoryFiles = categorizedMdFiles[mdir];
+
+    // Load the MD metadata
+    // Get the metadata filename and if it is missing then skip the load
+    const mdMetadataFile = directoryFiles.metadataFile;
+    if (!mdMetadataFile) {
+      console.log(chalk.red(`MD directory '${mdir}' has no metadata so the load will be skipped`));
+      continue;
+    }
+    
+    // Load the metadata file
+    const mdMetadata = await loadJSON(mdir + '/' + mdMetadataFile);
+    if (!mdMetadata) throw new Error(`There is something wrong with the MD metadata file in ${mdir}`);
+
+    // Get the MD name form the metadata
+    let mdName = mdMetadata.name;
+    // If it is missing then guess it from the directory name
+    if (!mdName) {
+      const mdirBasename = getBasename(mdir);
+      mdName = mdirBasename.replaceAll('_', ' ');
+    }
+
     // If the project already exists then search for an already existing MD with the same name
     const alreadyExistingMdIndex = isNew === false && project.data.mds.findIndex(md => md.name === mdName);
     const mdExists = typeof alreadyExistingMdIndex === 'number' && alreadyExistingMdIndex !== -1;
     // Set the MD index both if it already exists or if it is a new MD
     const mdIndex = mdExists ? alreadyExistingMdIndex : project.data.mds.length;
     if (mdIndex === -1) throw new Error(`Non-existent MD name: ${mdName}`);
-    console.log(chalk.cyan(`== MD directory '${mdirBasename}' named as '${mdName}' (MD index ${mdIndex})`));
+    console.log(chalk.cyan(`== MD directory '${mdir}' named as '${mdName}' (MD index ${mdIndex})`));
     // If the MD does not exist then add it to the project data
     if (!project.data.mds[mdIndex]) await project.addMDirectory(mdName);
-    // Get the MD directory files
-    const directoryFiles = categorizedMdFiles[mdir];
 
-    // ---- Metadata ----
-
-    // Load the MD metadata if it is not to be skipped
-    // Get the metadata filename and if it is missing then skip the load
-    const mdMetadataFile = directoryFiles.metadataFile;
-    if (!skipMetadata && mdMetadataFile) {
-      console.log('Loading MD metadata');
-      // Load the metadata file
-      const mdMetadata = await loadJSON(mdir + '/' + mdMetadataFile);
-      if (!mdMetadata) throw new Error(`There is something wrong with the MD metadata file in ${mdirBasename}`);
-      await project.updateMdMetadata(mdMetadata, mdIndex, conserve, overwrite);
-    }
+    // Finally load the rest of the metadata
+    await project.updateMdMetadata(mdMetadata, mdIndex, conserve, overwrite);
 
     // Check if the load has been aborted at this point
     await checkAbort();

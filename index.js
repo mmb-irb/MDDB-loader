@@ -81,13 +81,6 @@ yargs
                 type: 'boolean',
                 default: false,
             })
-            // --skip-metadata
-            .option('sm', {
-                alias: 'skip-metadata',
-                description: 'Skip the metadata load (metadata.json)',
-                type: 'boolean',
-                default: false,
-            })
             // --skip-trajectories
             .option('st', {
                 alias: 'skip-trajectories',
