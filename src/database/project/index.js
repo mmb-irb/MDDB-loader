@@ -432,7 +432,7 @@ class Project {
     // If so, check if we must delete it or conserve it
     forestallFileLoad = async (filename, mdIndex, conserve, overwrite) => {
         // Find the file summary
-        const alreadyExistingFile = await this.findFile(filename, mdIndex);
+        const alreadyExistingFile = this.findFile(filename, mdIndex);
         // If the new file is not among the current files then there is no problem
         if (!alreadyExistingFile) return true;
         // In case it exists and the 'conserve' flag has been passed we end here
@@ -637,7 +637,7 @@ class Project {
     };
 
     // Find a file in this project
-    findFile = async (filename, mdIndex) => {
+    findFile = (filename, mdIndex) => {
         // Get a list of available files
         const availableFiles = this.getAvailableFiles(mdIndex);
         // Find the file summary
@@ -646,9 +646,11 @@ class Project {
 
     // Delete a file both from fs.files / fs.chunks and from the project data
     deleteFile = async (filename, mdIndex) => {
+        // Get a list of available files
+        const availableFiles = this.getAvailableFiles(mdIndex);
         // Find the file summary
-        const currentFile = await this.findFile(filename, mdIndex);
-        console.log(currentFile);
+        const currentFile = availableFiles.find(file => file.name === filename);
+        // Find the file summary
         if (!currentFile) throw new Error(`File ${filename} is not in the available files list (MD index ${mdIndex})`);
         logger.startLog(`🗑️  Deleting file ${filename} <- ${currentFile.id}`);
         // Delete the file from fs.files and its chunks from fs.chunks using the file id
@@ -665,7 +667,7 @@ class Project {
     // Rename a file, both in the files collection and in project data
     renameFile = async (filename, mdIndex, newFilename) => {
         // Find the file summary
-        const currentFile = await this.findFile(filename, mdIndex);
+        const currentFile = this.findFile(filename, mdIndex);
         if (!currentFile) throw new Error(`File ${filename} is not in the available files list (MD index ${mdIndex})`);
         logger.startLog(`📝 Renaming file ${filename} from MD with index ${mdIndex} (${currentFile.id}) as ${newFilename}`);
         // Update filename in the files collection document
