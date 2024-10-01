@@ -505,7 +505,7 @@ class Project {
             // Promise is not resolved if the readable stream returns error
             readStream.on('error', () => {
                 const progress = Math.round((currentData / totalData) * 10000) / 100;
-                logger.failLog(`💽 Failed to load file ${databaseFilename} -> ${uploadStream.id} at ${progress} %`);
+                logger.failLog(`💽 Failed to load file ${filename} -> ${uploadStream.id} at ${progress} %`);
                 reject();
             });
             // Output the percentaje of data already loaded to the logs
