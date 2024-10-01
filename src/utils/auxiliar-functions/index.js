@@ -27,7 +27,7 @@ const mongoidFormat = new RegExp('^[0-9a-f]{24}$');
 // Set some constants
 
 // Set problematic signs for directory/folder names
-FORBIDEN_DIRECTORY_CHARACTERS = ['.', ',', ';', ':'];
+FORBIDEN_DIRECTORY_CHARACTERS = ['.', ',', ';', ':', 'º'];
 
 // Throw a question for the user trough the console
 // Await for the user to confirm

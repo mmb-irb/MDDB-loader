@@ -16,7 +16,8 @@ const {
     userConfirmDataLoad,
     getBasename,
     getMimeTypeFromFilename,
-    getValueGetter
+    getValueGetter,
+    mdNameToDirectory
 } = require('../../utils/auxiliar-functions');
 // Get metadata handlers
 const { merge_metadata } = require('./metadata-handlers');
@@ -162,13 +163,44 @@ class Project {
         }
     }
 
+    // Get the index of an already existing MD or null
+    // To find the MD, guess its name using a directory
+    findMDIndexByDirectory = directory => {
+        // Get the last directory in the path
+        const basename = getBasename(directory);
+        // For every MD, find out the directory it should have according to its name
+        // Then check if it matches the requested directory
+        // Otherwise return null and asume it is a new MD
+        // Note that directories cannot be back-mapped to names since they may be missing forbidden characters
+        for (const [mdIndex, md] of Object.entries(this.data.mds)) {
+            const mdDirectory = mdNameToDirectory(md.name);
+            if (mdDirectory === basename) return mdIndex;
+        }
+        return null;
+    }
+
+    // Get the index of an already existing MD or null
+    // To find the MD, use its name
+    findMDIndexByName = name => {
+        // For every MD, find out the directory it should have according to its name
+        // Then check if it matches the requested directory
+        // Otherwise return null and asume it is a new MD
+        // Note that directories cannot be back-mapped to names since they may be missing forbidden characters
+        for (const [mdIndex, md] of Object.entries(this.data.mds)) {
+            if (md.name === name) return mdIndex;
+        }
+        return null;
+    }
+
     // Add a new MD directory to the current project
-    addMDirectory = async name => {
+    addMDirectory = async metadata => {
+        // Set the index of the new MD
+        const mdIndex = this.data.mds.length;
         // Create the new MD object and add it to project data
-        const md = { name: name, files: [], analyses: [] };
+        const md = { name: undefined, files: [], analyses: [] };
         this.data.mds.push(md);
         // Update the remote
-        await this.updateRemote();
+        await this.updateMdMetadata(metadata, mdIndex, false, false);
     }
 
     // Remove an existing MD directory
