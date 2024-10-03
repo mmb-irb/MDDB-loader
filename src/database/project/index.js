@@ -167,7 +167,7 @@ class Project {
     // To find the MD, guess its name using a directory
     findMDIndexByDirectory = directory => {
         // Get the last directory in the path
-        const basename = getBasename(directory);
+        const basename = getBasename(directory).toLowerCase();
         // For every MD, find out the directory it should have according to its name
         // Then check if it matches the requested directory
         // Otherwise return null and asume it is a new MD
@@ -721,7 +721,7 @@ class Project {
     // DANI: En teoría no existen los análisis de proyecto, pero le doy soporte porque me los pedirán pronto (imagino)
     forestallAnalysisLoad = async (name, mdIndex, conserve, overwrite) => {
         // Find the already existing analysis, if any
-        const alreadyExistingAnalysis = await this.findAnalysis(name, mdIndex);;
+        const alreadyExistingAnalysis = this.findAnalysis(name, mdIndex);
         // If the new analysis is not among the current analyses then there is no problem
         if (!alreadyExistingAnalysis) return true;
         // In case it exists and the 'conserve' flag has been passed we end here
@@ -763,7 +763,7 @@ class Project {
     }
 
     // Find an analysis in this project
-    findAnalysis = async (name, mdIndex) => {
+    findAnalysis = (name, mdIndex) => {
         // Get a list of available analyses
         const availableAnalyses = this.getAvailableAnalyses(mdIndex);
         // Find the analysis summary
@@ -772,8 +772,10 @@ class Project {
 
     // Delete an analysis both from its collection and from the project data
     deleteAnalysis = async (name, mdIndex) => {
+        // Get a list of available analyses
+        const availableAnalyses = this.getAvailableAnalyses(mdIndex);
         // Get the current analysis
-        const currentAnalysis = await this.findAnalysis(name, mdIndex);
+        const currentAnalysis = availableAnalyses.find(analysis => analysis.name === name);
         if (!currentAnalysis) throw new Error(`Analysis ${name} is not in the available analyses list (MD index ${mdIndex})`);
         logger.startLog(`🗑️  Deleting analysis ${name} (MD index ${mdIndex})`);
         // Delete the current analysis from the database

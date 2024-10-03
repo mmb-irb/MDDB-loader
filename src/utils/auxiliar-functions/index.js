@@ -94,7 +94,7 @@ const getGromacsCommand = command => {
 // Translate a MD name to a MD directory
 const mdNameToDirectory = name => {
     // Make all letters lower and replace white spaces by underscores
-    let directory = name.toLowerCase().replace(' ', '_');
+    let directory = name.toLowerCase().replaceAll(' ', '_');
     // Remove problematic characters
     for (const character of FORBIDEN_DIRECTORY_CHARACTERS) {
         directory = directory.replace(character, '');

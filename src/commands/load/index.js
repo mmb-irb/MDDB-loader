@@ -33,7 +33,7 @@ const analyzeProteins = require('./protein-analyses');
 const { leaveTrace, findTrace, removeTrace } = require('./project-id-trace');
 
 // Given a analysis filename, get the name of the analysis from the filename itself
-const ANALYSIS_PATTERN = new RegExp('mda.([A-Za-z0-9_-]*).json$');
+const ANALYSIS_PATTERN = new RegExp('^mda.([A-Za-z0-9_-]*).json$');
 const nameAnalysis = filename => {
   // Mine the file name without header and without extension tail
   const match = filename.match(ANALYSIS_PATTERN);
