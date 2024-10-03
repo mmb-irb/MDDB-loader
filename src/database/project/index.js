@@ -174,7 +174,8 @@ class Project {
         // Note that directories cannot be back-mapped to names since they may be missing forbidden characters
         for (const [mdIndex, md] of Object.entries(this.data.mds)) {
             const mdDirectory = mdNameToDirectory(md.name);
-            if (mdDirectory === basename) return mdIndex;
+            // Make sure the MD index is numeric or silent errors will happen
+            if (mdDirectory === basename) return +mdIndex;
         }
         return null;
     }
@@ -187,7 +188,8 @@ class Project {
         // Otherwise return null and asume it is a new MD
         // Note that directories cannot be back-mapped to names since they may be missing forbidden characters
         for (const [mdIndex, md] of Object.entries(this.data.mds)) {
-            if (md.name === name) return mdIndex;
+            // Make sure the MD index is numeric or silent errors will happen
+            if (md.name === name) return +mdIndex;
         }
         return null;
     }
