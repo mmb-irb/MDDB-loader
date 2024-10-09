@@ -48,6 +48,16 @@ const getSpinner = () => {
       instance.running = false;
       return this;
     },
+    // Warn - Display a warning sign
+    warn(text, ...args) {
+      instance.warn(
+        // Return the time spent in this instance from start to fail
+        `${text || instance.text} (${prettyMs(Date.now() - instance.time)})`,
+        ...args,
+      );
+      instance.running = false;
+      return this;
+    },
     // Fail - Display a red cross
     fail(text, ...args) {
       instance.fail(
@@ -70,9 +80,10 @@ const logger = {
     startLog: message => spinnerRef.current = getSpinner().start(message),
     updateLog: message => spinnerRef.current.text = message,
     successLog: message => spinnerRef.current.succeed(message),
+    warnLog: message => spinnerRef.current.warn(message),
     failLog: message => {
-        spinnerRef.current.fail(message);
-        throw new Error(message);
+      spinnerRef.current.fail(message);
+      throw new Error(message);
     },
     logText: () => spinnerRef.current.text,
     logTime: () => spinnerRef.current.time,
