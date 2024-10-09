@@ -687,11 +687,20 @@ class Project {
         // Find the file summary
         if (!currentFile) throw new Error(`File ${filename} is not in the available files list (MD index ${mdIndex})`);
         logger.startLog(`🗑️  Deleting file ${filename} <- ${currentFile.id}`);
-        // Delete the file from fs.files and its chunks from fs.chunks using the file id
-        // GridFSBucket.delete has no callback but when it fails (i.e. file not found) it kills the process
-        // https://mongodb.github.io/node-mongodb-native/6.3/classes/GridFSBucket.html#delete
-        await this.database.bucket.delete(currentFile.id);
-        logger.successLog(`🗑️  Deleted file ${filename} <- ${currentFile.id}`);
+        const fileCursor = await this.database.bucket.find(currentFile.id);
+        const targetFile = await fileCursor.next();
+        // The file should always exist at this point, but make sure it does
+        if (targetFile) {
+            // Delete the file from fs.files and its chunks from fs.chunks using the file id
+            // GridFSBucket.delete has no callback but when it fails (i.e. file not found) it kills the process
+            // https://mongodb.github.io/node-mongodb-native/6.3/classes/GridFSBucket.html#delete
+            await this.database.bucket.delete(currentFile.id);
+            logger.successLog(`🗑️  Deleted file ${filename} <- ${currentFile.id}`);
+        }
+        // However a desynchronization between projects and fs.files may happen if the loader is abuptly interrupted
+        else {
+            logger.warnLog(`🗑️  File ${filename} does not exist already <- ${currentFile.id}`);
+        }
         // Remove the current file entry from the files list and update the project
         const fileIndex = availableFiles.indexOf(currentFile);
         availableFiles.splice(fileIndex, 1);
