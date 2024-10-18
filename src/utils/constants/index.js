@@ -6,7 +6,7 @@ module.exports = {
     EXPECTED_PROJECT_FILE: {
         // Metadata file, one for project
         metadataFile: {
-            pattern: /metadata.json$/i,
+            pattern: /^metadata.json$/i,
             singleFile: true,
         },
         // Topology files, one for project

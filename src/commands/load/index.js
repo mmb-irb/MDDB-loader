@@ -32,6 +32,19 @@ const analyzeProteins = require('./protein-analyses');
 // Get project id trace handlers
 const { leaveTrace, findTrace, removeTrace } = require('./project-id-trace');
 
+// Set some essential files we need for a new entry to work in the web client
+// Keys correspond to the file keys in the file categorizer
+// Values correspond to the human-firendly label to be shown in the logs when they are missing
+const ESSENTIAL_PROJECT_FILES = {
+  metadataFile: 'project metadata file',
+  topologyDataFile: 'project topology data file'
+};
+const ESSENTIAL_MD_FILES = {
+  metadataFile: 'MD metadata file',
+  structureFile: 'MD structure file',
+  mainTrajectory: 'MD trajectory file'
+};
+
 // Given a analysis filename, get the name of the analysis from the filename itself
 const ANALYSIS_PATTERN = new RegExp('^mda.([A-Za-z0-9_-]*).json$');
 const nameAnalysis = filename => {
@@ -112,6 +125,29 @@ const load = async (
   // Classification is performed according to file names
   const [categorizedProjectFiles, categorizedMdFiles] = await categorizeFiles(projectFiles, mdFiles);
 
+  // Set a function to verify we have the essential files required for the project to run flawlessly in the web
+  // Do not run it yet, since we only care about this if it is a new project load
+  const hasEssentials = () => {
+    const missingFiles = [];
+    // Check project files
+    for (const [essentialFile, logMessage] of Object.entries(ESSENTIAL_PROJECT_FILES)) {
+      if (!categorizedProjectFiles[essentialFile]) missingFiles.push(logMessage);
+    }
+    // Iterate MDs
+    for (const [mdDirectory, availableMdFiles] of Object.entries(categorizedMdFiles)) {
+      // Check MD files
+      for (const [essentialFile, logMessage] of Object.entries(ESSENTIAL_MD_FILES)) {
+        if (!availableMdFiles[essentialFile]) missingFiles.push(`${logMessage} in ${mdDirectory}`);
+      }
+    }
+    // If we are missing at least 1 file then log it and return false
+    if (missingFiles.length > 0) {
+      console.log('Missing essential files: ' + missingFiles.join(', '));
+      return false
+    }
+    return true;
+  };
+
   // Read the inputs file
   // Inputs file is not to be loaded but it may contain parameters which are to be considered during the load
   const inputsFile = categorizedProjectFiles.inputsFile;
@@ -139,6 +175,8 @@ const load = async (
       // If the project exists then we sync it
       const alreadyExistingProject = await database.syncProject(forcedAccession);
       if (alreadyExistingProject) return alreadyExistingProject;
+      // Check we have the essentials
+      if (!hasEssentials()) throw new Error(`Missing essential files`);
       // If the project does not exist then create it and set its accession as requested
       isNewProject = true;
       return await database.createProject(forcedAccession);
@@ -154,6 +192,8 @@ const load = async (
       console.log(chalk.yellow(`WARNING: There was a trace of project '${trace}' but it does not exist anymore`));
       removeTrace(projectDirectory);
     }
+    // Check we have the essentials
+    if (!hasEssentials()) throw new Error(`Missing essential files`);
     // If there is no valid predefined accession then create a new project with a default formatted accession
     isNewProject = true;
     return await database.createProject();
