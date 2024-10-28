@@ -23,15 +23,20 @@ module.exports = {
             pattern: /^topology.json$/i,
             singleFile: true,
         },
-        // The references data file, one for project
+        // The protein references data file, one for project
         referencesDataFile: {
             pattern: /^references.json$/i,
             singleFile: true,
         },
-        // Inputs file, which is not to be loaded but simply readed
+        // The ligand references data file, one for project
         ligandsDataFile: {
-        pattern: /^ligands.json$/i,
-        singleFile: true,
+            pattern: /^ligands.json$/i,
+            singleFile: true,
+        },
+        // The PDB references data file, one for project
+        pdbRefDataFile: {
+            pattern: /^pdb_references.json$/i,
+            singleFile: true,
         },
         // The populations data file, one for project
         populationsDataFile: {

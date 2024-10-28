@@ -62,6 +62,10 @@ class Database {
             name: 'ligands',
             documentNames: { singular: 'ligand', plural: 'ligands' },
         },
+        pdb_refs: {
+            name: 'pdb_refs',
+            documentNames: { singular: 'PDB', plural: 'PDBs' },
+        },
         topologies: {
             name: 'topologies',
             index: { project: 1 },
@@ -106,6 +110,11 @@ class Database {
             collection: 'ligands',
             idField: 'pubchem',
             projectIdsField: 'metadata.LIGANDS'
+        },
+        pdb_refs: {
+            collection: 'pdb_refs',
+            idField: 'id',
+            projectIdsField: 'metadata.PDBIDS'
         }
     };
 
@@ -371,6 +380,7 @@ class Database {
         projects: null, // Projects have no parent
         references: { collectionKey: 'projects', referenceField: 'metadata.REFERENCES', localField: 'uniprot' },
         ligands: { collectionKey: 'projects', referenceField: 'metadata.LIGANDS', localField: 'pubchem' },
+        pdb_refs: { collectionKey: 'projects', referenceField: 'metadata.PDBIDS', localField: 'id' },
         topologies: { collectionKey: 'projects', referenceField: '_id', localField: 'project' },
         files: { collectionKey: 'projects', referenceField: '_id', localField: 'metadata.project' },
         chunks: { collectionKey: 'files', referenceField: '_id', localField: 'files_id' },

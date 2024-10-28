@@ -243,7 +243,8 @@ const load = async (
   // Set the input files to be read for every different reference type
   const referenceInputDataFiles = {
     proteins: categorizedProjectFiles.referencesDataFile,
-    ligands: categorizedProjectFiles.ligandsDataFile
+    ligands: categorizedProjectFiles.ligandsDataFile,
+    pdb_refs: categorizedProjectFiles.pdbRefDataFile
   };
 
   // Iterate the different type of references (proteins, ligands)
