@@ -803,6 +803,21 @@ class Project {
         await this.updateRemote();
     }
 
+    // Rename an analysis, both in the analyses collection and in project data
+    renameAnalysis = async (oldName, mdIndex, newName) => {
+        // Find the analysis document
+        const currentAnalysis = this.findAnalysis(oldName, mdIndex);
+        if (!currentAnalysis) throw new Error(`Analysis ${oldName} is not in the available analyses list (MD index ${mdIndex})`);
+        logger.startLog(`📝 Renaming analysis ${oldName} from MD with index ${mdIndex} (${currentAnalysis.id}) as ${newName}`);
+        // Update analysis name in the analyses collection document
+        const result = await this.database.analyses.findOneAndUpdate({ _id: currentAnalysis.id }, { $set: { name: newName }});
+        if (result.acknowledged === false) return logger.failLog(`📝 Failed to renamed analysis ${oldName} from MD with index ${mdIndex} (${currentAnalysis.id}) as ${newName}`);
+        logger.successLog(`📝 Renamed analysis ${oldName} from MD with index ${mdIndex} (${currentAnalysis.id}) as ${newName}`);
+        // Rename the analysis object name and update the project
+        currentAnalysis.name = newName;
+        await this.updateRemote();
+    }
+
     // Set if the project is to be published
     setPublished = async published => {
         // If project is already in the desired status then do nothing

@@ -150,9 +150,17 @@ class Database {
         // WARNING: Here we must kill the process if the input id or accession is undefined or null
         // WARNING: The query would just return the first project in the database which is very dangerous
         if (!idOrAccession) throw new Error('Missing ID or Accession');
-        // If it is an accession we have to query in a specific format
+        // Set the project query
+        let query;
         // If it is an object id we can directly query with it
-        const query = mongoidFormat.test(idOrAccession) ? idOrAccession : { accession: idOrAccession };
+        if (mongoidFormat.test(idOrAccession)) {
+            // If it is a mongo object id already then use it as is
+            if (idOrAccession.constructor === ObjectId) query = idOrAccession;
+            // If it is a string the set the mongo object id from it
+            else query = new ObjectId(idOrAccession);
+        }
+        // If it is an accession we have to query in a specific format
+        else query = { accession: idOrAccession };
         // Find the already existing project in mongo
         const projectData = await this.projects.findOne(query);
         return projectData;
