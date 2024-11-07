@@ -115,6 +115,11 @@ class Database {
             collection: 'pdb_refs',
             idField: 'id',
             projectIdsField: 'metadata.PDBIDS'
+        },
+        chains: {
+            collection: 'chains',
+            idField: 'sequence',
+            projectIdsField: 'metadata.PROTSEQ'
         }
     };
 
