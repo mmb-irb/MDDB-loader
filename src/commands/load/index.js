@@ -28,7 +28,6 @@ const {
 } = require('./handle-directories');
 const findAllFiles = require('./find-all-files');
 const categorizeFiles = require('./categorize-files');
-const analyzeProteins = require('./protein-analyses');
 // Get project id trace handlers
 const { leaveTrace, findTrace, removeTrace } = require('./project-id-trace');
 
@@ -70,7 +69,6 @@ const load = async (
     exclude,
     conserve,
     overwrite,
-    skipChains,
     skipTrajectories,
     skipFiles,
     skipAnalyses,
@@ -205,21 +203,6 @@ const load = async (
   // Leave a trace of the project id
   leaveTrace(projectDirectory, project.id);
 
-  // Send data to the IPS and HMMER web pages to get it analized and retrieve the results
-  // One analysis is performed for each protein chain
-  // Results are not awaited but the code keeps running since the analysis takes some time
-  // The resulting 'EBIJobs' is used later but it is not uploaded to mongo directly
-  let EBIJobs;
-  // Get any of the structure files
-  // Sequence should be same along the different MD directories
-  const sampleMd = mdDirectories[0];
-  const sampleMdFiles = categorizedMdFiles[sampleMd]
-  const sampleStructureFile = sampleMdFiles && sampleMdFiles.structureFile;
-  if ( !skipChains && sampleStructureFile && (await project.forestallChainsUpdate(conserve, overwrite)) ) {
-    const sampleStructurePath = sampleMd + sampleStructureFile;
-    EBIJobs = await analyzeProteins(sampleStructurePath, checkAbort, database);
-  }
-
   // Check if the load has been aborted at this point
   await checkAbort();
 
@@ -244,7 +227,8 @@ const load = async (
   const referenceInputDataFiles = {
     proteins: categorizedProjectFiles.referencesDataFile,
     ligands: categorizedProjectFiles.ligandsDataFile,
-    pdb_refs: categorizedProjectFiles.pdbRefDataFile
+    pdb_refs: categorizedProjectFiles.pdbRefDataFile,
+    chains: categorizedProjectFiles.chainRefDataFile
   };
 
   // Iterate the different type of references (proteins, ligands)
@@ -469,44 +453,6 @@ const load = async (
       }
     }
 
-  }
-
-  //throw new Error('Hasta aqui :)');
-
-  // Load the chains as soon as they are retrieved from the EBI
-  if (EBIJobs && EBIJobs.length) {
-    logger.startLog(`Retrieving ${plural('chain', EBIJobs.length, true)}, including from InterProScan and HMMER`);
-
-    // Track the number of finished 'chains'
-    let finished = 0;
-    await Promise.race([
-      Promise.all(
-        EBIJobs.map(([chain, job]) =>
-          job.then(async document => {
-            logger.updateLog(`Retrieved ${plural('chain', ++finished, true)} out of ${EBIJobs.length}, including from InterProScan and HMMER`);
-            // Sometimes, when chain sequences are repeated, chain may be e.g. 'A, B, C'
-            // In those cases we must load a new chain for each chain letter
-            const chains = chain.split(', ');
-            for await (const c of chains) {
-              // Update the database with the new analysis
-              await project.loadChain({ name: c, ...document });
-            }
-            return [chain, document];
-          }),
-        ),
-      ),
-      // Alternative promise for the Promise.race: A vigilant abort promise
-      // Check if the load has been aborted once per second
-      new Promise(async () => {
-        // Stay vigilant until the 'jobs' promise is resolved
-        while (true) {
-          await sleep(1000);
-          await checkAbort();
-        }
-      }),
-    ]);
-    // Finish the logger
-    logger.successLog(`Retrieved ${plural('chain', finished, true)}, including from InterProScan and HMMER`);
   }
 
   return () => {

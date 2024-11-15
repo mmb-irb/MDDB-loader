@@ -12,8 +12,6 @@ const cleanup = async (
     console.log(`⚠️  Make sure you are not loading data to the database when running a cleanup`);
     // Delete orphan references
     await database.deleteOrphanData('references', confirm);
-    // Delete orphan chains
-    await database.deleteOrphanData('chains', confirm);
     // Delete orphan topologies
     await database.deleteOrphanData('topologies', confirm);
     // Delete orphan analyses

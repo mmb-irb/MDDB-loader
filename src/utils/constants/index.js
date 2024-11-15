@@ -38,6 +38,11 @@ module.exports = {
             pattern: /^pdb_references.json$/i,
             singleFile: true,
         },
+        // The chain references data file, one for project
+        chainRefDataFile: {
+            pattern: /^chains.json$/i,
+            singleFile: true,
+        },
         // The populations data file, one for project
         populationsDataFile: {
             pattern: /^populations.json$/i,

@@ -59,10 +59,6 @@ class Project {
         // Show if there is a topology
         const topology = await this.getTopology();
         if (topology) console.log('- Topology');
-        // Show the number of chains
-        const chains = this.data.chains;
-        const chainCount = (chains && chains.length) || 0;
-        if (chainCount > 0) console.log(`- Chains: ${chainCount}`);
         // Show the number of project files and analyses
         const projectFiles = this.data.files;
         const projectFilesCount = (projectFiles && projectFiles.length) || 0;
@@ -113,9 +109,6 @@ class Project {
         // Delete the topology
         const topology = await this.getTopology();
         if (topology) await this.deleteTopology();
-        // Delete chains
-        const chains = this.data.chains || [];
-        if (chains.length > 0) await this.deleteChains();
         // Delete project files
         const projectFiles = this.data.files || [];
         // WARNING: The project files list is truncated as files are deleted and thus we can not iterate over it
@@ -310,60 +303,6 @@ class Project {
             return userRequestedMdIndex;
         }
     }
-
-    // Anticipate chains update
-    // Note that chains are updated (i.e. deleted and loaded) all together
-    forestallChainsUpdate = async (conserve = false, overwrite = false) => {
-        // Find the current chains value
-        const currentChains = this.data.chains;
-        // If there is no current value then there is no problem
-        if (!currentChains) return true;
-        // In case it is 'conserve', skip this part
-        // This is equal to always choosing the 'C' option
-        if (conserve) return false;
-        // Ask the user in case the overwrite flag was not passed
-        const confirm = overwrite ? true : await userConfirmDataLoad('Chains');
-        // If there was no confirmation then abort the process
-        if (!confirm) return false;
-        // If we had confirmation then proceed to delete current data
-        await this.deleteChains();
-        return true;
-    };
-
-    // Load a new chain
-    // WARNING: Note that this function will not check for previously existing chains with identical letter
-    // WARNING: This is done previously by the forestallChainsUpdate function
-    loadChain = async chainContent => {
-        // Add the project id to the chain content
-        chainContent.project = this.id;
-        // Upload the new topology
-        logger.startLog(`💽 Loading chain ${chainContent.name}`);
-        const result = await this.database.chains.insertOne(chainContent);
-        if (result.acknowledged === false) return logger.failLog(`💽 Failed to load chain ${chainContent.name}`);
-        logger.successLog(`💽 Loaded chain ${chainContent.name} -> ${result.insertedId}`);
-        // Update project data
-        if (!this.data.chains) this.data.chains = [];
-        this.data.chains.push(chainContent.name);
-        await this.updateRemote();
-        // Update the inserted data in case we need to revert the change
-        this.database.inserted_data.push({
-            name: 'new chain',
-            collection: this.database.chains,
-            id: result.insertedId
-        });
-    };
-
-    // Delete all current project chains
-    deleteChains = async () => {
-        logger.startLog(`🗑️  Deleting chains`);
-        // Delete previous chains
-        const result = await this.database.chains.deleteMany({ project: this.id });
-        if (result.acknowledged === false) return logger.failLog(`🗑️ Failed to delete chains`);
-        logger.successLog(`🗑️  Deleted chains`);
-        // Set project data chains as an empty list
-        this.data.chains = [];
-        await this.updateRemote();
-    };
 
     // Set a handler to update metadata
     // If no MD directory is passed then update project metadata

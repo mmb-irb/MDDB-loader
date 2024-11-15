@@ -74,13 +74,6 @@ yargs
                 description: 'Load all but the specified files',
                 type: 'array',
             })
-            // --skip-chains
-            .option('sc', {
-                alias: 'skip-chains',
-                description: 'Skip the InterProScan analysis for protein chain function',
-                type: 'boolean',
-                default: false,
-            })
             // --skip-trajectories
             .option('st', {
                 alias: 'skip-trajectories',

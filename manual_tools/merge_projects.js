@@ -85,10 +85,9 @@ const main = async () => {
         );
       }
     };
-    // If this project is not the remaining one then remove its project entry, topology and chains
+    // If this project is not the remaining one then remove its project entry and topology
     await database.projects.deleteOne(query);
     await database.topologies.deleteOne({ project: projectData._id });
-    await database.chains.deleteMany({ project: projectData._id });
   };
 
   // Set MDs for each project

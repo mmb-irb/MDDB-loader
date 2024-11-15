@@ -66,6 +66,10 @@ class Database {
             name: 'pdb_refs',
             documentNames: { singular: 'PDB', plural: 'PDBs' },
         },
+        chain_refs: {
+            name: 'chain_refs',
+            documentNames: { singular: 'chain', plural: 'chains' },
+        },
         topologies: {
             name: 'topologies',
             index: { project: 1 },
@@ -84,11 +88,6 @@ class Database {
             name: 'analyses',
             index: { project: 1 },
             documentNames: { singular: 'analysis', plural: 'analyses' },
-        },
-        chains: {
-            name: 'chains',
-            index: { project: 1 },
-            documentNames: { singular: 'chain', plural: 'chains' },
         },
         counters: {
             name: 'counters',
@@ -117,7 +116,7 @@ class Database {
             projectIdsField: 'metadata.PDBIDS'
         },
         chains: {
-            collection: 'chains',
+            collection: 'chain_refs',
             idField: 'sequence',
             projectIdsField: 'metadata.PROTSEQ'
         }
@@ -385,12 +384,12 @@ class Database {
         projects: null, // Projects have no parent
         references: { collectionKey: 'projects', referenceField: 'metadata.REFERENCES', localField: 'uniprot' },
         ligands: { collectionKey: 'projects', referenceField: 'metadata.LIGANDS', localField: 'pubchem' },
-        pdb_refs: { collectionKey: 'projects', referenceField: 'metadata.PDBIDS', localField: 'id' },
+        pdb_refs: { collectionKey: 'projects', referenceField: 'metadata.PROTSEQ', localField: 'sequence' },
+        chain_refs: { collectionKey: 'projects', referenceField: 'metadata.PDBIDS', localField: 'id' },
         topologies: { collectionKey: 'projects', referenceField: '_id', localField: 'project' },
         files: { collectionKey: 'projects', referenceField: '_id', localField: 'metadata.project' },
         chunks: { collectionKey: 'files', referenceField: '_id', localField: 'files_id' },
         analyses: { collectionKey: 'projects', referenceField: '_id', localField: 'project' },
-        chains: { collectionKey: 'projects', referenceField: '_id', localField: 'project' },
         counters: null // Counters are not related to anything
     }
 
