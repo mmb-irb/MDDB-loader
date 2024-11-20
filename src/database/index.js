@@ -110,7 +110,7 @@ class Database {
             idField: 'pubchem',
             projectIdsField: 'metadata.LIGANDS'
         },
-        pdb_refs: {
+        pdbs: {
             collection: 'pdb_refs',
             idField: 'id',
             projectIdsField: 'metadata.PDBIDS'
