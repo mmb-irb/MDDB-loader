@@ -83,7 +83,7 @@ class Project {
         if (mdFilesCount > 0) console.log(`- MD Files: ${mdFilesCount}`);
         if (mdAnalysesCount > 0) console.log(`- MD Analyses: ${mdAnalysesCount}`);
         // In case we produced no output say explicitly that the project is empty
-        if (!topology && chainCount === 0 && projectFilesCount === 0 && projectAnalysesCount === 0 &&
+        if (!topology && projectFilesCount === 0 && projectAnalysesCount === 0 &&
             mdCount === 0 && mdFilesCount === 0 && mdAnalysesCount === 0) console.log('  Project is empty');
     }
 
