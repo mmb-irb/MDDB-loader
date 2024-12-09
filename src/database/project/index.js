@@ -17,7 +17,8 @@ const {
     getBasename,
     getMimeTypeFromFilename,
     getValueGetter,
-    mdNameToDirectory
+    mdNameToDirectory,
+    loadJSON
 } = require('../../utils/auxiliar-functions');
 // Get metadata handlers
 const { merge_metadata } = require('./metadata-handlers');
@@ -422,8 +423,16 @@ class Project {
     loadFile = async (filename, mdIndex, sourceFilepath, abort) => {
         // Wrap all this function inside a promise which is resolved by the stream
         await new Promise((resolve, reject) => {
+            // If there is a metadata file associated to this file then load it
+            let additionalMetadata = {};
+            const metadataFilepath = sourceFilepath + '.meta.json';
+            const metadataExists = fs.existsSync(metadataFilepath)
+            if (metadataExists) additionalMetadata = loadJSON(metadataFilepath);
+            // Set metadata to be written in the file entry
+            const metadata = { project: this.id, md: mdIndex, ...additionalMetadata };
             // Start the logs
-            logger.startLog(`💽 Loading new file: ${filename}`);
+            const label = `${filename}${metadataExists ? ' (+ meta)' : ''}`; 
+            logger.startLog(`💽 Loading new file: ${label}`);
             // Create variables to track the ammount of data to be passed and already passed
             const totalData = fs.statSync(sourceFilepath).size;
             let currentData = 0;
@@ -435,7 +444,7 @@ class Project {
             const uploadStream = this.database.bucket.openUploadStream(filename, {
                 // Check that the file format is accepted. If not, change it to "octet-stream"
                 contentType: getMimeTypeFromFilename(filename),
-                metadata: { project: this.id, md: mdIndex },
+                metadata: metadata,
                 chunkSizeBytes: 4 * 1024 * 1024, // 4 MiB
             });
             // The resulting id of the current upload stream is saved as an environment variable
@@ -444,7 +453,7 @@ class Project {
             // Promise is not resolved if the readable stream returns error
             readStream.on('error', () => {
                 const progress = Math.round((currentData / totalData) * 10000) / 100;
-                logger.failLog(`💽 Failed to load file ${filename} -> ${uploadStream.id} at ${progress} %`);
+                logger.failLog(`💽 Failed to load file ${label} -> ${uploadStream.id} at ${progress} %`);
                 reject();
             });
             // Output the percentaje of data already loaded to the logs
@@ -456,7 +465,7 @@ class Project {
                 // Calculate the amount of time we have been loading the file
                 const time = prettyMs(Date.now() - logger.logTime());
                 // Update the logs
-                logger.updateLog(`💽 Loading file ${filename} -> ${uploadStream.id}\n  at ${progress} % (in ${time})`);
+                logger.updateLog(`💽 Loading file ${label} -> ${uploadStream.id}\n  at ${progress} % (in ${time})`);
                 // Pause and wait for the callback to resume
                 readStream.pause();
                 // Check that local buffer is sending data out before continue to prevent memory leaks
@@ -468,7 +477,7 @@ class Project {
                 if (currentData / totalData === 1) {
                     uploadStream.end(() => {
                         // Display it through the logs
-                        logger.successLog(`💽 Loaded file [${filename} -> ${uploadStream.id}] (100 %)`);
+                        logger.successLog(`💽 Loaded file ${label} -> ${uploadStream.id} (100 %)`);
                         resolve();
                     });
                 }

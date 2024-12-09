@@ -50,7 +50,11 @@ module.exports = {
         },
         // Additional files to load, any number
         uploadableFiles: {
-            pattern: /^mdf./i,
+            pattern: /^mdf.*(?<!.meta.json)$/i,
+        },
+        // Metadata for some aditional files
+        uploadableFileMetadata: {
+            pattern: /.meta.json$/i,
         },
         // Inputs file, which is not to be loaded but simply readed
         inputsFile: {
