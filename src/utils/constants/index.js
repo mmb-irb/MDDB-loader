@@ -85,7 +85,11 @@ module.exports = {
         },
         // Additional files to load, any number
         uploadableFiles: {
-            pattern: /^mdf./i,
+            pattern: /^mdf.*(?<!.meta.json)$/i,
+        },
+        // Metadata for some aditional files
+        uploadableFileMetadata: {
+            pattern: /.meta.json$/i,
         },
         // Additional trajectory files to parse-load, any number for every MD directory
         uploadableTrajectories: {
