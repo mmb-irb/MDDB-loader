@@ -269,6 +269,32 @@ const load = async (
   // Note that there are no trajectories or analyses expected to be in the project nowadays
   // This may change in the future however
 
+  // ---- Analyses ----
+
+  if (!skipAnalyses) {
+    // Iterate over the different analysis files
+    for await (const file of categorizedProjectFiles.analysisFiles) {
+      // Check if the load has been aborted before each analysis load
+      await checkAbort();
+      // Get the standard name of the analysis
+      const name = nameAnalysis(file);
+      if (!name) continue;
+      // Handle any conflicts and ask the user if necessary
+      // Delete previous analyses in case we want to overwrite data
+      const confirm = await project.forestallAnalysisLoad(name, undefined, conserve, overwrite);
+      if (!confirm) continue;
+      // Load the analysis
+      const filepath = projectDirectory + file;
+      // Read the analysis data
+      const content = await loadJSON(filepath);
+      // If mining was unsuccessful return undefined value
+      if (!content) throw new Error(`There is something wrong with the ${name} analysis file`);
+      // Upload new data to the database
+      const analysis = { name: name, value: content };
+      await project.loadAnalysis(analysis, undefined);
+    }
+  }
+
   // ---- Files ----
 
   if (!skipFiles) {
@@ -281,9 +307,7 @@ const load = async (
       ...categorizedProjectFiles.uploadableFiles
     ].filter(file => file && file.length !== 0);
     // Iterate over loadable files
-    let nfile = 0;
     for await (const file of loadableFiles) {
-      nfile += 1;
       // Check if the load has been aborted at this point
       await checkAbort();
       // Set the name of the file once loaded in the database
@@ -401,9 +425,7 @@ const load = async (
         ...directoryFiles.uploadableFiles,
       ].filter(file => file && file.length !== 0);
       // Iterate over loadable files
-      let nfile = 0;
       for await (const file of loadableFiles) {
-        nfile += 1;
         // Check if the load has been aborted at this point
         await checkAbort();
         // Set the name of the file once loaded in the database

@@ -42,6 +42,9 @@ class Project {
         // Keep track of the currently inserting file
         // This way, in case anything goes wrong, we can delete orphan chunks
         this.currentUploadId = null;
+        // Fix data format issues
+        // These may come from old project formats
+        if (this.data.analyses === undefined) this.data.analyses = [];
     };
 
     // Update remote project data by overwritting it all with current project data
@@ -700,7 +703,7 @@ class Project {
     // WARNING: This is done previously by the forestallAnalysisLoad function
     loadAnalysis = async (analysis, mdIndex) => {
         analysis.project = this.id;
-        analysis.md = mdIndex;
+        if (mdIndex !== undefined) analysis.md = mdIndex;
         logger.startLog(`💽 Loading analysis ${analysis.name}`);
         // Insert a new document in the analysis collection
         const result = await this.database.analyses.insertOne(analysis);

@@ -77,9 +77,13 @@ const deleteFunction = async (
             target.collectionKey = 'bastardAnalyses';
         }
         // Get the MD name
-        const mdName = project.data.mds[mdIndex].name;
+        let projectLabel = project.accession;
+        if (mdIndex !== undefined) {
+            const mdName = project.data.mds[mdIndex].name;
+            projectLabel += `, ${mdName}`;
+        }
         // Log the summary
-        console.log(`About to delete ${documentName} "${analysisName}" of project ${project.accession}, ${mdName}`);
+        console.log(`About to delete ${documentName} "${analysisName}" of project ${projectLabel}`);
     }
     // If it is a file log its filename and the project it belongs to
     else if (target.collectionKey === 'files') {
