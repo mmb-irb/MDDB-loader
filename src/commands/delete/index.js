@@ -109,7 +109,7 @@ const deleteFunction = async (
     // If the confirm argument has not been passed then warn and ask the user for confirmation
     const confirmation = confirm || await userConfirm(`Confirm deletion of document with ${isMongoId ? 'id' : 'accession'} ${id} [y/*]`);
     // If we have no confirmation then we abort here
-    if (confirmation !== 'y' && confirmation !== 'Y') return console.log('Data deletion has been aborted');
+    if (confirmation !== true && confirmation !== 'y' && confirmation !== 'Y') return console.log('Data deletion has been aborted');
     // Use the right deleting protocol according to the type of document we are about to delete
     // ----- Projects -----
     if (target.collectionKey === 'projects') {
