@@ -3,7 +3,7 @@ const fs = require('fs');
 // Get project files to be found and loaded
 const { EXPECTED_PROJECT_FILE } = require('../../../utils/constants');
 
-// Find all files according to the input path, which may be a file or a directory
+// Find all files according to the input path directory
 const findAllFiles = (projectDirectory, mdirs, included, excluded) => {
     // Set a filter based in include and exclude files
     // Remember that both included and excluded cannot be passed together
@@ -42,6 +42,12 @@ const findAllFiles = (projectDirectory, mdirs, included, excluded) => {
     for (const mdDirectory of mdirs) {
         const mdFileFilter = filterCreator(mdDirectory);
         mdFiles[mdDirectory] = fs.readdirSync(mdDirectory).filter(mdFileFilter);
+        // Iterate subdirectories inside of the MD directory to find more MD files
+        const subdirs = fs.readdirSync(mdDirectory).filter(file => fs.statSync(mdDirectory + file).isDirectory());
+        for (const subdir of subdirs) {
+            const subdirFiles = fs.readdirSync(mdDirectory + subdir).filter(mdFileFilter);
+            mdFiles[mdDirectory].push(...subdirFiles.map(file => subdir + '/' + file));
+        }
     }
     return [projectFiles, mdFiles];
 }

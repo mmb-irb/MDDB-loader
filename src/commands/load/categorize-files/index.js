@@ -1,5 +1,7 @@
 // Get project files to be found and loaded
 const { EXPECTED_PROJECT_FILE, EXPECTED_MD_FILES } = require('../../../utils/constants');
+// Set an auxiliar function to get the path last directory or filename
+const getFilename = path => path.split('/').pop();
 
 // This function classifies all files according to their names
 const categorizeFiles = (projectFiles, mdFiles) => {
@@ -19,8 +21,8 @@ const categorizeFiles = (projectFiles, mdFiles) => {
     // Iterate over the different expected MD files
     for (const [ fileKey, fileAttributes ] of Object.entries(EXPECTED_MD_FILES)) {
       categorizedFiles[fileKey] = fileAttributes.singleFile
-        ? currentMDfiles.find(filename => fileAttributes.pattern.test(filename))
-        : currentMDfiles.filter(filename => fileAttributes.pattern.test(filename));
+        ? currentMDfiles.find(filepath => fileAttributes.pattern.test(getFilename(filepath)))
+        : currentMDfiles.filter(filepath => fileAttributes.pattern.test(getFilename(filepath)));
     }
     categorizedMdFiles[mdKey] = categorizedFiles;
   }
