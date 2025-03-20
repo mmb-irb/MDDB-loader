@@ -46,7 +46,9 @@ const ESSENTIAL_MD_FILES = {
 
 // Given a analysis filename, get the name of the analysis from the filename itself
 const ANALYSIS_PATTERN = new RegExp('^mda.([A-Za-z0-9_-]*).json$');
-const nameAnalysis = filename => {
+const nameAnalysis = filepath => {
+  // Get the filename in case the analysis is inside a subdirectory
+  const filename = getBasename(filepath);
   // Mine the file name without header and without extension tail
   const match = filename.match(ANALYSIS_PATTERN);
   if (!match) throw new Error(`Filename ${filename} has not the expected analysis filename format`);
