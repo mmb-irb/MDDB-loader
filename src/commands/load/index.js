@@ -314,7 +314,7 @@ const load = async (
       await checkAbort();
       // Set the name of the file once loaded in the database
       // In case the filename starts with 'mdf.' set the database filename without the prefix
-      let databaseFilename = file;
+      let databaseFilename = getBasename(file);
       if (databaseFilename.slice(0, 4) === 'mdf.')
         databaseFilename = databaseFilename.slice(4);
       // Handle any conflicts and ask the user if necessary
@@ -432,7 +432,7 @@ const load = async (
         await checkAbort();
         // Set the name of the file once loaded in the database
         // In case the filename starts with 'mdf.' set the database filename without the prefix
-        let databaseFilename = file;
+        let databaseFilename = getBasename(file);
         if (databaseFilename.slice(0, 4) === 'mdf.')
           databaseFilename = databaseFilename.slice(4);
         // Handle any conflicts and ask the user if necessary

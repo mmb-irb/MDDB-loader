@@ -45,7 +45,9 @@ const findAllFiles = (projectDirectory, mdirs, included, excluded) => {
         // Iterate subdirectories inside of the MD directory to find more MD files
         const subdirs = fs.readdirSync(mdDirectory).filter(file => fs.statSync(mdDirectory + file).isDirectory());
         for (const subdir of subdirs) {
-            const subdirFiles = fs.readdirSync(mdDirectory + subdir).filter(mdFileFilter);
+            const mdPath = mdDirectory + subdir + '/';
+            const mdFileFilter = filterCreator(mdPath);
+            const subdirFiles = fs.readdirSync(mdPath).filter(mdFileFilter);
             mdFiles[mdDirectory].push(...subdirFiles.map(file => subdir + '/' + file));
         }
     }

@@ -405,9 +405,7 @@ class Project {
 
     // Check if there is a previous file with the same name
     // If so, check if we must delete it or conserve it
-    forestallFileLoad = async (filepath, mdIndex, conserve, overwrite) => {
-        // Get the filename
-        const filename = getBasename(filepath);
+    forestallFileLoad = async (filename, mdIndex, conserve, overwrite) => {
         // Find the file summary
         const alreadyExistingFile = this.findFile(filename, mdIndex);
         // If the new file is not among the current files then there is no problem
@@ -425,9 +423,7 @@ class Project {
     };
 
     // Load a file using the mongo gridfs bucket
-    loadFile = async (filepath, mdIndex, sourceFilepath, abort) => {
-        // Get the filename
-        const filename = getBasename(filepath);
+    loadFile = async (filename, mdIndex, sourceFilepath, abort) => {
         // Wrap all this function inside a promise which is resolved by the stream
         await new Promise((resolve, reject) => {
             // If there is a metadata file associated to this file then load it
@@ -448,8 +444,7 @@ class Project {
             // Open the mongo writable stream with a few customized options
             // All data uploaded to mongo by this way is stored in fs.chunks
             // fs.chunks is a default collection of mongo which is managed internally
-            const uploadStream = this.database.bucket.openUploadStream(filepath, {
-                filename: filename,
+            const uploadStream = this.database.bucket.openUploadStream(filename, {
                 // Check that the file format is accepted. If not, change it to "octet-stream"
                 contentType: getMimeTypeFromFilename(filename),
                 metadata: metadata,
@@ -501,9 +496,7 @@ class Project {
     }
 
     // Load a file using the mongo gridfs bucket
-    loadTrajectoryFile = async (filepath, mdIndex, sourceFilepath, gromacsCommand, abort) => {
-        // Get the filename
-        const filename = getBasename(filepath);
+    loadTrajectoryFile = async (filename, mdIndex, sourceFilepath, gromacsCommand, abort) => {
         // Get the filename alone, without the whole path, for displaying
         const basename = getBasename(sourceFilepath);
         // Display the start of this process in console
@@ -541,7 +534,7 @@ class Project {
             // Open an upload stream to mongo
             // All data uploaded to mongo by this way is stored in fs.chunks
             // fs.chunks is a default collection of mongo which is managed internally
-            const uploadStream = this.database.bucket.openUploadStream(filepath, {
+            const uploadStream = this.database.bucket.openUploadStream(filename, {
                 filename: filename,
                 contentType: 'application/octet-stream',
                 metadata: metadata,
