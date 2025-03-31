@@ -408,6 +408,7 @@ class Project {
     forestallFileLoad = async (filename, mdIndex, conserve, overwrite) => {
         // Find the file summary
         const alreadyExistingFile = this.findFile(filename, mdIndex);
+        console.log(alreadyExistingFile);
         // If the new file is not among the current files then there is no problem
         if (!alreadyExistingFile) return true;
         // In case it exists and the 'conserve' flag has been passed we end here
