@@ -1,6 +1,6 @@
 ## Requirements
 
-Have Node.js and npm installed and working
+Have Node.js and npm installed and working.
 
 ## Run script
 
