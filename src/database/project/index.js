@@ -50,6 +50,8 @@ class Project {
     // Update remote project data by overwritting it all with current project data
     updateRemote = async () => {
         logger.startLog(`📝 Updating database project data`);
+        // Add last modification timestamp
+        this.data.updateDate = new Date();
         // Replace remote project data by local project data
         const result = await this.database.projects.replaceOne({ _id: this.id }, this.data);
         if (result.acknowledged === false) return logger.failLog('📝 Failed to update database project data');
