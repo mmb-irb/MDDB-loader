@@ -46,7 +46,9 @@ const ESSENTIAL_MD_FILES = {
 
 // Given a analysis filename, get the name of the analysis from the filename itself
 const ANALYSIS_PATTERN = new RegExp('^mda.([A-Za-z0-9_-]*).json$');
-const nameAnalysis = filename => {
+const nameAnalysis = filepath => {
+  // Get the filename in case the analysis is inside a subdirectory
+  const filename = getBasename(filepath);
   // Mine the file name without header and without extension tail
   const match = filename.match(ANALYSIS_PATTERN);
   if (!match) throw new Error(`Filename ${filename} has not the expected analysis filename format`);
@@ -269,6 +271,32 @@ const load = async (
   // Note that there are no trajectories or analyses expected to be in the project nowadays
   // This may change in the future however
 
+  // ---- Analyses ----
+
+  if (!skipAnalyses) {
+    // Iterate over the different analysis files
+    for await (const file of categorizedProjectFiles.analysisFiles) {
+      // Check if the load has been aborted before each analysis load
+      await checkAbort();
+      // Get the standard name of the analysis
+      const name = nameAnalysis(file);
+      if (!name) continue;
+      // Handle any conflicts and ask the user if necessary
+      // Delete previous analyses in case we want to overwrite data
+      const confirm = await project.forestallAnalysisLoad(name, undefined, conserve, overwrite);
+      if (!confirm) continue;
+      // Load the analysis
+      const filepath = projectDirectory + file;
+      // Read the analysis data
+      const content = await loadJSON(filepath);
+      // If mining was unsuccessful return undefined value
+      if (!content) throw new Error(`There is something wrong with the ${name} analysis file`);
+      // Upload new data to the database
+      const analysis = { name: name, value: content };
+      await project.loadAnalysis(analysis, undefined);
+    }
+  }
+
   // ---- Files ----
 
   if (!skipFiles) {
@@ -281,14 +309,12 @@ const load = async (
       ...categorizedProjectFiles.uploadableFiles
     ].filter(file => file && file.length !== 0);
     // Iterate over loadable files
-    let nfile = 0;
     for await (const file of loadableFiles) {
-      nfile += 1;
       // Check if the load has been aborted at this point
       await checkAbort();
       // Set the name of the file once loaded in the database
       // In case the filename starts with 'mdf.' set the database filename without the prefix
-      let databaseFilename = file;
+      let databaseFilename = getBasename(file);
       if (databaseFilename.slice(0, 4) === 'mdf.')
         databaseFilename = databaseFilename.slice(4);
       // Handle any conflicts and ask the user if necessary
@@ -401,14 +427,12 @@ const load = async (
         ...directoryFiles.uploadableFiles,
       ].filter(file => file && file.length !== 0);
       // Iterate over loadable files
-      let nfile = 0;
       for await (const file of loadableFiles) {
-        nfile += 1;
         // Check if the load has been aborted at this point
         await checkAbort();
         // Set the name of the file once loaded in the database
         // In case the filename starts with 'mdf.' set the database filename without the prefix
-        let databaseFilename = file;
+        let databaseFilename = getBasename(file);
         if (databaseFilename.slice(0, 4) === 'mdf.')
           databaseFilename = databaseFilename.slice(4);
         // Handle any conflicts and ask the user if necessary

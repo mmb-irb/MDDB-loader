@@ -200,7 +200,15 @@ class Database {
         // Create a new project
         // DANI: El mdref está fuertemente hardcodeado, hay que pensarlo
         const newAccession = forcedAccession || await this.issueNewAccession();
-        const projectData = { accession: newAccession, published: false, metadata: {}, mds: [], mdref: 0, files: [] };
+        const projectData = {
+            accession: newAccession,
+            published: false,
+            metadata: {},
+            mds: [],
+            mdref: 0,
+            files: [],
+            analyses: []
+        };
         logger.startLog(`📝 Adding new database project`);
         // Load the new project
         const result = await this.projects.insertOne(projectData);

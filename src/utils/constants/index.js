@@ -48,6 +48,10 @@ module.exports = {
             pattern: /^populations.json$/i,
             singleFile: true,
         },
+        // Analyses, any number for every project
+        analysisFiles: {
+            pattern: /^mda.[\s\S]*.(json)$/i,
+        },
         // Additional files to load, any number
         uploadableFiles: {
             pattern: /^mdf.*(?<!.meta.json)$/i,
