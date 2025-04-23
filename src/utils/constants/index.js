@@ -24,22 +24,22 @@ module.exports = {
             singleFile: true,
         },
         // The protein references data file, one for project
-        referencesDataFile: {
-            pattern: /^references.json$/i,
+        proteinReferencesDataFile: {
+            pattern: /^(protein_references|references).json$/i,
             singleFile: true,
         },
         // The ligand references data file, one for project
-        ligandsDataFile: {
-            pattern: /^ligands.json$/i,
+        ligandReferencesDataFile: {
+            pattern: /^(ligand_references|ligands).json$/i,
             singleFile: true,
         },
         // The PDB references data file, one for project
-        pdbRefDataFile: {
+        pdbReferencesDataFile: {
             pattern: /^pdb_references.json$/i,
             singleFile: true,
         },
         // The chain references data file, one for project
-        chainRefDataFile: {
+        chainReferencesDataFile: {
             pattern: /^chains.json$/i,
             singleFile: true,
         },
