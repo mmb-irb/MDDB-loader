@@ -199,6 +199,7 @@ class Project {
         const md = { name: undefined, files: [], analyses: [] };
         this.data.mds.push(md);
         // Update the remote
+        this.data.mdcount = this.countAvailableMDs();
         await this.updateMdMetadata(metadata, mdIndex, false, false);
     }
 
@@ -237,6 +238,7 @@ class Project {
             // Otherwise we ask the user which is to be the next reference MD
             else this.data.mdref = await this.setNewReferenceMD();
         }
+        this.data.mdcount = this.countAvailableMDs();
         // Update the remote
         await this.updateRemote();
     }
@@ -259,6 +261,15 @@ class Project {
             availableMDIndices.push(+mdIndex);
         }
         return availableMDIndices;
+    }
+
+    // Count the number of available (i.e. not removed) MDs
+    countAvailableMDs = () => {
+        let count = 0;
+        for (const md of this.data.mds) {
+            if (!md.removed) count++;
+        }
+        return count;
     }
 
     // Return a new referece MD index after asking the user
