@@ -105,6 +105,18 @@ yargs
             }),
         handler: commonHandler('load'), // Call the command script with the command name as argument
     })
+    // book
+    .command({
+        command: 'book <count>',
+        desc: 'create empty projects in order to book their accessions',
+        builder: yargs => yargs
+            // count
+            .positional('count', {
+                describe: 'Number of projects to book',
+                type: 'integer',
+            }),
+        handler: commonHandler('book'),
+    })
     // publish
     .command({
         command: 'publish <id|accession>',
