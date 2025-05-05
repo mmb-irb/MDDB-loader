@@ -143,6 +143,9 @@ class Project {
         const result = await this.database.projects.deleteOne({ _id: this.id });
         if (!result) return logger.failLog(`🗑️  Failed to delete project ${this.id}`);
         logger.successLog(`🗑️  Deleted project ${this.id}`);
+        // If this was the last issued project then reuse its accession for further projects
+        const lastIssuedAccession = await this.database.getLastAccession();
+        if (lastIssuedAccession === this.accession) await this.database.updateCounter(-1);
         // Remove references if they are not used by other projects
         const metadata = this.data.metadata;
         if (!metadata) return;
