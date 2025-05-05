@@ -307,41 +307,76 @@ class Database {
         return null;
     }
 
+    // Get the current counter status
+    // If the counter does not exist yet then create it
+    getCounter = async () => {
+        // Find the counter document
+        let counter = await this.counters.findOne({ accessions: true });
+        // If the counter does not exist yet then create it
+        if (!counter) {
+            // Set the "zero" count for the counter
+            // Note that this is not zero since we want the first issued accession to star with 'A'
+            const zeroCount = parseInt(FIRST_ACCESSION_CODE, ALPHANUMERIC) - 1;
+            // Set the counter document
+            counter = { accessions: true, last: zeroCount };
+            // Insert the new document
+            logger.startLog(`🧮 Creating new accession counter`);
+            const result = await this.counters.insertOne(counter);
+            if (!result.acknowledged) logger.failLog(`🧮 Failed to create new accession counter`);
+            logger.successLog('🧮 Created new accession counter');
+        }
+        // Now return the actual count
+        return counter.last;
+    };
+
+    // Update the project counter by adding or substracting to the count
+    updateCounter = async difference => {
+        // First get the current count
+        const currentCounter = await this.getCounter();
+        // Now substract 1
+        const newCounter = currentCounter + difference;
+        // Now update the counter
+        const differenceMessage = `${difference > 0 ? '+' : ''}${difference}`;
+        logger.startLog(`🧮 Updating accession counter (${differenceMessage})`);
+        const result = await this.counters.updateOne(
+            { accessions: true },
+            { $set: { last: newCounter } });
+        if (!result.acknowledged)
+            logger.failLog(`🧮 Failed to update accession counter (${differenceMessage})`);
+        logger.successLog(`🧮 Updated accession counter (${differenceMessage})`);
+    };
+
+    // Check if an accession is the last issued accession according to the counter
+    getLastAccession = async () => {
+        // First get the current count
+        const currentCounter = await this.getCounter();
+        // Conver the current count to its corresponding accession
+        return currentCounter.toString(ALPHANUMERIC).toUpperCase();
+    };
+
     // Create a new accession and add 1 to the last accession count
     // Note that this is the default accession but it is not mandatory to use this accession format
     // A custom accession may be forced through command line
     issueNewAccession = async () => {
-        // First we must find the next available accession number
-        const currentCounter = await this.counters.findOne({ accessions: true });
-        // If prefix already exists then get the next number and update the counter
-        let accessionCode;
-        if (currentCounter) {
-            const nextAccessionCode = currentCounter.last + 1;
-            const result = await this.counters.updateOne(
-                { accessions: true },
-                { $set: { last: nextAccessionCode } });
-            if (!result.acknowledged) throw Error(`Failed to update counter`);
-            accessionCode = nextAccessionCode.toString(ALPHANUMERIC).toUpperCase();
-            if (accessionCode.length > ACCESSION_CHARACTERS_LIMIT)
-                throw new Error(`You have reached the limit of accession codes. Next would be ${accessionCode}`);
-        }
-        // If the counter does not yet exist then create it
-        else {
-            const result = await this.counters.insertOne({
-                accessions: true,
-                last: parseInt(FIRST_ACCESSION_CODE, ALPHANUMERIC)
-            });
-            if (!result.acknowledged) throw Error(`Failed to create new counter`);
-            accessionCode = FIRST_ACCESSION_CODE;
-        }
+        // First get the current count
+        const currentCounter = await this.getCounter();
+        // Add one to the count
+        const newCounter = currentCounter + 1;
+        // Set the new accession
+        const newAccessionCode = newCounter.toString(ALPHANUMERIC).toUpperCase();
+        // Make sure we did not reach the limit
+        if (newAccessionCode.length > ACCESSION_CHARACTERS_LIMIT)
+            throw new Error(`You have reached the limit of accession codes. Next would be ${accessionCode}`);
+        // Add one to the counter
+        await this.updateCounter(1);
         // Make sure the new accession does not exist yet in the database
-        const alreadyExistingProject = await this.projects.findOne({ accession: accessionCode });
-        if (alreadyExistingProject) throw Error(`New issued accession ${accessionCode} already exists`);
+        const alreadyExistingProject = await this.projects.findOne({ accession: newAccessionCode });
+        if (alreadyExistingProject) throw Error(`New issued accession ${newAccessionCode} already exists`);
         // Set the new accession issued flag as true
         // This allows to substract 1 from the counter if load is aborted to dont burn accessions
         this.new_accession_issued = true;
         // Return the new accession
-        return `${accessionCode}`;
+        return newAccessionCode;
     };
 
     // Unload things loaded in the database during the last run
@@ -359,18 +394,8 @@ class Database {
         // If data is to be conserved there is nothing to do here
         if (confirm === 'C') return;
         // If a new accession was issued then substract 1 from the count
-        if (this.new_accession_issued) {
-            // First we must find the current count
-            const currentCounter = await this.counters.findOne({ accessions: true });
-            // Now substract 1
-            const previousAccessionCode = currentCounter.last - 1;
-            // Now update the counter
-            const result = await this.counters.updateOne(
-                { accessions: true },
-                { $set: { last: previousAccessionCode } });
-            if (!result.acknowledged) throw new Error(`Failed to revert counter`);
-            console.log('Reverted accession counter');
-        }
+        // This means the last issued accession will be reused the next time we load a new project
+        if (this.new_accession_issued) await this.updateCounter(-1);
         // Delete inserted data one by one
         for (const data of this.inserted_data) {
             const collection = data.collection;
