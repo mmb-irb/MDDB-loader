@@ -202,6 +202,13 @@ const load = async (
   // Display the project id. It may be useful if the load is abruptly interrupted to clean
   console.log(chalk.cyan(`== Project '${project.data.accession}'`));
 
+  // If the project was previously booked, unmark it as booked since we're now loading real data
+  if (project.data.booked) {
+    project.data.booked = false;
+    await project.updateRemote();
+    console.log('Project was previously booked and is now being loaded with data');
+  }
+  
   // Leave a trace of the project id
   leaveTrace(projectDirectory, project.id);
 
