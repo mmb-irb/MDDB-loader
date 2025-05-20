@@ -204,7 +204,7 @@ const load = async (
 
   // If the project was previously booked, unmark it as booked since we're now loading real data
   if (project.data.booked) {
-    project.data.booked = false;
+    delete project.data.booked;
     await project.updateRemote();
     console.log('Project was previously booked and is now being loaded with data');
   }
