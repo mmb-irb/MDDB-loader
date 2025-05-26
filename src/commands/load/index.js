@@ -55,7 +55,7 @@ const nameAnalysis = filepath => {
   let name = match[1];
   // Legacy fixes
   if (name === 'rmsf') name = 'fluctuation';
-  name = name.replace('_', '-');
+  name = name.replaceAll('_', '-');
   // Return the final name
   return name;
 };
