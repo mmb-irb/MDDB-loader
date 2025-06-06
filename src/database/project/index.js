@@ -18,7 +18,8 @@ const {
     getMimeTypeFromFilename,
     getValueGetter,
     mdNameToDirectory,
-    loadJSON
+    loadJSON,
+    isNumber
 } = require('../../utils/auxiliar-functions');
 // Get metadata handlers
 const { merge_metadata } = require('./metadata-handlers');
@@ -415,9 +416,9 @@ class Project {
     };
 
     // Get the MD index corresponding list of available files
-    getAvailableFiles = mdIndex => mdIndex === undefined
-        ? this.data.files
-        : this.data.mds[mdIndex].files;
+    getAvailableFiles = mdIndex => isNumber(mdIndex)
+        ? this.data.mds[mdIndex].files
+        : this.data.files;
 
     // Check if there is a previous file with the same name
     // If so, check if we must delete it or conserve it
@@ -689,9 +690,9 @@ class Project {
     }
 
     // Get the MD index corresponding list of available analyses
-    getAvailableAnalyses = mdIndex => mdIndex === undefined
-        ? this.data.analyses
-        : this.data.mds[mdIndex].analyses;
+    getAvailableAnalyses = mdIndex => isNumber(mdIndex)
+        ? this.data.mds[mdIndex].analyses
+        : this.data.analyses;
 
     // Check if there is a previous analysis with the same name
     // If so, check if we must delete it or conserve it

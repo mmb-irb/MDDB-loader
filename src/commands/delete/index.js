@@ -1,7 +1,7 @@
 // Visual tool which allows to add colors in console
 const chalk = require('chalk');
 // Load auxiliar functions
-const { mongoidFormat, userConfirm } = require('../../utils/auxiliar-functions');
+const { mongoidFormat, userConfirm, isNumber } = require('../../utils/auxiliar-functions');
 
 // Delete anything in the database by its ID
 // Note that a function cannot be named 'delete' in node
@@ -101,10 +101,14 @@ const deleteFunction = async (
             console.log('WARNING: The parent project does not recognize this file as one of its own');
             target.collectionKey = 'bastardFiles';
         }
-        // Get the MD name
-        const mdName = project.data.mds[mdIndex].name;
         // Log the summary
-        console.log(`About to delete ${documentName} "${filename}" of project ${project.accession}, ${mdName}`);
+        let msg = `About to delete ${documentName} "${filename}" of project ${project.accession}`;
+        if (isNumber(mdIndex)) {
+            // Get the MD name
+            const mdName = project.data.mds[mdIndex].name;
+            msg += `, ${mdName}`
+        }
+        console.log(msg);
     }
     // If the confirm argument has not been passed then warn and ask the user for confirmation
     const confirmation = confirm || await userConfirm(`Confirm deletion of document with ${isMongoId ? 'id' : 'accession'} ${id} [y/*]`);

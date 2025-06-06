@@ -219,6 +219,9 @@ const canWrite = path => {
     }
 }
 
+// Check if a value is numeric
+const isNumber = value => typeof value === "number"
+
 module.exports = {
     mongoidFormat,
     userConfirm,
@@ -234,5 +237,6 @@ module.exports = {
     loadYAML,
     loadYAMLorJSON,
     getValueGetter,
-    canWrite
+    canWrite,
+    isNumber
 };
