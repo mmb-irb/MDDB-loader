@@ -403,7 +403,7 @@ const load = async (
         // Check if the load has been aborted at this point
         await checkAbort();
         // Set the name of the file once loaded in the database
-        let databaseFilename = file.replace('.xtc', '.bin');
+        let databaseFilename = getBasename(file).replace('.xtc', '.bin');
         // In case the filename starts with 'mdt.' set the database filename without the prefix
         if (databaseFilename.slice(0, 4) === 'mdt.')
           databaseFilename = databaseFilename.slice(4);
