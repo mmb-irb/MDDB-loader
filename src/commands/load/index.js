@@ -133,6 +133,11 @@ const load = async (
     for (const [essentialFile, logMessage] of Object.entries(ESSENTIAL_PROJECT_FILES)) {
       if (!categorizedProjectFiles[essentialFile]) missingFiles.push(logMessage);
     }
+    // Make sure there is at least 1 MD
+    if (Object.keys(categorizedMdFiles).length === 0) {
+      console.log('There must be at least one MD');
+      return false
+    }
     // Iterate MDs
     for (const [mdDirectory, availableMdFiles] of Object.entries(categorizedMdFiles)) {
       // Check MD files
