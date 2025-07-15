@@ -4,7 +4,13 @@
 const process = require('process');
 // These 2 lines alone allow all scripts to access the env file through process.env
 const dotenvLoad = require('dotenv').config({ path: __dirname + '/.env' });
-if (dotenvLoad.error) throw dotenvLoad.error;
+
+// The environment can be provided also through the command line as environment variables
+// e.g. NODE_ENV=production node index.js load /path/to/project
+// If that is the case, we should not rely on the .env file and thus we can skip 
+// checking if there was any error loading the .env file
+
+// if (dotenvLoad.error) throw dotenvLoad.error;
 
 // "yargs" is a library used to manage script calls from unix console
 const yargs = require('yargs');
@@ -169,7 +175,7 @@ yargs
                 type: 'string',
                 coerce: idOrAccessionCoerce,
             }),
-            handler: commonHandler('delete'),
+        handler: commonHandler('delete'),
     })
     // cleanup
     // NOTE: ask user to unpublish before cleaning up, to make them think twice
