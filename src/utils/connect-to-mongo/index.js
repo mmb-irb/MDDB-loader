@@ -86,8 +86,16 @@ const establishFakeConnection = async () => {
     }
   };
 
+// Set the required environmental variables to connect to Mongo
+const REQUIRED_ENV = [ 'DB_SERVER', 'DB_PORT', 'DB_NAME',
+    'DB_AUTH_USER', 'DB_AUTH_PASSWORD', 'DB_AUTHSOURCE'];
 // Try to connect to mongo as client and get the data base
 const connectToMongo = async () => {
+    // Make sure we have the required enviornmental variables
+    const missingEnv = REQUIRED_ENV.filter(env => !process.env[env]);
+    if (missingEnv.length > 0) throw new Error(
+        'Missing enviornmental variables: ' + missingEnv.join(', ') + '.\nPlease consider ' +
+        'either including them in the ".env" file or providing these variables via command-line.');
     try {
         if (process.env.MODE === 'testing') client = await establishFakeConnection();
         else client = await mongodb.MongoClient.connect(
