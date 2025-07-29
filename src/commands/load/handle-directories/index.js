@@ -25,7 +25,7 @@ const findWildcardPaths = (projectDirectory, paths) => {
 const findMdDirectories = projectDirectory => {
     // Get all available directories
     const subentries = fs.readdirSync(projectDirectory).map(entry => projectDirectory + entry);
-    const subdirectories = subentries.filter(entry => fs.statSync(entry).isDirectory());
+    const subdirectories = subentries.filter(entry => fs.lstatSync(entry).isDirectory());
     const mdDirectories = subdirectories.filter(dir => fs.existsSync(dir + '/' + REGISTER_FILENAME));
     return mdDirectories.map(dir => dir + '/');
 }
