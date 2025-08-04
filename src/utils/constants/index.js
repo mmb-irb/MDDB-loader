@@ -33,6 +33,11 @@ module.exports = {
             pattern: /^(ligand_references|ligands).json$/i,
             singleFile: true,
         },
+        // The inchikey references data file, one for project
+        inchikeyReferencesDataFile: {
+            pattern: /^inchikey_references.json$/i,
+            singleFile: true,
+        },
         // The PDB references data file, one for project
         pdbReferencesDataFile: {
             pattern: /^pdb_references.json$/i,

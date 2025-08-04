@@ -70,6 +70,10 @@ class Database {
             name: 'chain_refs',
             documentNames: { singular: 'chain', plural: 'chains' },
         },
+        inchikey_refs: {
+            name: 'inchikey_refs',
+            documentNames: { singular: 'inchikey', plural: 'inchikeys' },
+        },
         topologies: {
             name: 'topologies',
             index: { project: 1 },
@@ -119,6 +123,11 @@ class Database {
             collection: 'chain_refs',
             idField: 'sequence',
             projectIdsField: 'metadata.PROTSEQ'
+        },
+        inchikeys: {
+            collection: 'inchikey_refs',
+            idField: 'inchikey',
+            projectIdsField: 'metadata.INCHIKEYS'
         }
     };
 

@@ -241,6 +241,7 @@ const load = async (
   const referenceInputDataFiles = {
     proteins: categorizedProjectFiles.proteinReferencesDataFile,
     ligands: categorizedProjectFiles.ligandReferencesDataFile,
+    inchikeys: categorizedProjectFiles.inchikeyReferencesDataFile,
     pdbs: categorizedProjectFiles.pdbReferencesDataFile,
     chains: categorizedProjectFiles.chainReferencesDataFile
   };
