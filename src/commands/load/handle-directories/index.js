@@ -1,7 +1,9 @@
 // Files system from node
 const fs = require('fs');
 // Glob allows to parse wildcards in paths
-const glob = require("glob")
+const glob = require("glob");
+// Load a tool to normalize paths
+const { normalize } = require('path');
 
 // Set the register filename
 // This file is created by the workflow
@@ -17,7 +19,7 @@ const findWildcardPaths = (projectDirectory, paths) => {
         const matches = glob.sync(fullpath);
         finalPaths = finalPaths.concat(matches);
     }
-    return finalPaths;
+    return finalPaths.map(path => normalize(path));
 }
 
 // Find which directories belong to MD directories
@@ -27,12 +29,12 @@ const findMdDirectories = projectDirectory => {
     const subentries = fs.readdirSync(projectDirectory).map(entry => projectDirectory + entry);
     const subdirectories = subentries.filter(entry => fs.lstatSync(entry).isDirectory());
     const mdDirectories = subdirectories.filter(dir => fs.existsSync(dir + '/' + REGISTER_FILENAME));
-    return mdDirectories.map(dir => dir + '/');
+    return mdDirectories.map(dir => normalize(dir));
 }
 
 // Given a list of directories relative to the project directory, parse these directories by adding the whole path
 const parseDirectories = (projectDirectory, mdDirectories) => {
-    return mdDirectories.map(dir => projectDirectory + dir);
+    return mdDirectories.map(dir => normalize(projectDirectory + dir));
 }
 
 module.exports = {

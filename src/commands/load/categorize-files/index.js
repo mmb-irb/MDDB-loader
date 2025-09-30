@@ -10,8 +10,8 @@ const categorizeFiles = (projectFiles, mdFiles) => {
   // Iterate over the different expected project files
   for (const [ fileKey, fileAttributes ] of Object.entries(EXPECTED_PROJECT_FILE)) {
     categorizedProjectFiles[fileKey] = fileAttributes.singleFile
-      ? projectFiles.find(filename => fileAttributes.pattern.test(filename))
-      : projectFiles.filter(filename => fileAttributes.pattern.test(filename));
+      ? projectFiles.find(filepath => fileAttributes.pattern.test(getFilename(filepath)))
+      : projectFiles.filter(filepath => fileAttributes.pattern.test(getFilename(filepath)));
   }
   // Classify MD files
   const categorizedMdFiles = {};

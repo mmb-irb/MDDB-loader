@@ -127,6 +127,13 @@ const getBasename = path => {
     throw new Error('Invalid path ' + path);
 }
 
+// Given a directory and a subdirectory, join them
+const joinPaths = (dir, subdir) => {
+    const lastCharacter = dir[dir.length - 1];
+    if (lastCharacter === '/') return dir + subdir;
+    return dir + '/' + subdir;
+}
+
 // Save the object from mongo which is associated to the provided id
 // WARNING: If the argument passed to this function is null a new ObjectId is generated
 const idCoerce = id => new ObjectId(id);
@@ -231,6 +238,7 @@ module.exports = {
     mdNameToDirectory,
     directoryCoerce,
     getBasename,
+    joinPaths,
     idOrAccessionCoerce,
     getMimeTypeFromFilename,
     loadJSON,
