@@ -456,6 +456,7 @@ class Project {
             // Create variables to track the ammount of data to be passed and already passed
             const totalData = fs.statSync(sourceFilepath).size;
             let currentData = 0;
+            const startTime = Date.now();
             // Start reading the file by streaming
             const readStream = fs.createReadStream(sourceFilepath);
             // Open the mongo writable stream with a few customized options
@@ -484,8 +485,11 @@ class Project {
                 const progress = Math.round((currentData / totalData) * 10000) / 100;
                 // Calculate the amount of time we have been loading the file
                 const time = prettyMs(Date.now() - logger.logTime());
+                // Calculate upload speed
+                const elapsedSeconds = (Date.now() - startTime) / 1000;
+                const speedMBps = (currentData / elapsedSeconds / (1000 * 1000)).toFixed(2);
                 // Update the logs
-                logger.updateLog(`💽 Loading file ${label} -> ${uploadStream.id}\n  at ${progress} % (in ${time})`);
+                logger.updateLog(`💽 Loading file ${label} -> ${uploadStream.id}\n  at ${progress} % (in ${time}) [${speedMBps} MB/s]`);
                 // Pause and wait for the callback to resume
                 readStream.pause();
                 // Check that local buffer is sending data out before continue to prevent memory leaks
@@ -496,8 +500,11 @@ class Project {
                 // At the end
                 if (currentData / totalData === 1) {
                     uploadStream.end(() => {
+                        // Calculate final average speed
+                        const totalSeconds = (Date.now() - startTime) / 1000;
+                        const avgSpeedMBps = (totalData / totalSeconds / (1000 * 1000)).toFixed(2);
                         // Display it through the logs
-                        logger.successLog(`💽 Loaded file ${label} -> ${uploadStream.id} (100 %)`);
+                        logger.successLog(`💽 Loaded file ${label} -> ${uploadStream.id} (100 %) [avg: ${avgSpeedMBps} MB/s]`);
                         resolve();
                     });
                 }
@@ -521,12 +528,17 @@ class Project {
         // Track the current frame
         let frameCount = 0;
         let timeoutID;
+        const startTime = Date.now();
+        let bytesWritten = 0;
         // This throttle wrap makes the function not to be called more than once in a time range (1 second)
         const updateLogs = throttle(() => {
             // Update logs periodically to show the user the time taken for the running process
             const timeTaken = prettyMs(Date.now() - logger.logTime());
+            // Calculate upload speed
+            const elapsedSeconds = (Date.now() - startTime) / 1000;
+            const speedMBps = elapsedSeconds > 0 ? (bytesWritten / elapsedSeconds / (1000 * 1000)).toFixed(2) : '0.00';
             logger.updateLog(`💽 Loading trajectory file '${basename}' as '${filename}' [${
-                this.currentUploadId}]\n (frame ${frameCount} in ${timeTaken})`);
+                this.currentUploadId}]\n (frame ${frameCount} in ${timeTaken}) [${speedMBps} MB/s]`);
             // Warn user if the process is stuck
             // "setTimeout" and "clearTimeout" are node built-in functions
             // "clearTimeout" cancels the timeout (only if is is already set, in this case)
@@ -574,6 +586,8 @@ class Project {
             let timeout;
             // Iterate over buffers of binary coordinates
             for await (const coordinates of trajectoryCoordinates) {
+                // Track bytes written
+                bytesWritten += coordinates.length;
                 // In case of overload stop writing streams and wait until the drain is resolved
                 const keepGoing = uploadStream.write(coordinates);
                 if (!keepGoing) {
@@ -600,8 +614,10 @@ class Project {
                     reject();
                 }
                 // Display the end of this process as success in console
+                const totalSeconds = (Date.now() - startTime) / 1000;
+                const avgSpeedMBps = (bytesWritten / totalSeconds / (1000 * 1000)).toFixed(2);
                 logger.successLog(
-                    `💽 Loaded trajectory file '${basename}' as '${filename}' [${uploadStream.id}]\n(${frameCount} frames)`);
+                    `💽 Loaded trajectory file '${basename}' as '${filename}' [${uploadStream.id}]\n(${frameCount} frames) [avg: ${avgSpeedMBps} MB/s]`);
                 // Add the number of frames to the matadata object
                 metadata.frames = frameCount;
                 // Calculate the number of atoms in the loaded trajectory and add it to the metadata object
