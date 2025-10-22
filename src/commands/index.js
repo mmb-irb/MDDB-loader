@@ -58,6 +58,7 @@ const commonHandler = commandName => async argv => {
     process.env.abort = 'abort';
     // Stop the logger
     if (logger.isLogRunning()) logger.failLog(`Interrupted while doing '${logger.logText()}' due to error:\n${error.stack}`);
+    else if (error) console.error(chalk.bgRed(error.stack));
     // Try to revert changes
     await database.revertLoad();
   } finally {
