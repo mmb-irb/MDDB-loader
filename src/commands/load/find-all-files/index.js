@@ -44,7 +44,7 @@ const findAllFiles = (projectDirectory, mdirs, included, excluded) => {
     // Iterate subdirectories inside of the project directory to find more project files
     const subdirs = fs.readdirSync(projectDirectory)
         .filter(path => !mdirs.includes(normalize(joinPaths(projectDirectory, path))))
-        .filter(path => fs.statSync(joinPaths(projectDirectory, path)).isDirectory());
+        .filter(path => fs.lstatSync(joinPaths(projectDirectory, path)).isDirectory());
     for (const subdir of subdirs) {
         const projectPath = normalize(joinPaths(projectDirectory, subdir));
         const projectFileFilter = filterCreator(projectPath);
