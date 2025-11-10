@@ -236,9 +236,19 @@ class Database {
         return new Project(projectData, this);
     }
 
-    // Iterate over all projects in the database
+    // Iterate over projects ids in the database
+    iterateProjectIds = async function* (query = {}) {
+        const availableProjects = await this.projects.find(query, { projection: { _id: true } });
+        const projectCount = await availableProjects.count();
+        console.log(`Iterating ${projectCount} project ids`);
+        for await (const project of availableProjects) yield project._id;
+    }
+
+    // Iterate over projects in the database
     iterateProjects = async function* (query = {}) {
-        const availableProjects = this.projects.find(query, { projection: { _id: true } });
+        const availableProjects = await this.projects.find(query, { projection: { _id: true } });
+        const projectCount = await availableProjects.count();
+        console.log(`Iterating ${projectCount} projects`);
         for await (const project of availableProjects) {
             yield this.syncProject(project._id);
         }

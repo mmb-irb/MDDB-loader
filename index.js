@@ -126,7 +126,7 @@ yargs
     // publish
     .command({
         command: 'publish <id|accession>',
-        desc: 'publish and assign an accession (if not already existing) to the specified id(s)',
+        desc: 'set as "published" a specified project by its accession or internal id',
         builder: yargs => yargs
             // id
             .positional('id', {
@@ -139,7 +139,7 @@ yargs
     // unpublish
     .command({
         command: 'unpublish <id|accession>',
-        desc: 'publish and assign an accession to the specified id, or re-publish an existing accession',
+        desc: 'set as NOT "published" a specified project by its accession or internal id',
         builder: yargs => yargs
             // id
             .positional('id', {
@@ -148,6 +148,28 @@ yargs
                 coerce: idOrAccessionCoerce,
             }),
         handler: commonHandler('unpublish'),
+    })
+    // publish many
+    .command({
+        command: 'publishall <query>',
+        desc: 'set as "published" multiple projects at once using a query',
+        builder: yargs => yargs
+            .positional('query', {
+                description: 'Use a query to select projects to be published',
+                type: 'string',
+            }),
+        handler: commonHandler('publishall'),
+    })
+    // unpublish many
+    .command({
+        command: 'unpublishall <query>',
+        desc: 'set as NOT "published" multiple projects at once using a query',
+        builder: yargs => yargs
+            .positional('query', {
+                description: 'Use a query to select projects to be unpublished',
+                type: 'string',
+            }),
+        handler: commonHandler('unpublishall'),
     })
     // list
     // DANI: Nunca lo uso
