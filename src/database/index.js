@@ -5,7 +5,12 @@ const logger = require('../utils/logger');
 // Add colors in console
 const chalk = require('chalk');
 // Load auxiliar functions
-const { mongoidFormat, userConfirm, userConfirmOrphanDataDeletion } = require('../utils/auxiliar-functions');
+const {
+    mongoidFormat,
+    userConfirm,
+    userConfirmOrphanDataDeletion,
+    areObjectsIdentical,
+} = require('../utils/auxiliar-functions');
 // Mongo ObjectId class
 const { ObjectId } = require('mongodb');
 // The project class is used to handle database data from a specific project
@@ -51,7 +56,7 @@ class Database {
     COLLECTIONS = {
         projects: {
             name: 'projects',
-            index: { published: 1 },
+            indexes: [{ published: 1 }],
             documentNames: { singular: 'project', plural: 'projects' },
         },
         references: {
@@ -76,12 +81,12 @@ class Database {
         },
         topologies: {
             name: 'topologies',
-            index: { project: 1 },
+            indexes: [{ project: 1 }],
             documentNames: { singular: 'topology', plural: 'topologies' },
         },
         files: {
             name: 'fs.files',
-            index: { 'metadata.project': 1 },
+            indexes: [{ 'metadata.project': 1 }],
             documentNames: { singular: 'file', plural: 'files' },
         },
         chunks: {
@@ -90,7 +95,7 @@ class Database {
         },
         analyses: {
             name: 'analyses',
-            index: { project: 1 },
+            indexes: [{ project: 1 }],
             documentNames: { singular: 'analysis', plural: 'analyses' },
         },
         counters: {
@@ -142,16 +147,42 @@ class Database {
         for await (const [collectionKey, collectionConfig] of Object.entries(this.COLLECTIONS)) {
             // If the collection already exists then do nothing
             if (currentCollectionNames.includes(collectionConfig.name)) {
-                // DANI: Habría que mejorar un poco la lógica para que compruebe si los index coinciden
-                // DANI: Y si no coinciden que lo arregle
-                // console.log(await this[collectionKey].indexes());
+                // Get the configuration indexes for this collection
+                const configIndexes = collectionConfig.indexes;
+                // If there are no configuration indexes at all then we are done
+                if (!configIndexes) continue;
+                // Get the current collection indexes
+                const currentIndexesData = await this[collectionKey].indexes();
+                const currentIndexes = currentIndexesData.map(indexData => indexData.key);
+                // Iterate the expected indexes
+                for await (const configIndex of configIndexes) {
+                    // Make sure the index exists among the current indexes
+                    let found = false;
+                    for (const collectionIndex of currentIndexes) {
+                        // Compare indices
+                        if (areObjectsIdentical(collectionIndex,  configIndex)) {
+                            found = true;
+                            break;
+                        }
+                    }
+                    // If the index does not exist then we create it
+                    if (!found) {
+                        console.log(`🛠️  Setting a missing index in "${collectionKey}" collection: ${JSON.stringify(configIndex)}`);
+                        await this[collectionKey].createIndex(configIndex);
+                    }
+                }
+                // Proceed to the next collection
                 continue;
             }
-            console.log(`Setting up ${collectionKey} collection`);
+            console.log(`🛠️  Setting up ${collectionKey} collection`);
             // Create the collection
             await this.db.createCollection(collectionConfig.name);
             // Set some indices if specified to accelerate specific queries
-            if (collectionConfig.index) await this[collectionKey].createIndex(collectionConfig.index)
+            if (collectionConfig.indexes) {
+                for await (const index of collectionConfig.indexes) {
+                    await this[collectionKey].createIndex(index);
+                }
+            }
         }
     };
 
