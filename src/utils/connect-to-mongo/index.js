@@ -110,6 +110,7 @@ const connectToMongo = async () => {
                 useUnifiedTopology: true,
                 connectTimeoutMS: 0,
                 socketTimeoutMS: 0, // In order to avoid Mongo connection time out
+                readConcernLevel: 'local',
             },
         );
         //session = client.startSession();
