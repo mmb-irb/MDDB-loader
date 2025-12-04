@@ -538,6 +538,7 @@ class Project {
             // Calculate upload speed
             const elapsedSeconds = (Date.now() - startTime) / 1000;
             const speedMBps = elapsedSeconds > 0 ? (bytesWritten / elapsedSeconds / (1000 * 1000)).toFixed(2) : '0.00';
+            // Calculate percentage of data written
             const percentage = totalData > 0 ? ((bytesWritten / totalData) * 100).toFixed(2) : '0.00';
             logger.updateLog(`💽 Loading trajectory file '${basename}' as '${filename}' [${
                 this.currentUploadId}]\n (frame ${frameCount} in ${timeTaken}) [${speedMBps} MB/s] (${percentage}%)`);

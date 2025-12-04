@@ -49,12 +49,18 @@ const yieldCommandOutputPerLines = async function*(command, args) {
     }
 };
 
+// Batch size: number of atoms to accumulate before yielding
+const BATCH_SIZE = 100; // Adjust based on memory/performance tradeoff
+
 // Read a trajectory file while coordinates are parsed to float32 binary data
 const readAndParseTrajectory = async function* (filepath, gromacsCommand, newFrameUpdate, abort) {
     // Track the last time we checked if the load was aborted
     let lastCheck = Date.now();
     // Run a gromacs 'dump' command to read a gromacs trajectroy file and output their coordinates in a human readable format
     const commandArgs = [ 'dump', '-f', filepath ];
+    // Pre-allocate a batch buffer
+    const atomBatchBuffer = Buffer.alloc(BYTES_PER_ATOM * BATCH_SIZE);
+    let batchOffset = 0;
     // Iterate over the command output lines
     for await (const line of yieldCommandOutputPerLines(gromacsCommand, commandArgs)) {
         // Check once per second if the process has been aborted
@@ -68,19 +74,32 @@ const readAndParseTrajectory = async function* (filepath, gromacsCommand, newFra
         if (!match) {
             // try to check if it's a "frame number" line
             if (FRAME_REGEXP.test(line)) {
+                // Flush remaining buffer before frame update
+                if (batchOffset > 0) {
+                    yield Buffer.from(atomBatchBuffer.subarray(0, batchOffset));
+                    batchOffset = 0;
+                }
                 newFrameUpdate(); // Send a log update signal every time a new frame is completed
             }
             continue; // Next line
         }
-        // convert units
-        // DANI: Anteriormente el buffer era alocado fuera del loop y reutilizado
-        // DANI: Esto no era seguro así que he hecho que se declare cada vez
-        // DANI: El rendimineto es el mismo, pero no he comprovado a fondo si hay fuga de memoria
-        const coordinatesBuffer = Buffer.alloc(BYTES_PER_ATOM);
-        coordinatesBuffer.writeFloatLE(+match[1] * UNIT_CONVERSION_SCALE, 0); // x
-        coordinatesBuffer.writeFloatLE(+match[2] * UNIT_CONVERSION_SCALE, 4); // y
-        coordinatesBuffer.writeFloatLE(+match[3] * UNIT_CONVERSION_SCALE, 8); // z
-        yield coordinatesBuffer;
+        // Write coordinates at the current batch offset
+        atomBatchBuffer.writeFloatLE(+match[1] * UNIT_CONVERSION_SCALE, batchOffset);     // x
+        atomBatchBuffer.writeFloatLE(+match[2] * UNIT_CONVERSION_SCALE, batchOffset + 4); // y
+        atomBatchBuffer.writeFloatLE(+match[3] * UNIT_CONVERSION_SCALE, batchOffset + 8); // z
+        batchOffset += BYTES_PER_ATOM;
+        
+        // Yield when batch is full - Buffer.from() creates a copy, safe for async consumers
+        if (batchOffset >= atomBatchBuffer.length) {
+            // Buffer.from() copy on yield ensures the consumer gets a safe copy
+            yield Buffer.from(atomBatchBuffer);
+            batchOffset = 0;
+        }
+    }
+    
+    // Flush any remaining data
+    if (batchOffset > 0) {
+        yield Buffer.from(atomBatchBuffer.subarray(0, batchOffset));
     }
 };
 
