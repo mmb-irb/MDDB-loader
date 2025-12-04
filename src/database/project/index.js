@@ -530,7 +530,7 @@ class Project {
         let timeoutID;
         const startTime = Date.now();
         let bytesWritten = 0;
-        const totalData = fs.statSync(sourceFilepath).size;
+        const totalFrames = this.data.mds[mdIndex]?.frames || 0;
         // This throttle wrap makes the function not to be called more than once in a time range (1 second)
         const updateLogs = throttle(() => {
             // Update logs periodically to show the user the time taken for the running process
@@ -538,10 +538,12 @@ class Project {
             // Calculate upload speed
             const elapsedSeconds = (Date.now() - startTime) / 1000;
             const speedMBps = elapsedSeconds > 0 ? (bytesWritten / elapsedSeconds / (1000 * 1000)).toFixed(2) : '0.00';
-            // Calculate percentage of data written
-            const percentage = totalData > 0 ? ((bytesWritten / totalData) * 100).toFixed(2) : '0.00';
-            logger.updateLog(`💽 Loading trajectory file '${basename}' as '${filename}' [${
-                this.currentUploadId}]\n (frame ${frameCount} in ${timeTaken}) [${speedMBps} MB/s] (${percentage}%)`);
+            // Calculate percentage of data written (only if totalFrames is known from metadata.json)
+            const progressInfo = totalFrames > 0 
+                ? `${((frameCount / totalFrames) * 100).toFixed(1)}% `
+                : '';
+            logger.updateLog(`💽 Loading trajectory file '${basename}' as '${filename}' [${this.currentUploadId}]\n`+
+                `     ${progressInfo}(frame ${frameCount}${totalFrames > 0 ? '/' + totalFrames : ''} in ${timeTaken}) [${speedMBps} MB/s]`);
             // Warn user if the process is stuck
             // "setTimeout" and "clearTimeout" are node built-in functions
             // "clearTimeout" cancels the timeout (only if is is already set, in this case)
