@@ -458,7 +458,9 @@ class Project {
             let currentData = 0;
             const startTime = Date.now();
             // Start reading the file by streaming
-            const readStream = fs.createReadStream(sourceFilepath);
+            const readStream = fs.createReadStream(sourceFilepath,
+                { highWaterMark: 4 * 1024 * 1024 } // 4 MiB buffer
+            );
             // Open the mongo writable stream with a few customized options
             // All data uploaded to mongo by this way is stored in fs.chunks
             // fs.chunks is a default collection of mongo which is managed internally
