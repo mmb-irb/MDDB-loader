@@ -23,6 +23,8 @@ const {
 } = require('../../utils/auxiliar-functions');
 // Get metadata handlers
 const { merge_metadata } = require('./metadata-handlers');
+// Get constants
+const { ANALYSIS_ASSOCIATED_FILES } = require('../../utils/constants');
 
 // Constants
 const N_COORDINATES = 3; // x, y, z
@@ -46,6 +48,9 @@ class Project {
         // Fix data format issues
         // These may come from old project formats
         if (this.data.analyses === undefined) this.data.analyses = [];
+        // Set an internal variable to store when the user confirms the load of a group of associated data
+        // Thus there is no need to ask the user again for every file/analysis in the group
+        this.confirmedAssociatedDataLoad = {};
     };
 
     // Update remote project data by overwritting it all with current project data
@@ -375,7 +380,8 @@ class Project {
         // In this case we stop here since it makes not sense uploading the same
         if (JSON.stringify(exist) === JSON.stringify(newTopology)) return false;
         // Ask the user in case the 'overwrite' flag has not been passed
-        const confirm = overwrite ? true : await userConfirmDataLoad('Topology');
+        const message = 'There is already a topology in this project.';
+        const confirm = overwrite ? true : await userConfirmDataLoad(message);
         // If the user has asked to conserve current data then abort the process
         if (!confirm) return false;
         // We must delete the current document in mongo
@@ -427,11 +433,31 @@ class Project {
         const alreadyExistingFile = this.findFile(filename, mdIndex);
         // If the new file is not among the current files then there is no problem
         if (!alreadyExistingFile) return true;
+        // Check if the load was previously confirmed for the associated data group
+        const associatedDataLabel = this.findFileAssociatedDataLabel(filename);
+        const previousConfirm = this.confirmedAssociatedDataLoad[associatedDataLabel];
         // In case it exists and the 'conserve' flag has been passed we end here
-        if (conserve) return false;
+        if (conserve || previousConfirm === false) return false;
         // Note that here we do not check if files are identical since they may be huge
         // Ask the user in case the 'overwrite' flag has not been passed
-        const confirm = overwrite ? true : await userConfirmDataLoad(filename + ' file');
+        let confirm = overwrite || previousConfirm === true;
+        if (!confirm) {
+            // Find if there is data associated to this file
+            let message = `There is already a file named "${filename}" in this project.`;
+            const associatedData = associatedDataLabel &&
+                await this.findAssociatedData(associatedDataLabel, mdIndex);
+            if (associatedData && associatedData.count > 1) {
+                const analysisCount = associatedData.analyses.length;
+                const fileCount = associatedData.files.length;
+                message += (` This file is part of a group of associated data. ` +
+                    `The group includes ${analysisCount} analyses and ${fileCount} files. ` +
+                    `These analyses and files will be overwritten or conserved together.`);
+            }
+            // Ask the user
+            confirm = await userConfirmDataLoad(message);
+            // Save the result for the whole group of associated data
+            this.confirmedAssociatedDataLoad[associatedDataLabel] = confirm;
+        } 
         // If the user has asked to conserve current data then abort the process
         if (!confirm) return false;
         // Delete the current file from the database
@@ -662,13 +688,21 @@ class Project {
     }
 
     // Delete a file both from fs.files / fs.chunks and from the project data
-    deleteFile = async (filename, mdIndex) => {
+    deleteFile = async (filename, mdIndex, handleAssociatedData = true) => {
         // Get a list of available files
         const availableFiles = this.getAvailableFiles(mdIndex);
         // Find the file summary
         const currentFile = availableFiles.find(file => file.name === filename);
         // Find the file summary
         if (!currentFile) throw new Error(`File ${filename} is not in the available files list (MD index ${mdIndex})`);
+        // If there is data associated to this analysis then delete the whole group of data instead
+        if (handleAssociatedData) {
+            const associatedDataLabel = this.findFileAssociatedDataLabel(filename);
+            const associatedData = associatedDataLabel &&
+                await this.findAssociatedData(associatedDataLabel, mdIndex);
+            if (associatedData && associatedData.count > 1)
+                return await this.deleteAssociatedData(associatedData);
+        }
         logger.startLog(`🗑️  Deleting file ${filename} <- ${currentFile.id}`);
         const fileCursor = await this.database.bucket.find(currentFile.id);
         const targetFile = await fileCursor.next();
@@ -718,11 +752,30 @@ class Project {
         const alreadyExistingAnalysis = this.findAnalysis(name, mdIndex);
         // If the new analysis is not among the current analyses then there is no problem
         if (!alreadyExistingAnalysis) return true;
+        // Check if the load was previously confirmed for the associated data group
+        const associatedDataLabel = this.findAnalysisAssociatedDataLabel(name);
+        const previousConfirm = this.confirmedAssociatedDataLoad[associatedDataLabel];
         // In case it exists and the 'conserve' flag has been passed we end here
-        if (conserve) return false;
+        if (conserve || previousConfirm === false) return false;
         // Note that here we do not check if analyses are identical since they may be huge
         // Ask the user in case the 'overwrite' flag has not been passed
-        const confirm = overwrite ? true : await userConfirmDataLoad(name + ' analysis');
+        let confirm = overwrite || previousConfirm === true;
+        if (!confirm) {
+            // Find if there is data associated to this analysis
+            let message = `There is already an analysis named "${name}" in this project.`;
+            const associatedData = await this.findAssociatedData(associatedDataLabel, mdIndex);
+            if (associatedData.count > 1) {
+                const analysisCount = associatedData.analyses.length;
+                const fileCount = associatedData.files.length;
+                message += (` This analysis is part of a group of associated data.` +
+                    ` The group includes ${analysisCount} analyses and ${fileCount} files.` +
+                    ` These analyses and files will be overwritten or conserved together.`);
+            }
+            // Ask the suer
+            confirm = await userConfirmDataLoad(message);
+            // Save the result for the whole group of associated data
+            this.confirmedAssociatedDataLoad[associatedDataLabel] = confirm;
+        }
         // If the user has asked to conserve current data then abort the process
         if (!confirm) return false;
         // Delete the current analysis from the database
@@ -765,12 +818,19 @@ class Project {
     }
 
     // Delete an analysis both from its collection and from the project data
-    deleteAnalysis = async (name, mdIndex) => {
+    deleteAnalysis = async (name, mdIndex, handleAssociatedData = true) => {
         // Get a list of available analyses
         const availableAnalyses = this.getAvailableAnalyses(mdIndex);
         // Get the current analysis
         const currentAnalysis = availableAnalyses.find(analysis => analysis.name === name);
-        if (!currentAnalysis) throw new Error(`Analysis ${name} is not in the available analyses list (MD index ${mdIndex})`);
+        if (!currentAnalysis)
+            throw new Error(`Analysis ${name} is not in the available analyses list (MD index ${mdIndex})`);
+        // If there is data associated to this analysis then delete the whole group of data instead
+        if (handleAssociatedData) {
+            const associatedDataLabel = this.findAnalysisAssociatedDataLabel(name)
+            const associatedData = await this.findAssociatedData(associatedDataLabel, mdIndex);
+            if (associatedData.count > 1) return await this.deleteAssociatedData(associatedData);
+        }
         logger.startLog(`🗑️  Deleting analysis ${name} (MD index ${mdIndex})`);
         // Delete the current analysis from the database
         const result = await this.database.analyses.deleteOne({
@@ -799,6 +859,68 @@ class Project {
         // Rename the analysis object name and update the project
         currentAnalysis.name = newName;
         await this.updateRemote();
+    }
+
+    // Given a file, find if there is any analysis it is related to
+    findFileAssociatedDataLabel = filename => {
+        // Iterate analysis associated files until we find this file
+        for (const [analysisName, associatedFiles] of Object.entries(ANALYSIS_ASSOCIATED_FILES)) {
+            for (const associatedFile of associatedFiles) {
+                if (filename.match(associatedFile)) return analysisName;
+            }
+        }
+        // If no analysis was found to be associated then return null
+        return null;
+    }
+
+    // Get the analysis core name
+    // e.g. if the name is 'clusters-01' then get the 'clusters'
+    findAnalysisAssociatedDataLabel = analysisName => {
+        return analysisName.replace(/-[0-9]*$/i, '');
+    }
+
+    // Delete a group of related analyses and files
+    // The data label is the name of the index analysis
+    // e.g. 'pca', 'clusters', etc.
+    findAssociatedData = async (dataLabel, mdIndex) => {
+        // Get a list of available analyses
+        const availableAnalyses = this.getAvailableAnalyses(mdIndex);
+        // Filter the analysis related to the core name
+        const analysesRegExp = new RegExp(`${dataLabel}(-[0-9]*)?`);
+        const associatedAnalyses = availableAnalyses.filter(
+            analysis => analysis.name.match(analysesRegExp));
+        // Get a list of available files
+        const availableFiles = this.getAvailableFiles(mdIndex);
+        // Find out which files are related to the analysis
+        const associtedFiles = [];
+        const associatedFileRegExps = ANALYSIS_ASSOCIATED_FILES[dataLabel] || [];
+        for (const fileRegExp of associatedFileRegExps) {
+            for (const availableFile of availableFiles) {
+                if (availableFile.name.match(fileRegExp))
+                    associtedFiles.push(availableFile);
+            }
+        }
+        // Count the amount of findings we had
+        const count = associatedAnalyses.length + associtedFiles.length;
+        // Return the findings
+        return {
+            analyses: associatedAnalyses,
+            files: associtedFiles,
+            count: count,
+            mdIndex,
+        };
+    }
+
+    // Delete a group of associated analyses and files
+    deleteAssociatedData = async associatedData => {
+        // Delete associated analyses
+        for await(const analysis of associatedData.analyses) {
+            await this.deleteAnalysis(analysis.name, associatedData.mdIndex, false);
+        }
+        // Delete associated files
+        for await(const file of associatedData.files) {
+            await this.deleteFile(file.name, associatedData.mdIndex, false);
+        }
     }
 
     // Set if the project is to be published

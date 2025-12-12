@@ -83,7 +83,18 @@ const deleteFunction = async (
             projectLabel += `, ${mdName}`;
         }
         // Log the summary
-        console.log(`About to delete ${documentName} "${analysisName}" of project ${projectLabel}`);
+        let msg = `About to delete ${documentName} "${analysisName}" of project ${projectLabel}.`;
+        // Check if there is additional associated data, which would be also deleted
+        const associatedDataLabel = project.findAnalysisAssociatedDataLabel(analysisName);
+        const associatedData = await project.findAssociatedData(associatedDataLabel, mdIndex);
+        if (associatedData.count > 1) {
+            const analysisCount = associatedData.analyses.length;
+            const fileCount = associatedData.files.length;
+            msg += (` This analysis is part of a group of associated data.` +
+                ` The group includes ${analysisCount} analyses and ${fileCount} files.` +
+                ` These analyses and files will be overwritten or conserved together.`);
+        }
+        console.log(msg);
     }
     // If it is a file log its filename and the project it belongs to
     else if (target.collectionKey === 'files') {
@@ -106,7 +117,18 @@ const deleteFunction = async (
         if (isNumber(mdIndex)) {
             // Get the MD name
             const mdName = project.data.mds[mdIndex].name;
-            msg += `, ${mdName}`
+            msg += `, ${mdName}.`
+        }
+        // Check if there is additional associated data, which would be also deleted
+        const associatedDataLabel = project.findFileAssociatedDataLabel(filename);
+        const associatedData = associatedDataLabel &&
+            await project.findAssociatedData(associatedDataLabel, mdIndex);
+        if (associatedData && associatedData.count > 1) {
+            const analysisCount = associatedData.analyses.length;
+            const fileCount = associatedData.files.length;
+            msg += (` This file is part of a group of associated data. ` +
+                `The group includes ${analysisCount} analyses and ${fileCount} files. ` +
+                `These analyses and files will be deleted together.`);
         }
         console.log(msg);
     }

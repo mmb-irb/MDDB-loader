@@ -43,17 +43,18 @@ const userConfirm = async question => {
 };
 
 // Usual question
-const userConfirmDataLoad = async fieldname => {
+const userConfirmDataLoad = async messageHeader => {
     const confirm = await userConfirm(
-        `'${fieldname}' already exists in the project. Confirm data loading:
+        `${messageHeader}
+        Confirm data loading:
         Y - Overwrite previous data with new data
-        * - Conserve previous data and discard new data`
+        * - Conserve previous data thus discarding new data`
     ) === 'Y';
     // Warn the user about the consequences of its decision
-    const message = confirm
-        ? 'Previous data will be overwritten by the new data'
-        : 'Previous data is conserved and the new data will be discarded';
-    console.log(chalk.yellow(message));
+    const finalLog = confirm
+        ? 'Previous data will be overwritten by new data'
+        : 'Previous data will be conserved while new data will be discarded';
+    console.log(chalk.yellow(finalLog));
     return confirm;
 };
 

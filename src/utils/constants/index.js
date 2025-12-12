@@ -67,7 +67,7 @@ module.exports = {
         },
         // Inputs file, which is not to be loaded but simply readed
         inputsFile: {
-            pattern: /^inputs.(yaml|yml|json)$/i,
+            pattern: /inputs.(yaml|yml|json)$/i,
             singleFile: true,
         }
     },
@@ -102,8 +102,14 @@ module.exports = {
         },
         // Additional trajectory files to parse-load, any number for every MD directory
         uploadableTrajectories: {
-            pattern: /^mdt.[\s\S]*.xtc/i,
+            pattern: /^mdt.[\s\S]*.xtc$/i,
         }
+    },
+    // Set analysis-associated files
+    ANALYSIS_ASSOCIATED_FILES: {
+        pca: [ /^pca_trajectory_[0-9]*.bin$/i ],
+        clusters: [ /^clusters_[0-9]*_screenshot_[0-9]*.jpg$/i ],
+        pockets: [ /^pocket_[0-9]*.pdb$/i ]
     },
     // These are just URLs to access web pages with useful alaytical tools
     interProScanURL: 'https://www.ebi.ac.uk/Tools/services/rest/iprscan5',
