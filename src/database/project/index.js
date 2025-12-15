@@ -484,7 +484,9 @@ class Project {
             let currentData = 0;
             const startTime = Date.now();
             // Start reading the file by streaming
-            const readStream = fs.createReadStream(sourceFilepath);
+            const readStream = fs.createReadStream(sourceFilepath,
+                { highWaterMark: 4 * 1024 * 1024 } // 4 MiB buffer
+            );
             // Open the mongo writable stream with a few customized options
             // All data uploaded to mongo by this way is stored in fs.chunks
             // fs.chunks is a default collection of mongo which is managed internally
@@ -556,6 +558,7 @@ class Project {
         let timeoutID;
         const startTime = Date.now();
         let bytesWritten = 0;
+        const totalFrames = this.data.mds[mdIndex]?.frames || 0;
         // This throttle wrap makes the function not to be called more than once in a time range (1 second)
         const updateLogs = throttle(() => {
             // Update logs periodically to show the user the time taken for the running process
@@ -563,8 +566,12 @@ class Project {
             // Calculate upload speed
             const elapsedSeconds = (Date.now() - startTime) / 1000;
             const speedMBps = elapsedSeconds > 0 ? (bytesWritten / elapsedSeconds / (1000 * 1000)).toFixed(2) : '0.00';
-            logger.updateLog(`💽 Loading trajectory file '${basename}' as '${filename}' [${
-                this.currentUploadId}]\n (frame ${frameCount} in ${timeTaken}) [${speedMBps} MB/s]`);
+            // Calculate percentage of data written (only if totalFrames is known from metadata.json)
+            const progressInfo = totalFrames > 0 
+                ? `${((frameCount / totalFrames) * 100).toFixed(1)}% `
+                : '';
+            logger.updateLog(`💽 Loading trajectory file '${basename}' as '${filename}' [${this.currentUploadId}]\n`+
+                `     ${progressInfo}(frame ${frameCount}${totalFrames > 0 ? '/' + totalFrames : ''} in ${timeTaken}) [${speedMBps} MB/s]`);
             // Warn user if the process is stuck
             // "setTimeout" and "clearTimeout" are node built-in functions
             // "clearTimeout" cancels the timeout (only if is is already set, in this case)
