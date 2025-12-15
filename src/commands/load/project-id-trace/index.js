@@ -12,10 +12,15 @@ const TRACE_FILENAME = '.project_id';
 const leaveTrace = (directory, id) => {
     // If we do not have write permissiones here then do not try to leave a trace
     if (!canWrite(directory)) {
-        console.log(chalk.yellow(`WARNING: No write permissions here. No trace will be left.`));
+        console.log(chalk.yellow(`WARNING: No write permissions in ${directory}. No trace will be left.`));
         return
     };
-    fs.writeFileSync(directory + TRACE_FILENAME, id.toString());
+    const traceFilepath = directory + TRACE_FILENAME;
+    if (!canWrite(traceFilepath)) {
+        console.log(chalk.yellow(`WARNING: No permission to overwrite ${traceFilepath}. Previous trace will remain.`));
+        return
+    };
+    fs.writeFileSync(traceFilepath, id.toString());
 }
 
 // Find the project id trace, if exists, and return the project id

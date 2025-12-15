@@ -166,6 +166,7 @@ const load = async (
   // Set the project data handler and update the 'isNewProject' variable accordingly
   // This part of the code is set as a function just to use return
   let isNewProject = false;
+  const trace = findTrace(projectDirectory);
   const project = await (async () => {
     // If we have a forced accession in the coomand line or in the metadata then use it
     const forcedAccession = accession || (inputs && inputs.accession);
@@ -187,7 +188,6 @@ const load = async (
       return await database.createProject(forcedAccession);
     }
     // If we had a trace then check it belongs to an existing project
-    const trace = findTrace(projectDirectory);
     if (trace) {
       const alreadyExistingProject = await database.syncProject(trace);
       // If we had a trace and the project exists then use it
@@ -215,7 +215,8 @@ const load = async (
   }
   
   // Leave a trace of the project id
-  leaveTrace(projectDirectory, project.id);
+  if (!trace || trace.toString() !== project.id.toString())
+    leaveTrace(projectDirectory, project.id);
 
   // Check if the load has been aborted at this point
   await checkAbort();

@@ -219,6 +219,7 @@ const getValueGetter = path => {
 // Test if we have write permissions somewhere
 const canWrite = path => {
     try {
+        // DANI: This is not fully safe, it may fail with a file belonging to the root
         fs.accessSync(path, fs.constants.W_OK);
         return true
     }
