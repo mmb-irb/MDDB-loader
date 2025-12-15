@@ -50,7 +50,7 @@ class Project {
         if (this.data.analyses === undefined) this.data.analyses = [];
         // Set an internal variable to store when the user confirms the load of a group of associated data
         // Thus there is no need to ask the user again for every file/analysis in the group
-        this.confirmedAssociatedDataLoad = {};
+        this._confirmedAssociatedDataLoad = {};
     };
 
     // Update remote project data by overwritting it all with current project data
@@ -435,7 +435,7 @@ class Project {
         if (!alreadyExistingFile) return true;
         // Check if the load was previously confirmed for the associated data group
         const associatedDataLabel = this.findFileAssociatedDataLabel(filename);
-        const previousConfirm = this.confirmedAssociatedDataLoad[associatedDataLabel];
+        const previousConfirm = this.getAssociatedDataLoadConfirmation(mdIndex, associatedDataLabel);
         // In case it exists and the 'conserve' flag has been passed we end here
         if (conserve || previousConfirm === false) return false;
         // Note that here we do not check if files are identical since they may be huge
@@ -456,7 +456,7 @@ class Project {
             // Ask the user
             confirm = await userConfirmDataLoad(message);
             // Save the result for the whole group of associated data
-            this.confirmedAssociatedDataLoad[associatedDataLabel] = confirm;
+            this.setAssociatedDataLoadConfirmation(mdIndex, associatedDataLabel, confirm);
         } 
         // If the user has asked to conserve current data then abort the process
         if (!confirm) return false;
@@ -761,7 +761,7 @@ class Project {
         if (!alreadyExistingAnalysis) return true;
         // Check if the load was previously confirmed for the associated data group
         const associatedDataLabel = this.findAnalysisAssociatedDataLabel(name);
-        const previousConfirm = this.confirmedAssociatedDataLoad[associatedDataLabel];
+        const previousConfirm = this.getAssociatedDataLoadConfirmation(mdIndex, associatedDataLabel);
         // In case it exists and the 'conserve' flag has been passed we end here
         if (conserve || previousConfirm === false) return false;
         // Note that here we do not check if analyses are identical since they may be huge
@@ -781,7 +781,7 @@ class Project {
             // Ask the suer
             confirm = await userConfirmDataLoad(message);
             // Save the result for the whole group of associated data
-            this.confirmedAssociatedDataLoad[associatedDataLabel] = confirm;
+            this.setAssociatedDataLoadConfirmation(mdIndex, associatedDataLabel, confirm);
         }
         // If the user has asked to conserve current data then abort the process
         if (!confirm) return false;
@@ -928,6 +928,19 @@ class Project {
         for await(const file of associatedData.files) {
             await this.deleteFile(file.name, associatedData.mdIndex, false);
         }
+    }
+
+    // Check if a group of associated data has been confirmed to be loaded for a specific MD
+    getAssociatedDataLoadConfirmation = (mdIndex, dataLabel) => {
+        const mdConfirmations = this._confirmedAssociatedDataLoad[mdIndex] || {};
+        return mdConfirmations[dataLabel];
+    }
+    // Store if a group of associated data has been confirmed to be loaded for a specific MD
+    setAssociatedDataLoadConfirmation = (mdIndex, dataLabel, confirmation) => {
+        const mdConfirmations = this._confirmedAssociatedDataLoad[mdIndex] || {};
+        if (this._confirmedAssociatedDataLoad[mdIndex] === undefined)
+            this._confirmedAssociatedDataLoad[mdIndex] = mdConfirmations;
+        mdConfirmations[dataLabel] = confirmation;
     }
 
     // Set if the project is to be published
