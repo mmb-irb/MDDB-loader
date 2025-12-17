@@ -127,7 +127,7 @@ class Project {
         // To avoid this problem we create a new list with project filenames
         const projectFilenames = projectFiles.map(file => file.name);
         for await (const filename of projectFilenames) {
-            await this.deleteFile(filename, undefined);
+            await this.deleteFile(filename, undefined, false);
         }
         // Delete project analyses
         const projectAnalyses = this.data.analyses || [];
@@ -135,7 +135,7 @@ class Project {
         // To avoid this problem we create a new list with project analysis names
         const projectAnalysisNames = projectAnalyses.map(analysis => analysis.name);
         for await (const analysisName of projectAnalysisNames) {
-            await this.deleteAnalysis(analysisName, undefined);
+            await this.deleteAnalysis(analysisName, undefined, false);
         }
         // Delete every MD
         for await (const [mdIndex, md] of Object.entries(this.data.mds)) {
@@ -224,7 +224,7 @@ class Project {
         // To avoid this problem we create a new list with MD filenames
         const mdFilenames = mdFiles.map(file => file.name);
         for await (const filename of mdFilenames) {
-            await this.deleteFile(filename, mdIndex);
+            await this.deleteFile(filename, mdIndex, false);
         }
         // Delete MD analyses
         const mdAnalyses = md.analyses || [];
@@ -232,7 +232,7 @@ class Project {
         // To avoid this problem we create a new list with MD analysis names
         const mdAnalysisNames = mdAnalyses.map(analysis => analysis.name);
         for await (const analysisName of mdAnalysisNames) {
-            await this.deleteAnalysis(analysisName, mdIndex);
+            await this.deleteAnalysis(analysisName, mdIndex, false);
         }
         // Replace the current MD object with a new object which conserves the name and is flagged as 'removed'
         console.log(`MD ${md.name} will be flagged as removed`);
