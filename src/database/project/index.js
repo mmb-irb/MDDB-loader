@@ -179,7 +179,7 @@ class Project {
         // Otherwise return null and asume it is a new MD
         // Note that directories cannot be back-mapped to names since they may be missing forbidden characters
         for (const [mdIndex, md] of Object.entries(this.data.mds)) {
-            const mdDirectory = mdNameToDirectory(md.name);
+            const mdDirectory = md.name ? mdNameToDirectory(md.name) : `replica_${parseInt(mdIndex)+1}`;
             // Make sure the MD index is numeric or silent errors will happen
             if (mdDirectory === basename) return +mdIndex;
         }

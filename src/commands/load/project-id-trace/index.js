@@ -16,7 +16,7 @@ const leaveTrace = (directory, id) => {
         return
     };
     const traceFilepath = directory + TRACE_FILENAME;
-    if (!canWrite(traceFilepath)) {
+    if (fs.existsSync(traceFilepath) &&  !canWrite(traceFilepath)) {
         console.log(chalk.yellow(`WARNING: No permission to overwrite ${traceFilepath}. Previous trace will remain.`));
         return
     };
