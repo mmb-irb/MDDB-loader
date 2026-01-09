@@ -108,6 +108,14 @@ yargs
                 type: 'string',
                 default: null,
                 coerce: idOrAccessionCoerce,
+            })
+            // --dataset-path
+            .option('dp', {
+                alias: 'dataset-path',
+                description: 'Path to SQLite database file for tracking load status.\n' +
+                    'If provided, load errors and status will be saved to this database.',
+                type: 'string',
+                default: null,
             }),
         handler: commonHandler('load'), // Call the command script with the command name as argument
     })

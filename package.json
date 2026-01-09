@@ -16,6 +16,7 @@
   "author": "Aurélien Luciani <aurelien.luciani@irbbarcelona.org>",
   "license": "ISC",
   "dependencies": {
+    "better-sqlite3": "^11.0.0",
     "cli-table3": "0.5.1",
     "dev-null": "0.1.1",
     "dotenv": "8.2.0",

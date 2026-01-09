@@ -13,6 +13,8 @@ const {
   loadJSON,
   loadYAMLorJSON
 } = require('../../utils/auxiliar-functions');
+// Dataset utility for tracking load status in SQLite
+const { createDataset, ErrorHandling } = require('../../utils/dataset');
 // Return a word's plural when the numeric argument is bigger than 1
 const plural = require('../../utils/plural');
 // Displays data in console inside a big colorful rectangle
@@ -75,10 +77,13 @@ const load = async (
     skipFiles,
     skipAnalyses,
     gromacsPath,
+    datasetPath,
   },
   // Database handler
   database,
 ) => {
+  // Initialize SQLite dataset for status tracking if path is provided
+  const dataset = createDataset(datasetPath);
   // Run the database setup
   // This makes only sense the first time but it is run always just in case there is a new collection
   await database.setup();
@@ -96,7 +101,8 @@ const load = async (
   const projectDirectory = directoryCoerce(pdir);
   // Guess MD directories in case they are missing
   const mdDirectories = mdirs ? parseDirectories(projectDirectory, mdirs) : findMdDirectories(projectDirectory);
-
+  // Natural sort: sort directories so that numbers are compared numerically
+  mdDirectories.sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
   // Note that include and exclude arguments are 'undefined' when not passed by the user
   // If passed empty, which should not happen, they become an empty array
   // This may happen when using an empty variable as input (e.g. -i $accidentally_empty_variable)
@@ -206,6 +212,20 @@ const load = async (
 
   // Display the project id. It may be useful if the load is abruptly interrupted to clean
   console.log(chalk.cyan(`== Project '${project.data.accession}'`));
+
+  // Initialize project-level error handling for SQLite status tracking
+  const projectErrorHandler = dataset ? new ErrorHandling(
+    dataset,
+    projectDirectory
+  ) : null;
+  
+  // Mark project as running if dataset tracking is enabled
+  if (projectErrorHandler) {
+    projectErrorHandler.start();
+  }
+
+  // Wrap all project operations in a try-catch to capture errors
+  try {
 
   // If the project was previously booked, unmark it as booked since we're now loading real data
   if (project.data.booked) {
@@ -352,9 +372,20 @@ const load = async (
   // Iterate over the different MD directores
   for await (const mdir of mdDirectories) {
     console.log(chalk.cyan(`== MD directory '${mdir}'`));
+    
+    // Initialize MD-level error handling for SQLite status tracking
+    const mdErrorHandler = dataset ? new ErrorHandling(
+      dataset,
+      mdir
+    ) : null;
+    // Mark MD as running if dataset tracking is enabled
+    if (mdErrorHandler) {
+      mdErrorHandler.start();
+    }
+    
+    try {
     let mdName;
     let mdIndex;
-    let isNewMD = false;
     // Get the MD directory files
     const directoryFiles = categorizedMdFiles[mdir];
     // Get the metadata filename
@@ -365,9 +396,13 @@ const load = async (
       if (!mdMetadata) throw new Error(`There is something wrong with the MD metadata file in ${mdir}`);
       // Use the metadata name to find out if the MD already exists and which is its index
       mdName = mdMetadata.name;
+      if (!mdName) {
+        mdName = mdir.split('/').pop()
+        mdMetadata.name = mdName;
+        console.log(chalk.yellow(`WARNING: MD metadata in ${mdir} has no name. Using directory name '${mdName}' as MD name`));
+      };
       mdIndex = project.findMDIndexByName(mdName);
       if (mdIndex === null) {
-        isNewMD = true;
         mdIndex = project.data.mds.length;
         await project.addMDirectory(mdMetadata);
       }
@@ -389,6 +424,7 @@ const load = async (
       mdName = project.data.mds[mdIndex].name;
     }
     // Get the MD name form the metadata
+    if (mdName === null) mdName = mdir.split('/').pop();
     console.log(`== MD directory '${mdir}' named as '${mdName}' (MD index ${mdIndex})`);
 
     // Check if the load has been aborted at this point
@@ -491,6 +527,39 @@ const load = async (
       }
     }
 
+    // Mark MD as successful if dataset tracking is enabled
+    if (mdErrorHandler) {
+      mdErrorHandler.success();
+    }
+
+    } catch (mdError) {
+      // Handle MD-level errors
+      if (mdErrorHandler) {
+        mdErrorHandler.error(mdError);
+      } else {
+        // If there is no MD error handler, rethrow the error to be caught by the project-level handler
+        throw mdError;
+      }
+    }
+
+  }
+
+  // Mark project as successful if dataset tracking is enabled and no fatal errors occurred
+  if (projectErrorHandler) {
+    projectErrorHandler.success();
+  }
+
+  } catch (projectError) {
+    // Handle project-level errors
+    if (projectErrorHandler) {
+      projectErrorHandler.error(projectError);
+    }
+    // Close the SQLite dataset connection before rethrowing
+    if (dataset) {
+      dataset.close();
+    }
+    // Rethrow the error to be handled by the common handler
+    throw projectError;
   }
 
   return () => {
@@ -498,6 +567,11 @@ const load = async (
       chalk.cyan(`== finished loading '${projectDirectory}' in ${prettyMs(Date.now() - startTime)} with id:`),
     );
     printHighlight(project.data.accession);
+    
+    // Close the SQLite dataset connection if it was opened
+    if (dataset) {
+      dataset.close();
+    }
   };
 };
 
