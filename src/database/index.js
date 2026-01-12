@@ -263,8 +263,19 @@ class Database {
             collection: this.projects,
             id: result.insertedId
         });
-        // Set the new project handler and return it
-        return new Project(projectData, this);
+        // Set the new project handler
+        const project = new Project(projectData, this);
+        // Make sure the new accession does not exist yet in the database after adding the project
+        // This may seem redundant since we already checked it when we issued the accession
+        // However in a highly concurrent environment another project may have been added meanwhile
+        // This has happened
+        const projectCount = await this.projects.countDocuments({ accession: newAccession });
+        if (projectCount > 1) {
+            await project.deleteProject();
+            throw Error(`Multple projects (${projectCount}) with accession ${newAccession}. The new project has been deleted.`);
+        }
+        // Finally return the project handler
+        return project;
     }
 
     // Iterate over projects ids in the database
