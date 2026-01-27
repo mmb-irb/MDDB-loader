@@ -15,20 +15,166 @@ const State = {
 };
 
 /**
+ * Directory-based locking for SQLite database access on distributed filesystems.
+ * 
+ * Uses fs.mkdirSync() which is atomic across distributed filesystems like NFS and BeeGFS.
+ * This provides reliable locking where file-based locks fail on network filesystems.
+ * 
+ * Note: This implementation uses exclusive locking for both read and write operations
+ * to ensure consistency on distributed filesystems. While this is more conservative
+ * than true reader-writer locks, it guarantees correctness across all nodes.
+ */
+class DatabaseLock {
+  /**
+   * Initialize the database lock.
+   * @param {string} dbPath - Path to the SQLite database file.
+   * @param {number} [timeout=30.0] - Maximum time to wait for lock acquisition (seconds).
+   * @param {number} [retryInterval=0.1] - Time between lock acquisition attempts (seconds).
+   * @param {boolean} [debug=false] - Enable debug logging.
+   */
+  constructor(dbPath, timeout = 30.0, retryInterval = 0.1, debug = false) {
+    this.dbPath = path.resolve(dbPath);
+    const parsed = path.parse(this.dbPath);
+    this.lockDir = path.join(parsed.dir, `.lock_${parsed.base}`);
+    this.timeout = timeout;
+    this.retryInterval = retryInterval;
+    this.debug = debug;
+    this._lockCount = 0; // For reentrant locking
+  }
+
+  /**
+   * Acquire the database lock synchronously using atomic directory creation.
+   * @returns {boolean} True if lock was acquired.
+   * @throws {Error} If lock cannot be acquired within timeout.
+   */
+  acquire() {
+    // Handle reentrant locking
+    if (this._lockCount > 0) {
+      this._lockCount++;
+      return true;
+    }
+
+    const startTime = Date.now();
+    while (true) {
+      try {
+        // fs.mkdirSync is atomic across distributed filesystems
+        fs.mkdirSync(this.lockDir);
+        this._lockCount = 1;
+        return true;
+      } catch (err) {
+        if (err.code === 'EEXIST') {
+          // Lock directory already exists, another process holds the lock
+          if ((Date.now() - startTime) / 1000 >= this.timeout) {
+            throw new Error(`Could not acquire lock on ${this.lockDir} within ${this.timeout} seconds`);
+          }
+          // Synchronous sleep using a busy wait (not ideal but necessary for sync version)
+          const waitUntil = Date.now() + this.retryInterval * 1000;
+          while (Date.now() < waitUntil) {
+            // Busy wait
+          }
+        } else {
+          // Handle other OS errors (permission denied, etc.)
+          throw new Error(`Failed to acquire lock: ${err.message}`);
+        }
+      }
+    }
+  }
+
+  /**
+   * Release the database lock by removing the lock directory.
+   */
+  release() {
+    if (this._lockCount > 0) {
+      this._lockCount--;
+      if (this._lockCount === 0) {
+        try {
+          fs.rmdirSync(this.lockDir);
+        } catch (err) {
+          if (err.code !== 'ENOENT') {
+            // Log warning but don't throw - lock file might be stale
+            console.warn(`Failed to release lock directory ${this.lockDir}: ${err.message}`);
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * Force release the lock, useful for cleaning up stale locks.
+   * Use with caution - only call this if you're sure no other process holds the lock.
+   */
+  forceRelease() {
+    try {
+      fs.rmdirSync(this.lockDir);
+    } catch (err) {
+      // Ignore errors
+    }
+    this._lockCount = 0;
+  }
+
+  /**
+   * Check if the lock is currently held by any process.
+   * @returns {boolean} True if the lock directory exists.
+   */
+  isLocked() {
+    return fs.existsSync(this.lockDir);
+  }
+
+  /**
+   * Release any held locks.
+   */
+  close() {
+    while (this._lockCount > 0) {
+      this.release();
+    }
+  }
+
+  /**
+   * Execute a function while holding the lock.
+   * @param {Function} fn - The function to execute while holding the lock.
+   * @returns {*} The result of the function.
+   */
+  withLock(fn) {
+    this.acquire();
+    if (this.debug) console.log(`Acquired lock on ${this.lockDir}`);
+    try {
+      return fn();
+    } finally {
+      this.release();
+      if (this.debug) console.log(`Released lock on ${this.lockDir}`);
+    }
+  }
+}
+
+/**
  * Dataset class for managing project/MD status in SQLite.
  */
 class Dataset {
   /**
    * Create a new Dataset instance.
    * @param {string} datasetPath - Path to the SQLite database file.
+   * @param {number} [lockTimeout=30.0] - Maximum time to wait for database lock (seconds).
+   * @param {boolean} [debug=false] - Enable debug logging.
    */
-  constructor(datasetPath) {
+  constructor(datasetPath, lockTimeout = 30.0, debug = false) {
     this.datasetPath = path.resolve(datasetPath);
+    this.debug = debug;
     this.rootPath = path.dirname(this.datasetPath);
+    this._lock = new DatabaseLock(this.datasetPath, lockTimeout);
     this.db = new Database(this.datasetPath);
     // Enable foreign key constraints
     this.db.pragma('foreign_keys = ON');
     this._ensureTables();
+  }
+
+  /**
+   * Execute a function while holding the database lock.
+   * Use this for any database operations that need to be atomic across processes.
+   * @param {Function} fn - The function to execute while holding the lock.
+   * @returns {*} The result of the function.
+   */
+  withLockedStorage(fn) {
+    return this._lock.withLock(fn);
   }
 
   /**
@@ -38,15 +184,6 @@ class Dataset {
    */
   _absToRel(absPath) {
     return path.relative(this.rootPath, path.resolve(absPath));
-  }
-
-  /**
-   * Convert relative path to absolute path from rootPath.
-   * @param {string} relPath - Relative path.
-   * @returns {string} Absolute path.
-   */
-  _relToAbs(relPath) {
-    return path.resolve(this.rootPath, relPath);
   }
 
   /**
@@ -118,36 +255,39 @@ class Dataset {
    * @returns {Object|null} The status object or null if not found.
    */
   getUuidStatus(uuid, projectUuid = null) {
-    if (projectUuid) {
-      // This is an MD entry
-      const stmt = this.db.prepare('SELECT * FROM mds WHERE uuid = ?');
-      const row = stmt.get(uuid);
-      if (row) {
-        return {
-          uuid: row.uuid,
-          projectUuid: row.project_uuid,
-          relPath: row.rel_path,
-          state: row.state,
-          message: row.message,
-          lastModified: row.last_modified
-        };
+    return this.withLockedStorage(() => {
+      if (this.debug) console.log(`Fetching status for UUID: ${uuid}`);
+      if (projectUuid) {
+        // This is an MD entry
+        const stmt = this.db.prepare('SELECT * FROM mds WHERE uuid = ?');
+        const row = stmt.get(uuid);
+        if (row) {
+          return {
+            uuid: row.uuid,
+            projectUuid: row.project_uuid,
+            relPath: row.rel_path,
+            state: row.state,
+            message: row.message,
+            lastModified: row.last_modified
+          };
+        }
+      } else {
+        // This is a project entry
+        const stmt = this.db.prepare('SELECT * FROM projects WHERE uuid = ?');
+        const row = stmt.get(uuid);
+        if (row) {
+          return {
+            uuid: row.uuid,
+            relPath: row.rel_path,
+            numMds: row.num_mds,
+            state: row.state,
+            message: row.message,
+            lastModified: row.last_modified
+          };
+        }
       }
-    } else {
-      // This is a project entry
-      const stmt = this.db.prepare('SELECT * FROM projects WHERE uuid = ?');
-      const row = stmt.get(uuid);
-      if (row) {
-        return {
-          uuid: row.uuid,
-          relPath: row.rel_path,
-          numMds: row.num_mds,
-          state: row.state,
-          message: row.message,
-          lastModified: row.last_modified
-        };
-      }
-    }
-    return null;
+      return null;
+    });
   }
 
   /**
@@ -159,57 +299,61 @@ class Dataset {
    * @param {string} [relPath] - Relative path to the directory (required for new entries).
    */
   updateStatus(uuid, state, message, projectUuid = null, relPath = null) {
-    const lastModified = this._getTimestamp();
+    this.withLockedStorage(() => {
+      if (this.debug) console.log(`Updating status for UUID: ${uuid}, State: ${state}, Message: ${message}`);
+      const lastModified = this._getTimestamp();
 
-    if (projectUuid) {
-      // This is an MD entry
-      if (relPath === null) {
-        // Update existing entry
-        const stmt = this.db.prepare(`
-          UPDATE mds SET state = ?, message = ?, last_modified = ?
-          WHERE uuid = ?
-        `);
-        stmt.run(state, message, lastModified, uuid);
+      if (projectUuid) {
+        // This is an MD entry
+        if (relPath === null) {
+          // Update existing entry
+          const stmt = this.db.prepare(`
+            UPDATE mds SET state = ?, message = ?, last_modified = ?
+            WHERE uuid = ?
+          `);
+          stmt.run(state, message, lastModified, uuid);
+        } else {
+          // Insert or replace entry
+          const stmt = this.db.prepare(`
+            INSERT INTO mds (uuid, project_uuid, rel_path, state, message, last_modified)
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(uuid) DO UPDATE SET
+              state = excluded.state,
+              message = excluded.message,
+              last_modified = excluded.last_modified
+          `);
+          stmt.run(uuid, projectUuid, relPath, state, message, lastModified);
+        }
       } else {
-        // Insert or replace entry
-        const stmt = this.db.prepare(`
-          INSERT INTO mds (uuid, project_uuid, rel_path, state, message, last_modified)
-          VALUES (?, ?, ?, ?, ?, ?)
-          ON CONFLICT(uuid) DO UPDATE SET
-            state = excluded.state,
-            message = excluded.message,
-            last_modified = excluded.last_modified
-        `);
-        stmt.run(uuid, projectUuid, relPath, state, message, lastModified);
+        // This is a project entry
+        if (relPath === null) {
+          // Update existing entry
+          const stmt = this.db.prepare(`
+            UPDATE projects SET state = ?, message = ?, last_modified = ?
+            WHERE uuid = ?
+          `);
+          stmt.run(state, message, lastModified, uuid);
+        } else {
+          // Insert or replace entry
+          const stmt = this.db.prepare(`
+            INSERT INTO projects (uuid, rel_path, state, message, last_modified)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(uuid) DO UPDATE SET
+              state = excluded.state,
+              message = excluded.message,
+              last_modified = excluded.last_modified
+          `);
+          stmt.run(uuid, relPath, state, message, lastModified);
+        }
       }
-    } else {
-      // This is a project entry
-      if (relPath === null) {
-        // Update existing entry
-        const stmt = this.db.prepare(`
-          UPDATE projects SET state = ?, message = ?, last_modified = ?
-          WHERE uuid = ?
-        `);
-        stmt.run(state, message, lastModified, uuid);
-      } else {
-        // Insert or replace entry
-        const stmt = this.db.prepare(`
-          INSERT INTO projects (uuid, rel_path, state, message, last_modified)
-          VALUES (?, ?, ?, ?, ?)
-          ON CONFLICT(uuid) DO UPDATE SET
-            state = excluded.state,
-            message = excluded.message,
-            last_modified = excluded.last_modified
-        `);
-        stmt.run(uuid, relPath, state, message, lastModified);
-      }
-    }
+    });
   }
 
   /**
-   * Close the database connection.
+   * Close the database connection and release locks.
    */
   close() {
+    this._lock.close();
     if (this.db) {
       this.db.close();
     }
@@ -332,6 +476,7 @@ const createDataset = (datasetPath) => {
 
 module.exports = {
   State,
+  DatabaseLock,
   Dataset,
   ErrorHandling,
   readUuidFromCache,
