@@ -179,6 +179,7 @@ class Project {
         // Otherwise return null and asume it is a new MD
         // Note that directories cannot be back-mapped to names since they may be missing forbidden characters
         for (const [mdIndex, md] of Object.entries(this.data.mds)) {
+            if (md.removed) continue;
             const mdDirectory = md.name ? mdNameToDirectory(md.name) : `replica_${parseInt(mdIndex)+1}`;
             // Make sure the MD index is numeric or silent errors will happen
             if (mdDirectory === basename) return +mdIndex;
@@ -194,6 +195,7 @@ class Project {
         // Otherwise return null and asume it is a new MD
         // Note that directories cannot be back-mapped to names since they may be missing forbidden characters
         for (const [mdIndex, md] of Object.entries(this.data.mds)) {
+            if (md.removed) continue;
             // Make sure the MD index is numeric or silent errors will happen
             if (md.name === name) return +mdIndex;
         }
@@ -422,9 +424,13 @@ class Project {
     };
 
     // Get the MD index corresponding list of available files
-    getAvailableFiles = mdIndex => isNumber(mdIndex)
-        ? this.data.mds[mdIndex].files
-        : this.data.files;
+    getAvailableFiles = mdIndex => {
+        if (isNumber(mdIndex)) {
+            if (!this.data.mds[mdIndex].files) this.data.mds[mdIndex].files = [];
+            return this.data.mds[mdIndex].files;
+        }
+        return this.data.files;
+    };
 
     // Check if there is a previous file with the same name
     // If so, check if we must delete it or conserve it
@@ -747,9 +753,13 @@ class Project {
     }
 
     // Get the MD index corresponding list of available analyses
-    getAvailableAnalyses = mdIndex => isNumber(mdIndex)
-        ? this.data.mds[mdIndex].analyses
-        : this.data.analyses;
+    getAvailableAnalyses = mdIndex => {
+        if (isNumber(mdIndex)) {
+            if (!this.data.mds[mdIndex].analyses) this.data.mds[mdIndex].analyses = [];
+            return this.data.mds[mdIndex].analyses;
+        }
+        return this.data.analyses;
+    };
 
     // Check if there is a previous analysis with the same name
     // If so, check if we must delete it or conserve it
