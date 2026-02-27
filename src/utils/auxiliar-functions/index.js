@@ -229,7 +229,12 @@ const canWrite = path => {
 }
 
 // Check if a value is numeric
-const isNumber = value => typeof value === "number"
+const isNumber = value => {
+    if (typeof value === "number") return true;
+    // I had this silent problem several times, so from now on this should warn me
+    if (typeof +value === "number") throw new Error(`Numeric value '${value}' is actually a string`);
+    return false;
+}
 
 // Compare if two objects are identical key by key and value by value
 // Note that this is a shallow comparator
