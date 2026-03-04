@@ -231,6 +231,8 @@ const canWrite = path => {
 // Check if a value is numeric
 const isNumber = value => {
     if (typeof value === "number") return true;
+    // Handle undefined separatedly, since +undefined is NaN, the type of which is "number" (wtf)
+    if (value === undefined) return false;
     // I had this silent problem several times, so from now on this should warn me
     if (typeof +value === "number") throw new Error(`Numeric value '${value}' is actually a string`);
     return false;
