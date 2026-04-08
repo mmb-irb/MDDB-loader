@@ -436,6 +436,7 @@ const load = async (
     if (!skipFiles) {
       // Set which files are to be uploaded to the database
       const loadableFiles = [
+        directoryFiles.topologyFile,
         directoryFiles.structureFile,
         directoryFiles.mainTrajectory,
         ...directoryFiles.uploadableFiles,

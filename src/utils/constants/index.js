@@ -78,6 +78,11 @@ module.exports = {
             pattern: /metadata.json$/i,
             singleFile: true,
         },
+        // Topology files, one for project
+        topologyFile: {
+            pattern: /^topology.(prmtop|top|psf|tpr)$/i,
+            singleFile: true,
+        },
         // Structure file, one for every MD directory
         structureFile: {
             pattern: /^structure.pdb$/i,
