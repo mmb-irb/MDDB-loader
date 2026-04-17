@@ -243,6 +243,7 @@ class Database {
         const projectData = {
             accession: newAccession,
             published: false,
+            creationDate: new Date(),
             metadata: {},
             mds: [],
             mdref: 0,
