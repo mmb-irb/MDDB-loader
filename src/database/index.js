@@ -16,6 +16,8 @@ const { ObjectId } = require('mongodb');
 // The project class is used to handle database data from a specific project
 const Project = require('./project');
 const { merge_metadata } = require('./project/metadata-handlers');
+// Import a version handler
+const Version = require('../utils/version');
 
 // Set the first accession code
 // Accession codes are alphanumeric and the first value is to be letter
@@ -297,14 +299,16 @@ class Database {
         const previousData = await collection.findOne(referenceQuery);
         // If so we must compare previous and new reference data
         if (previousData) {
-            // Check if there is anything new or different in the current reference
-            const changed = await merge_metadata(previousData, referenceData, conserve, overwrite);
+            // Compare both versions
+            const previousVersion = new Version(previousData.version);
+            const newVersion = new Version(referenceData.version);
             // If there are no changes then there is nothing to upload
-            if (!changed) return console.log(chalk.grey(`  The ${label} is already in the database and updated`));
+            if (newVersion <= previousVersion)
+                return console.log(chalk.grey(`  The ${label} is already in the database and updated`));
             // Otherwise we must load the updated reference data
             logger.startLog(`💽 Updating ${label}`);
             // Replace the old reference with the updated data
-            const result = await collection.replaceOne(referenceQuery, previousData);
+            const result = await collection.replaceOne(referenceQuery, referenceData);
             // If the operation failed
             if (result.acknowledged === false) return logger.failLog(`💽 Failed to update ${label}`);
             logger.successLog(`💽 Updated ${label}`);
