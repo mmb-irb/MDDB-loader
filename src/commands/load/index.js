@@ -3,8 +3,6 @@ const chalk = require('chalk');
 // This tool converts miliseconds (ms) to a more human friendly string
 // (e.g. 1337000000 -> 15d 11h 23m 20s)
 const prettyMs = require('pretty-ms');
-// This utility displays in console a dynamic loading status
-const logger = require('../../utils/logger');
 // Load auxiliar functions
 const {
   getGromacsCommand,
@@ -13,12 +11,8 @@ const {
   loadJSON,
   loadYAMLorJSON
 } = require('../../utils/auxiliar-functions');
-// Return a word's plural when the numeric argument is bigger than 1
-const plural = require('../../utils/plural');
 // Displays data in console inside a big colorful rectangle
 const printHighlight = require('../../utils/print-highlight');
-// A function for just wait
-const { sleep } = require('timing-functions');
 // Local scripts listed in order of execution
 const getAbortingFunction = require('./abort');
 const {
@@ -493,6 +487,14 @@ const load = async (
     }
 
   }
+
+  // At the end of the load update the option counters
+  // DANI: Adding 1 to the values of this project would be way faster but it would not be reliable
+  // DANI: To make sure numbers match we would need to substract at the begining to the load and add at the end
+  // DANI: Interrupted loads would mess numbers silently. If we always update numbers from scratch this will be solved on its own
+  // DANI: Alternatively I could update specific values from the counters every time they are updated, but this is too much work
+  // DANI: This solution is easy and reliable, at the cost of making the process a bit slower
+  await project.database.updateOptionCounts();
 
   return () => {
     console.log(

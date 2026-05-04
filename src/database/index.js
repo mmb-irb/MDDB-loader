@@ -15,7 +15,8 @@ const {
 const { ObjectId } = require('mongodb');
 // The project class is used to handle database data from a specific project
 const Project = require('./project');
-const { merge_metadata } = require('./project/metadata-handlers');
+// Get options counter function
+const countOptions = require('./options');
 // Import a version handler
 const Version = require('../utils/version');
 
@@ -464,6 +465,97 @@ class Database {
             console.log(`🗑️  Deleted ${data.name} <- ${data.id}`);
         }
     };
+
+    // Set the project fields whose different values are to be counted to further show the available options in the API and client
+    // e.g. metadata system keywords are to be counted, thus we know how many simulations are tagged as protein, nucleic, etc.
+    // However it does not make sense to count metadata name or atom counts, since they should be different for every project
+    // IMPORTANT: The loader will make sure the following fields are counted and their counts updated when pertinent
+    // This is useful to speed up the response time of the "project/options" endpoint from the API
+    // The API will use the precounted values when available, but it is still able to count options from a field on its own
+    OPTIONS_PROJECT_FIELDS = new Set([
+        "metadata.SYSKEYS",
+        "metadata.INTERACTIONS.type",
+        "metadata.DOMAINS",
+        "metadata.PTM",
+        "metadata.MULTIMERIC",
+        "metadata.PDBIDS",
+        "references.pdbs.class",
+        "references.pdbs.authors",
+        "references.pdbs.organisms",
+        "references.pdbs.method",
+        "references.pdbs.resolution",
+        "references.ligands.name",
+        "metadata.LIGANDS",
+        "references.ligands.drugbank",
+        "references.ligands.chembl",
+        "references.ligands.pdbid",
+        "metadata.INCHIKEYS",
+        "metadata.REFERENCES",
+        "references.proteins.organism",
+        "references.proteins.gene",
+        "references.proteins.name",
+        "references.proteins.functions",
+        "metadata.PROGRAM",
+        "metadata.TYPE",
+        "metadata.METHOD",
+        "metadata.TIMESTEP",
+        "metadata.FF",
+        "metadata.WAT",
+        "metadata.TEMP",
+        "metadata.ENSEMBLE",
+        "metadata.BOXTYPE",
+        "metadata.CHNAME",
+        "metadata.RSNAME",
+        "metadata.ATNAME",
+        "metadata.ATELEM",
+        "metadata.AUTHORS",
+        "metadata.GROUPS",
+        "metadata.COLLECTIONS",
+        "analyses.name",
+        "mds.analyses.name",
+        "files.name",
+        "mds.files.name",
+    ]);
+    // Note that counts must be repeated for every different possible filtering query, e.g. published = true
+    // To handle this we create a separated document in the 'counters' collection for every different expected query
+    // Set the different expected queries
+    OPTIONS_QUERIES = [
+        {}, // One for all the projects
+        { published: true },
+    ];
+
+    // Set the options counters which are missing
+    // If the reset argument is passed then count again all fields, even if they already have a value
+    updateOptionCounts = async () => {
+        logger.startLog(`🧮 Updating option counters`);
+        // Iterate the different query groups of counts
+        for await (const query of this.OPTIONS_QUERIES) {
+            logger.updateLog(`🧮 Updating option counters for query ${JSON.stringify(query)}`);
+            // Get the option counts
+            const options = await countOptions(this, query, this.OPTIONS_PROJECT_FIELDS);
+            // Set the new counters object
+            const newCounters = { query: query, fields: options };
+            // Get the previous counts
+            const previousCounters = await this.counters.findOne({ query: query });
+            // Update the corresponding document in the counters collection if it already exists
+            if (previousCounters) {
+                // Replace the document in the database
+                const result = await this.counters.replaceOne({ query: query }, newCounters);
+                // If the operation failed
+                if (result.acknowledged === false)
+                    return logger.failLog(`🧮 Failed to replace old option counters for query ${JSON.stringify(query)}`);
+            }
+            // Insert the corresponding document in the counters collection if it does not exist yet
+            else {
+                // Insert the document in the database
+                const result = await this.counters.insertOne(newCounters);
+                // If the operation failed
+                if (result.acknowledged === false)
+                    return logger.failLog(`🧮 Failed to insert new option counters for query ${JSON.stringify(query)}`);
+            }
+        };
+        logger.successLog(`🧮 Updated option counters`);
+    }
 
     // Define for each collection its parental relationship
     // This allows to identify when a document is orphan
