@@ -235,13 +235,12 @@ const load = async (
   // Set the input files to be read for every different reference type
   const referenceInputDataFiles = {
     proteins: categorizedProjectFiles.proteinReferencesDataFile,
-    ligands: categorizedProjectFiles.ligandReferencesDataFile,
     inchikeys: categorizedProjectFiles.inchikeyReferencesDataFile,
     pdbs: categorizedProjectFiles.pdbReferencesDataFile,
     chains: categorizedProjectFiles.chainReferencesDataFile
   };
 
-  // Iterate the different type of references (proteins, ligands, PDBs and chains)
+  // Iterate the different type of references (proteins, inchikeys, PDBs and chains)
   for await (const referenceName of Object.keys(database.REFERENCES)) {
     // Get the input data filepath
     const referenceInputDataFile = referenceInputDataFiles[referenceName];

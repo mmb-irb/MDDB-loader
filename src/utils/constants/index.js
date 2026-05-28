@@ -28,11 +28,6 @@ module.exports = {
             pattern: /^(protein_references|references).json$/i,
             singleFile: true,
         },
-        // The ligand references data file, one for project
-        ligandReferencesDataFile: {
-            pattern: /^(ligand_references|ligands).json$/i,
-            singleFile: true,
-        },
         // The inchikey references data file, one for project
         inchikeyReferencesDataFile: {
             pattern: /^inchikey_references.json$/i,

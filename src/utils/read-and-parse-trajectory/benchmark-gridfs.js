@@ -6,13 +6,11 @@
  * 
  * Run with: node src/utils/read-and-parse-trajectory/benchmark-gridfs.js
  */
-
-const { GridFSBucket } = require('mongodb');
+// Import the MDDB database handler
+const { databaseConnection, Database } = require('../../mddb-database');
 const crypto = require('crypto');
 // Load env from the project root
 require('dotenv').config({ path: require('path').join(__dirname, '../../../.env') });
-// Use the project's connection function
-const connectToMongo = require('../connect-to-mongo');
 
 const DATA_SIZE = 100 * 1024 * 1024; // 100 MB test
 
@@ -21,9 +19,14 @@ async function benchmarkGridFS() {
     console.log('  GridFS Upload Speed Benchmark            ');
     console.log('===========================================\n');
     
-    // Connect to MongoDB using the project's connection
-    const { client, db, bucket } = await connectToMongo();
-    
+    // Save the mongo database connection
+    const client = await databaseConnection;
+    // Instantiate the database handler
+    // The loader works only in local nodes so we set the 'isGlobal' parameter as false
+    const database = Database(client, false);
+    // Get the bucket
+    const bucket = database.bucket;
+
     console.log(`Connected to: ${process.env.DB_NAME}`);
     console.log(`Test data size: ${DATA_SIZE / 1024 / 1024} MB\n`);
     

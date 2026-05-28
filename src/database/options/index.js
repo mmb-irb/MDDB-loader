@@ -30,15 +30,11 @@ const countOptions = async (database, query, fields) => {
         // Find the reference it belongs to
         const requestedReference = field.split('.')[1];
         // Make sure the reference exists
-        if (!availableReferences.includes(requestedReference)) return {
-            headerError: BAD_REQUEST,
-            error: `Unknown reference "${requestedReference}". Available references: ${availableReferences.join(', ')}`
-        };
+        if (!availableReferences.includes(requestedReference))
+            throw new Error(`Unknown reference "${requestedReference}". Available references: ${availableReferences.join(', ')}`);
         // Make sure there is something after the reference name or we will have a mongo error later
-        if (!field.split('.')[2]) return  {
-            headerError: BAD_REQUEST,
-            error: `Empty reference field in "${field}". Please provide a field name after "${requestedReference}"`
-        }
+        if (!field.split('.')[2])
+            throw new Error(`Empty reference field in "${field}". Please provide a field name after "${requestedReference}"`);
         // Add the requetsed reference to the set
         requestedReferences.add(requestedReference);
         // Add the requested field to its corresponding reference
@@ -65,10 +61,7 @@ const countOptions = async (database, query, fields) => {
     // Consume the projects cursor
     const projectsData = await projectsCursor.toArray();
     // If projects data is empty then stop here
-    if (projectsData.length === 0) return {
-        headerError: NOT_FOUND,
-        error: `Query ${query} is empty`
-    }
+    if (projectsData.length === 0) throw new Error(`Query ${query} is empty`);
     // Start handling references options
     // First of all, make sure there was at least one reference projection request
     const anyReferenceProjectionRequest = requestedReferences.size > 0;
@@ -105,7 +98,7 @@ const countOptions = async (database, query, fields) => {
                 referencesProjector[field] = true;
             });
             // Get all references using the custom projector
-            const collectionName = reference.collection;
+            const collectionName = reference.collectionName;
             const collection = database[collectionName];
             const referencesCursor = await collection.find(
                 {}, // Get all references, independently from the request origin

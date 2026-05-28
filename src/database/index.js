@@ -1,5 +1,5 @@
-// Connect to the actual database (MongoDB)
-const connectToMongo = require('../utils/connect-to-mongo/index');
+// Import the MDDB database handler
+const { databaseConnection, Database } = require('../mddb-database');
 // This utility displays in console a dynamic loading status
 const logger = require('../utils/logger');
 // Add colors in console
@@ -9,7 +9,6 @@ const {
     mongoidFormat,
     userConfirm,
     userConfirmOrphanDataDeletion,
-    areObjectsIdentical,
 } = require('../utils/auxiliar-functions');
 // Mongo ObjectId class
 const { ObjectId } = require('mongodb');
@@ -29,164 +28,15 @@ const ACCESSION_CHARACTERS_LIMIT = FIRST_ACCESSION_CODE.length;
 const ALPHANUMERIC = 36;
 
 // Set the project class
-class Database {
-    constructor (client, db, bucket) {
-        if (!client) throw new Error('No client');
-        if (!db) throw new Error('No database');
-        if (!bucket) throw new Error('No bucket');
-        // Get database handlers
-        this.client = client; // Client is not used by the database, but it is read from the database by others
-        this.db = db;
-        this.bucket = bucket;
-        // Set some collections and list them all together
-        this.collections = {};
-        for (const [ collectionKey, collectionConfig ] of Object.entries(this.COLLECTIONS)) {
-            this[collectionKey] = db.collection(collectionConfig.name);
-            this.collections[collectionKey] = this[collectionKey];
-        }
+class Database4Loader extends Database {
+    constructor (client) {
+        // The loader works only in local nodes so we set the 'isGlobal' parameter as false
+        const isGlobal = false;
+        super(client, isGlobal);
         // Keep track of the newly inserted data
         // This way, in case anything goes wrong, we can revert changes
         this.inserted_data = [];
         this.new_accession_issued = false;
-    };
-
-    // ----- Constants -----
-
-    // Set the collection configuration
-    // name - Actual name of the collection inside the database
-    // index - Index configuration in the database, for the collections setup
-    // documentNames - Document names used for displaying only
-    COLLECTIONS = {
-        projects: {
-            name: 'projects',
-            indexes: [{ published: 1 }],
-            documentNames: { singular: 'project', plural: 'projects' },
-        },
-        references: {
-            name: 'references',
-            documentNames: { singular: 'reference', plural: 'references' },
-        },
-        ligands: {
-            name: 'ligands',
-            documentNames: { singular: 'ligand', plural: 'ligands' },
-        },
-        pdb_refs: {
-            name: 'pdb_refs',
-            documentNames: { singular: 'PDB', plural: 'PDBs' },
-        },
-        chain_refs: {
-            name: 'chain_refs',
-            documentNames: { singular: 'chain', plural: 'chains' },
-        },
-        inchikey_refs: {
-            name: 'inchikey_refs',
-            documentNames: { singular: 'inchikey', plural: 'inchikeys' },
-        },
-        topologies: {
-            name: 'topologies',
-            indexes: [{ project: 1 }],
-            documentNames: { singular: 'topology', plural: 'topologies' },
-        },
-        files: {
-            name: 'fs.files',
-            indexes: [{ 'metadata.project': 1 }],
-            documentNames: { singular: 'file', plural: 'files' },
-        },
-        chunks: {
-            name: 'fs.chunks',
-            documentNames: { singular: 'chunk', plural: 'chunks' },
-        },
-        analyses: {
-            name: 'analyses',
-            indexes: [{ project: 1 }],
-            documentNames: { singular: 'analysis', plural: 'analyses' },
-        },
-        counters: {
-            name: 'counters',
-            documentNames: { singular: 'counter', plural: 'counters' }
-        },
-    };
-
-    // Set every reference configuration
-    // collection - The collection key in the COLLECTIONS object
-    // idField - The field in every reference document which stands for its id
-    // projectIdsField - The field in every project document which lists the included reference ids
-    REFERENCES = {
-        proteins: {
-            collection: 'references',
-            idField: 'uniprot',
-            projectIdsField: 'metadata.REFERENCES'
-        },
-        ligands: {
-            collection: 'ligands',
-            idField: 'pubchem',
-            projectIdsField: 'metadata.LIGANDS'
-        },
-        pdbs: {
-            collection: 'pdb_refs',
-            idField: 'id',
-            projectIdsField: 'metadata.PDBIDS'
-        },
-        chains: {
-            collection: 'chain_refs',
-            idField: 'sequence',
-            projectIdsField: 'metadata.PROTSEQ'
-        },
-        inchikeys: {
-            collection: 'inchikey_refs',
-            idField: 'inchikey',
-            projectIdsField: 'metadata.INCHIKEYS'
-        }
-    };
-
-    // ----------------------
-
-    // Setup the database by creating and indexing the configured collections
-    setup = async () => {
-        // Check the collections already existing in the database
-        const currentCollections = await this.db.listCollections().toArray()
-        const currentCollectionNames = currentCollections.map(collection => collection.name);
-        // Iterate over the configured collections
-        for await (const [collectionKey, collectionConfig] of Object.entries(this.COLLECTIONS)) {
-            // If the collection already exists then do nothing
-            if (currentCollectionNames.includes(collectionConfig.name)) {
-                // Get the configuration indexes for this collection
-                const configIndexes = collectionConfig.indexes;
-                // If there are no configuration indexes at all then we are done
-                if (!configIndexes) continue;
-                // Get the current collection indexes
-                const currentIndexesData = await this[collectionKey].indexes();
-                const currentIndexes = currentIndexesData.map(indexData => indexData.key);
-                // Iterate the expected indexes
-                for await (const configIndex of configIndexes) {
-                    // Make sure the index exists among the current indexes
-                    let found = false;
-                    for (const collectionIndex of currentIndexes) {
-                        // Compare indices
-                        if (areObjectsIdentical(collectionIndex,  configIndex)) {
-                            found = true;
-                            break;
-                        }
-                    }
-                    // If the index does not exist then we create it
-                    if (!found) {
-                        console.log(`🛠️  Setting a missing index in "${collectionKey}" collection: ${JSON.stringify(configIndex)}`);
-                        await this[collectionKey].createIndex(configIndex);
-                    }
-                }
-                // Proceed to the next collection
-                continue;
-            }
-            console.log(`🛠️  Setting up ${collectionKey} collection`);
-            // Create the collection
-            await this.db.createCollection(collectionConfig.name);
-            // Set some indices if specified to accelerate specific queries
-            if (collectionConfig.indexes) {
-                for await (const index of collectionConfig.indexes) {
-                    await this[collectionKey].createIndex(index);
-                }
-            }
-        }
     };
 
     // Get the generic name of a document by the collection it belongs to
@@ -292,7 +142,7 @@ class Database {
     loadReferenceIfProper = async (referenceName, referenceData, conserve, overwrite) => {
         // Set the reference configuration
         const refereceConfig = this.REFERENCES[referenceName];
-        const collection = this[refereceConfig.collection];
+        const collection = this[refereceConfig.collectionName];
         const idField = refereceConfig.idField;
         const label = `${referenceName} reference ${referenceData[idField]}`;
         // Check if the reference is already in the database
@@ -339,7 +189,7 @@ class Database {
         const refereceConfig = this.REFERENCES[referenceName];
         const projectIdsField = refereceConfig.projectIdsField;
         const label = `${referenceName} reference ${referenceId}`;
-        const collection = this[refereceConfig.collection];
+        const collection = this[refereceConfig.collectionName];
         const idField = refereceConfig.idField;
         // If the reference is still used by at least 1 project then stop here
         const count = await this.projects.count({ [projectIdsField]: referenceId });
@@ -354,7 +204,8 @@ class Database {
     // Given an id, find the document and the collection it belongs to
     findId = async id => {
         // Iterate over all collections until we find the id
-        for await (const [ collectionKey, collection ] of Object.entries(this.collections)) {
+        for await (const collectionKey of Object.keys(this.COLLECTIONS)) {
+            const collection = this[collectionKey];
             const document = await collection.findOne({ _id: id });
             if (document) return { document, collectionKey };
         }
@@ -484,12 +335,12 @@ class Database {
         "references.pdbs.organisms",
         "references.pdbs.method",
         "references.pdbs.resolution",
-        "references.ligands.name",
-        "metadata.LIGANDS",
-        "references.ligands.drugbank",
-        "references.ligands.chembl",
-        "references.ligands.pdbid",
         "metadata.INCHIKEYS",
+        "references.inchikeys.ligand.name",
+        "references.inchikeys.ligand.pdbid",
+        "references.inchikeys.ligand.pubchem",
+        "references.inchikeys.ligand.chembl",
+        "references.inchikeys.ligand.drugbank",
         "metadata.REFERENCES",
         "references.proteins.organism",
         "references.proteins.gene",
@@ -557,28 +408,13 @@ class Database {
         logger.successLog(`🧮 Updated option counters`);
     }
 
-    // Define for each collection its parental relationship
-    // This allows to identify when a document is orphan
-    COLLECTION_PARENTS = {
-        projects: null, // Projects have no parent
-        references: { collectionKey: 'projects', referenceField: 'metadata.REFERENCES', localField: 'uniprot' },
-        ligands: { collectionKey: 'projects', referenceField: 'metadata.LIGANDS', localField: 'pubchem' },
-        pdb_refs: { collectionKey: 'projects', referenceField: 'metadata.PROTSEQ', localField: 'sequence' },
-        chain_refs: { collectionKey: 'projects', referenceField: 'metadata.PDBIDS', localField: 'id' },
-        topologies: { collectionKey: 'projects', referenceField: '_id', localField: 'project' },
-        files: { collectionKey: 'projects', referenceField: '_id', localField: 'metadata.project' },
-        chunks: { collectionKey: 'files', referenceField: '_id', localField: 'files_id' },
-        analyses: { collectionKey: 'projects', referenceField: '_id', localField: 'project' },
-        counters: null // Counters are not related to anything
-    }
-
     // Get the ids of orphan documents to be deleted in a given collection
     findOrphanData = async collectionKey => {
         // Get the collection
         const collection = this[collectionKey];
         if (!collection) throw new Error(`Collection ${collectionKey} does not exist`);
         // Get the collection parental details
-        const parent = this.COLLECTION_PARENTS[collectionKey];
+        const parent = collection.parent;
         if (!parent) throw new Error(`Collection ${collectionKey} has no parenting`);
         console.log(`Searching for orphan ${this.nameCollectionDocuments(collectionKey)}`);
         // Get parent reference field values
@@ -637,7 +473,7 @@ class Database {
         const collection = this[collectionKey];
         if (!collection) throw new Error(`Collection ${collectionKey} does not exist`);
         // Get the collection parental details
-        const parent = this.COLLECTION_PARENTS[collectionKey];
+        const parent = collection.parent;
         if (!parent) throw new Error(`Collection ${collectionKey} has no parenting`);
         console.log(`Searching for orphan ${this.nameCollectionDocuments(collectionKey)}`);
         // Get parent reference field values
@@ -738,8 +574,10 @@ class Database {
 // Connect to the database
 // Then construct and return the database handler
 const getDatabase = async () => {
-    const { client, db, bucket } = await connectToMongo();
-    return new Database(client, db, bucket);
+    // Save the mongo database connection
+    const client = await databaseConnection;
+    // Instantiate the database handler
+    return new Database4Loader(client);
 };
 
 module.exports = getDatabase;

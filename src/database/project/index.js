@@ -158,7 +158,7 @@ class Project {
         const metadata = this.data.metadata;
         if (!metadata) return;
         // Iterate the different reference types
-        // Iterate the different type of references (proteins, ligands)
+        // Iterate the different type of references (proteins, inchikeys, etc.)
         for await (const [ referenceName, refereceConfig ] of Object.entries(this.database.REFERENCES)) {
             const projectIdsField = refereceConfig.projectIdsField;
             const referenceIdsGetter = getValueGetter(projectIdsField);
