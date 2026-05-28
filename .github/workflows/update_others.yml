@@ -36,6 +36,10 @@ jobs:
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.debug }}
 
       - name: Update other repositories
+        env:
+          # For some reason it is not using the token (maybe because we jump to other github repos)
+          # So we need to pass it here
+          token: ${{ secrets.MDDB_REPOS }}
         run: |
           # Get the current commit here in the common repository
           updated_commit=$(git rev-parse HEAD)
