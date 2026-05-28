@@ -17,7 +17,7 @@ permissions:
   contents: write
 
 jobs:
-  sync-to-common-repo:
+  sync-to-other-repos:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -28,8 +28,8 @@ jobs:
 
       - name: Configure Git
         run: |
-          git config user.name "CI Bot"
-          git config user.email "ci@example.com"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
       
       - name: Open debug session
         uses: mxschmitt/action-tmate@v3
@@ -58,13 +58,13 @@ jobs:
             fi
             echo "  $repo must be updated"
             # We must set our identity again since we are in a new repository
-            git config user.name "CI Bot"
-            git config user.email "ci@example.com"
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
             # Otherwise pull the latest changes to the repository and then push to its remote
             # The message prevents git from asking for the message of the merge commit
             git subtree pull --prefix=src/mddb-database \
               https://github.com/mmb-irb/mddb-database.git master \
               --message 'automatic subtree merge'
-            git push
+            git push $repo_url master
             echo "  $repo has been updated"
           done
