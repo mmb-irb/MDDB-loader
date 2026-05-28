@@ -57,15 +57,14 @@ jobs:
               continue
             fi
             echo "  $repo must be updated"
+            # We must set our identity again since we are in a new repository
+            git config user.name "CI Bot"
+            git config user.email "ci@example.com"
             # Otherwise pull the latest changes to the repository and then push to its remote
             # The message prevents git from asking for the message of the merge commit
             git subtree pull --prefix=src/mddb-database \
               https://github.com/mmb-irb/mddb-database.git master \
               --message 'automatic subtree merge'
-            # We must set our identity again since we are in a new repository
-            git config user.name "CI Bot"
-            git config user.email "ci@example.com"
-            # Finally push local changes
             git push
             echo "  $repo has been updated"
           done
