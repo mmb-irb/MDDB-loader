@@ -382,6 +382,7 @@ class Database4Loader extends Database {
             logger.updateLog(`🧮 Updating option counters for query ${JSON.stringify(query)}`);
             // Get the option counts
             const options = await this.countOptions(query, this.OPTIONS_PROJECT_FIELDS, true);
+            if (options.error) throw new Error(options.error);
             // Set the new counters object
             const newCounters = { query: query, fields: options };
             // Get the previous counts
