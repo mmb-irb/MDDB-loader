@@ -45,6 +45,7 @@ jobs:
             do echo "Checking $repo"
             # Donwload the repository
             repo_url=https://x-access-token:$token@github.com/mmb-irb/$repo.git
+            echo $repo_url
             repo_path="../$repo"
             git clone $repo_url $repo_path
             cd $repo_path
