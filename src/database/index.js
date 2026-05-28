@@ -14,8 +14,6 @@ const {
 const { ObjectId } = require('mongodb');
 // The project class is used to handle database data from a specific project
 const Project = require('./project');
-// Get options counter function
-const countOptions = require('./options');
 // Import a version handler
 const Version = require('../utils/version');
 
@@ -383,7 +381,7 @@ class Database4Loader extends Database {
         for await (const query of this.OPTIONS_QUERIES) {
             logger.updateLog(`🧮 Updating option counters for query ${JSON.stringify(query)}`);
             // Get the option counts
-            const options = await countOptions(this, query, this.OPTIONS_PROJECT_FIELDS);
+            const options = await this.countOptions(query, this.OPTIONS_PROJECT_FIELDS, true);
             // Set the new counters object
             const newCounters = { query: query, fields: options };
             // Get the previous counts

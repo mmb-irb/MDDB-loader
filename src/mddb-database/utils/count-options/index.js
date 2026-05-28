@@ -1,12 +1,13 @@
 // Import some auxiliar functions
-const { getValueGetter } = require('../../utils/auxiliar-functions');
+const { getValueGetter } = require('../auxiliar');
 
 // Set a header present in all 
 const REFERENCE_HEADER = 'references.';
 
 // Count the number of projects with the same values for every field
-// WARNING: This function has a twin in the API. If this is changed then the other should be changed as well.
-const countOptions = async (database, query, fields) => {
+// WARNING: This function is used by both the API and the loader
+// It is important that they use the same code so they are coordinated
+const countOptions = async (database, query, fields, shouldCountMds) => {
     // Set the options object to be returned
     // Then all mined data will be written into it
     const options = {};
@@ -30,11 +31,15 @@ const countOptions = async (database, query, fields) => {
         // Find the reference it belongs to
         const requestedReference = field.split('.')[1];
         // Make sure the reference exists
-        if (!availableReferences.includes(requestedReference))
-            throw new Error(`Unknown reference "${requestedReference}". Available references: ${availableReferences.join(', ')}`);
+        if (!availableReferences.includes(requestedReference)) return {
+            code: '400',
+            error: `Unknown reference "${requestedReference}". Available references: ${availableReferences.join(', ')}`
+        };
         // Make sure there is something after the reference name or we will have a mongo error later
-        if (!field.split('.')[2])
-            throw new Error(`Empty reference field in "${field}". Please provide a field name after "${requestedReference}"`);
+        if (!field.split('.')[2]) return  {
+            code: '400',
+            error: `Empty reference field in "${field}". Please provide a field name after "${requestedReference}"`
+        }
         // Add the requetsed reference to the set
         requestedReferences.add(requestedReference);
         // Add the requested field to its corresponding reference
@@ -47,6 +52,8 @@ const countOptions = async (database, query, fields) => {
     // Set the projector according to the two previously explained goals
     // We will need internal ids if we have to request any reference field
     const projector = { _id: true };
+    // If MDs are to be counted then return the MD count as well
+    if (shouldCountMds) projector.mdcount = true;
     // Add requested project fields
     requestedProjections.projects.forEach(field => {
         projector[field] = true
@@ -55,13 +62,21 @@ const countOptions = async (database, query, fields) => {
     requestedReferences.forEach(referenceName => {
         const reference = database.REFERENCES[referenceName];
         projector[reference.projectIdsField] = true;
-    })
+    });
     // Set the projects cursor
     const projectsCursor = await database.projects.find(query, { projection: projector });
     // Consume the projects cursor
     const projectsData = await projectsCursor.toArray();
     // If projects data is empty then stop here
-    if (projectsData.length === 0) throw new Error(`Query ${query} is empty`);
+    if (projectsData.length === 0) return {
+        code: '404',
+        error: `The result of ${(query && `query "${query}"`) || ''}${(query && search && ' and ') || ''}${(search && `search "${search}"`) || ''} is empty`
+    }
+    // Set an object with project md counts
+    const projectMdCounts = {};
+    if (shouldCountMds) projectsData.forEach(project => {
+        projectMdCounts[project._id] = project.mdcount || 1;
+    });
     // Start handling references options
     // First of all, make sure there was at least one reference projection request
     const anyReferenceProjectionRequest = requestedReferences.size > 0;
@@ -75,15 +90,15 @@ const countOptions = async (database, query, fields) => {
             // Set a list of projects including every reference id
             const referenceIdProjects = {};
             for (const projectData of projectsData) {
-                const projectReferenceIds = projectIdsGetter(projectData);
-                if (!projectReferenceIds) continue;
-                projectReferenceIds.forEach(referenceId => {
-                    if (referenceId in referenceIdProjects)
-                        referenceIdProjects[referenceId].push(projectData._id);
-                    else referenceIdProjects[referenceId] = [projectData._id];
-                });
+            const projectReferenceIds = projectIdsGetter(projectData);
+            if (!projectReferenceIds) continue;
+            projectReferenceIds.forEach(referenceId => {
+                if (referenceId in referenceIdProjects)
+                referenceIdProjects[referenceId].push(projectData._id);
+                else referenceIdProjects[referenceId] = [projectData._id];
+            });
             }
-            // Get the requested fields for the current reference
+            // Get the requested projection fields for the current reference
             // Remove both the reference header and the reference name from every field to get the actual fields
             // e.g. 'references.proteins.name' -> 'name'
             const referenceRequestedProjections = requestedProjections[referenceName].map(
@@ -93,13 +108,12 @@ const countOptions = async (database, query, fields) => {
             const referencesProjector = { _id: false };
             // Get reference ids to associate values further
             referencesProjector[reference.idField] = true;
-            // Get every requested field
+            // Get every requested projection field
             referenceRequestedProjections.forEach(field => {
                 referencesProjector[field] = true;
             });
             // Get all references using the custom projector
-            const collectionName = reference.collectionName;
-            const collection = database[collectionName];
+            const collection = database[reference.collectionName];
             const referencesCursor = await collection.find(
                 {}, // Get all references, independently from the request origin
                 // Discard the heaviest fields we do not need anyway
@@ -115,17 +129,17 @@ const countOptions = async (database, query, fields) => {
                 const getValues = (object, steps, referenceId) => {
                     let value = object;
                     for (const [index, step] of steps.entries()) {
-                        // Get the actual value
-                        value = value[step];
-                        if (value === undefined) return;
-                        // In case it is an array search for the remaining steps on each element
-                        if (Array.isArray(value)) {
-                            const remainingSteps = steps.slice(index + 1);
-                            value.forEach(element =>
-                                getValues(element, remainingSteps, referenceId),
-                            );
-                            return;
-                        }
+                    // Get the actual value
+                    value = value[step];
+                    if (value === undefined) return;
+                    // In case it is an array search for the remaining steps on each element
+                    if (Array.isArray(value)) {
+                        const remainingSteps = steps.slice(index + 1);
+                        value.forEach(element =>
+                        getValues(element, remainingSteps, referenceId),
+                        );
+                        return;
+                    }
                     }
                     // If the value is a string then make it lower caps
                     // This way we avoid having duplicated values because of different capitalizatioin
@@ -157,10 +171,19 @@ const countOptions = async (database, query, fields) => {
                     });
                     // Get unique project ids
                     const uniqueValueProjects = new Set(valueProjects);
-                    const count = uniqueValueProjects.size;
-                    // Add the count only if it is not 0
+                    const projectCount = uniqueValueProjects.size;
+                    // If the count is 0 then skip this value entirely
                     // This may happen when a reference is orphan (i.e. its associated projects were deleted)
-                    if (count !== 0) valueCounts[value] = count;
+                    if (projectCount === 0) return;
+                    // Count MDs if requested
+                    if (shouldCountMds) {
+                        const mdCount = Array.from(uniqueValueProjects).reduce(
+                            (accumulated, projectId) => accumulated + projectMdCounts[projectId], 0);
+                        valueCounts[value] = [projectCount, mdCount];
+                    }
+                    else {
+                        valueCounts[value] = projectCount;
+                    }
                 });
                 // Add current value counts to the options object to be returned
                 const originalFieldName = `${REFERENCE_HEADER}${referenceName}.${field}`;
@@ -172,12 +195,11 @@ const countOptions = async (database, query, fields) => {
     if (requestedProjections.projects.length !== 0) {
         // For each projected field, get the counts
         requestedProjections.projects.forEach(field => {
-            // For each different value, save all project "indices" including it
+            // For each different value, save all project ids from projects including it
             // This allows us to not count the same project twice
-            // However we do not care which project has it, so we do not use the project id or similar
             const values = {};
             // Set a recursive function to reach indented values
-            const getValues = (object, steps, projectIndex) => {
+            const getValues = (object, steps, projectId) => {
                 let value = object;
                 for (const [index, step] of steps.entries()) {
                     value = value[step];
@@ -185,21 +207,27 @@ const countOptions = async (database, query, fields) => {
                     // In case it is an array search for the remaining steps on each element
                     if (Array.isArray(value)) {
                         const remainingSteps = steps.slice(index + 1);
-                        value.forEach(element => getValues(element, remainingSteps, projectIndex));
+                        value.forEach(element => getValues(element, remainingSteps, projectId));
                         return;
                     }
                 }
                 // Get the set of projects with the current value and update it
                 const currentValueProjects = values[value];
-                if (currentValueProjects) currentValueProjects.add(projectIndex);
-                else values[value] = new Set([ projectIndex ]);
+                if (currentValueProjects) currentValueProjects.add(projectId);
+                else values[value] = new Set([ projectId ]);
             };
             // Start the recursive function here
             const fieldSteps = field.split('.');
-            projectsData.forEach((projectData, projectIndex) => getValues(projectData, fieldSteps, projectIndex));
+            projectsData.forEach(projectData => getValues(projectData, fieldSteps, projectData._id));
             // Count how many times is repeated each value and save the number with the fieldname key
             const counts = {};
-            Object.entries(values).forEach(([value, projectIndices]) => { counts[value] = projectIndices.size });
+            if (shouldCountMds) Object.entries(values).forEach(([value, projectIds]) => {
+                const projectCount = projectIds.size;
+                const mdCount = Array.from(projectIds).reduce(
+                    (accumulated, projectId) => accumulated + projectMdCounts[projectId], 0);
+                counts[value] = [projectCount, mdCount];
+            });
+            else Object.entries(values).forEach(([value, projectIds]) => { counts[value] = projectIds.size });
             // Add current field counts to the overall options object to be returned
             options[field] = counts;
         });
