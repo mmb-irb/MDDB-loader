@@ -44,7 +44,7 @@ jobs:
           for repo in MDDB-REST-API
             do echo "Checking $repo"
             # Donwload the repository
-            repo_url=https://$token@github.com/mmb-irb/$repo.git
+            repo_url=https://x-access-token:$token@github.com/mmb-irb/$repo.git
             repo_path="../$repo"
             git clone $repo_url $repo_path
             cd $repo_path
