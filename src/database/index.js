@@ -364,6 +364,7 @@ class Database4Loader extends Database {
         "mds.analyses.name",
         "files.name",
         "mds.files.name",
+        "published",
     ]);
 
     // Set the options counters which are missing
@@ -382,8 +383,18 @@ class Database4Loader extends Database {
         for await (const query of optionQueries) {
             logger.updateLog(`🧮 Updating option counters for query ${JSON.stringify(query)}`);
             // Get the option counts
-            const options = await this.countOptions(query, this.OPTIONS_PROJECT_FIELDS, true);
+            // Make sure we are not using the saved counts, but we count from scratch!
+            const options = await this.countOptions(query, this.OPTIONS_PROJECT_FIELDS, true, false);
             if (options.error) throw new Error(options.error);
+            // To allow specific field queries and projections in these counters we must get rid of dots
+            // Otherwise there is no way to make reference to these fields
+            // e.g. { fields: { 'metadata.WHATEVER' } } is not reachable as 'fields.metadata.WHATEVER'
+            // To solve these matters we replace dots by '/'
+            Object.keys(options).forEach(fieldName => {
+                const renamedField = fieldName.replaceAll('.', '/');
+                options[renamedField] = options[fieldName];
+                delete options[fieldName];
+            });
             // Set the new counters object
             const newCounters = { query: query, fields: options };
             // Get the previous counts
