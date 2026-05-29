@@ -22,6 +22,7 @@
     "glob": "^7.2.3",
     "lodash.frompairs": "4.0.1",
     "lodash.throttle": "4.1.1",
+    "mddb-database": "github:mmb-irb/mddb-database",
     "mongodb": "^5.9.1",
     "mongodb-memory-server": "^6.5.2",
     "node-fetch": "2.6.0",

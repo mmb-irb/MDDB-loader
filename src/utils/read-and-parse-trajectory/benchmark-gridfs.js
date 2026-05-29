@@ -7,7 +7,7 @@
  * Run with: node src/utils/read-and-parse-trajectory/benchmark-gridfs.js
  */
 // Import the MDDB database handler
-const { databaseConnection, Database } = require('../../mddb-database');
+const { databaseConnection, Database } = require('mddb-database');
 const crypto = require('crypto');
 // Load env from the project root
 require('dotenv').config({ path: require('path').join(__dirname, '../../../.env') });

@@ -1,5 +1,5 @@
 // Import the MDDB database handler
-const { databaseConnection, Database } = require('../mddb-database');
+const { databaseConnection, Database } = require('mddb-database');
 // This utility displays in console a dynamic loading status
 const logger = require('../utils/logger');
 // Add colors in console
