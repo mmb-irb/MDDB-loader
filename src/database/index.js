@@ -365,20 +365,21 @@ class Database4Loader extends Database {
         "files.name",
         "mds.files.name",
     ]);
-    // Note that counts must be repeated for every different possible filtering query, e.g. published = true
-    // To handle this we create a separated document in the 'counters' collection for every different expected query
-    // Set the different expected queries
-    OPTIONS_QUERIES = [
-        {}, // One for all the projects
-        { published: true },
-    ];
 
     // Set the options counters which are missing
     // If the reset argument is passed then count again all fields, even if they already have a value
     updateOptionCounts = async () => {
         logger.startLog(`🧮 Updating option counters`);
+        // Note that counts must be repeated for every different possible filtering query, e.g. published = true
+        // To handle this we create a separated document in the 'counters' collection for every different expected query
+        // Set the different expected queries which are not global, aim for no collection, and have no accession
+        // Note that global option counts are to be handled by the monitor
+        const optionQueries = [
+            this.getProjectsFilter(false, false, undefined, false), // All
+            this.getProjectsFilter(false, true, undefined, false), // Published only
+        ]
         // Iterate the different query groups of counts
-        for await (const query of this.OPTIONS_QUERIES) {
+        for await (const query of optionQueries) {
             logger.updateLog(`🧮 Updating option counters for query ${JSON.stringify(query)}`);
             // Get the option counts
             const options = await this.countOptions(query, this.OPTIONS_PROJECT_FIELDS, true);
