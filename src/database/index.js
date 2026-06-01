@@ -25,7 +25,7 @@ const ACCESSION_CHARACTERS_LIMIT = FIRST_ACCESSION_CODE.length;
 // Set the alhpanumeric number of characters: 36 (10 numbers + 24 letters)
 const ALPHANUMERIC = 36;
 
-// Set the project class
+// Set the loader-specific database handler class
 class Database4Loader extends Database {
     constructor (client) {
         // The loader works only in local nodes so we set the 'isGlobal' parameter as false
@@ -315,58 +315,6 @@ class Database4Loader extends Database {
         }
     };
 
-    // Set the project fields whose different values are to be counted to further show the available options in the API and client
-    // e.g. metadata system keywords are to be counted, thus we know how many simulations are tagged as protein, nucleic, etc.
-    // However it does not make sense to count metadata name or atom counts, since they should be different for every project
-    // IMPORTANT: The loader will make sure the following fields are counted and their counts updated when pertinent
-    // This is useful to speed up the response time of the "project/options" endpoint from the API
-    // The API will use the precounted values when available, but it is still able to count options from a field on its own
-    OPTIONS_PROJECT_FIELDS = new Set([
-        "metadata.SYSKEYS",
-        "metadata.INTERACTIONS.type",
-        "metadata.DOMAINS",
-        "metadata.PTM",
-        "metadata.MULTIMERIC",
-        "metadata.PDBIDS",
-        "references.pdbs.class",
-        "references.pdbs.authors",
-        "references.pdbs.organisms",
-        "references.pdbs.method",
-        "references.pdbs.resolution",
-        "metadata.INCHIKEYS",
-        "references.inchikeys.ligand.name",
-        "references.inchikeys.ligand.pdbid",
-        "references.inchikeys.ligand.pubchem",
-        "references.inchikeys.ligand.chembl",
-        "references.inchikeys.ligand.drugbank",
-        "metadata.REFERENCES",
-        "references.proteins.organism",
-        "references.proteins.gene",
-        "references.proteins.name",
-        "references.proteins.functions",
-        "metadata.PROGRAM",
-        "metadata.TYPE",
-        "metadata.METHOD",
-        "metadata.TIMESTEP",
-        "metadata.FF",
-        "metadata.WAT",
-        "metadata.TEMP",
-        "metadata.ENSEMBLE",
-        "metadata.BOXTYPE",
-        "metadata.CHNAME",
-        "metadata.RSNAME",
-        "metadata.ATNAME",
-        "metadata.ATELEM",
-        "metadata.AUTHORS",
-        "metadata.GROUPS",
-        "metadata.COLLECTIONS",
-        "analyses.name",
-        "mds.analyses.name",
-        "files.name",
-        "mds.files.name",
-        "published",
-    ]);
-
     // Set the options counters which are missing
     // If the reset argument is passed then count again all fields, even if they already have a value
     updateOptionCounts = async () => {
@@ -384,7 +332,7 @@ class Database4Loader extends Database {
             logger.updateLog(`🧮 Updating option counters for query ${JSON.stringify(query)}`);
             // Get the option counts
             // Make sure we are not using the saved counts, but we count from scratch!
-            const options = await this.countOptions(query, this.OPTIONS_PROJECT_FIELDS, true, false);
+            const options = await this.countOptions(query, this.OPTIONS_QUERY_FIELDS, true, false);
             if (options.error) throw new Error(options.error);
             // To allow specific field queries and projections in these counters we must get rid of dots
             // Otherwise there is no way to make reference to these fields
@@ -392,6 +340,9 @@ class Database4Loader extends Database {
             // To solve these matters we replace dots by '/'
             Object.keys(options).forEach(fieldName => {
                 const renamedField = fieldName.replaceAll('.', '/');
+                // If there are no dots in the name then stop here or we will delete the original
+                // e.g. published
+                if (renamedField === fieldName) return;
                 options[renamedField] = options[fieldName];
                 delete options[fieldName];
             });
