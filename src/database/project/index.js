@@ -683,7 +683,7 @@ class Project {
         // Update the inserted data in case we need to revert the change
         this.database.inserted_data.push({
             name: filename + ' file',
-            collection: this.files,
+            collection: this.database.files,
             id: id
         });
     };

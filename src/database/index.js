@@ -304,8 +304,7 @@ class Database4Loader extends Database {
         for (const data of this.inserted_data) {
             const collection = data.collection;
             if (collection === this.files) {
-                console.log('allright its a file');
-                await this.bucket.delete(currentFile.id);
+                await this.bucket.delete(data.id);
             } 
             else {
                 const result = await data.collection.deleteOne({ _id: data.id });
