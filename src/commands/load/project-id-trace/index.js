@@ -20,7 +20,13 @@ const leaveTrace = (directory, id) => {
         console.log(chalk.yellow(`WARNING: No permission to overwrite ${traceFilepath}. Previous trace will remain.`));
         return
     };
-    fs.writeFileSync(traceFilepath, id.toString());
+    try {
+        fs.writeFileSync(traceFilepath, id.toString());
+    }
+    catch {
+        console.log(chalk.yellow(`WARNING: Failed to write in ${traceFilepath}. No trace will be left.`));
+    }
+
 }
 
 // Find the project id trace, if exists, and return the project id
