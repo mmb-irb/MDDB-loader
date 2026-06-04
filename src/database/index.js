@@ -98,7 +98,9 @@ class Database4Loader extends Database {
             mds: [],
             mdref: 0,
             files: [],
-            analyses: []
+            analyses: [],
+            // Record the moment when this project was created
+            creationDate: new Date(),
         };
         logger.startLog(`📝 Adding new database project`);
         // Load the new project
