@@ -553,9 +553,10 @@ class Project {
             }
             throw new Error(`File not found with id: ${fileId}`);
         };
-        const result = await waitForFileDocument(this.uploadedFileId);
+        const uploadedFileId = this.currentUploadId;
+        const result = await waitForFileDocument(uploadedFileId);
         // Update project data as the new file has been loaded
-        await this._addProjectFile(filename, mdIndex, this.uploadedFileId);
+        await this._addProjectFile(filename, mdIndex, uploadedFileId);
         // Remove this id from the current upload id
         this.currentUploadId = null;
     }
