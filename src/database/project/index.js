@@ -540,11 +540,22 @@ class Project {
                 }
             });
         });
-        // Check the new file has been added
-        const result = await this.database.files.findOne({ _id: this.currentUploadId });
-        if (result === null) throw new Error(`File not found`);
+        // Wait until the file document is visible in Mongo before registering it in the project
+        // We check every 500ms until 10 seconds, which should be more than enough for the document to be visible
+        const waitForFileDocument = async fileId => {
+            const timeoutMs = 10000;
+            const pollIntervalMs = 500;
+            const startTime = Date.now();
+            while (Date.now() - startTime < timeoutMs) {
+                const result = await this.database.files.findOne({ _id: fileId });
+                if (result !== null) return result;
+                await new Promise(resolve => setTimeout(resolve, pollIntervalMs));
+            }
+            throw new Error(`File not found with id: ${fileId}`);
+        };
+        const result = await waitForFileDocument(this.uploadedFileId);
         // Update project data as the new file has been loaded
-        await this._addProjectFile(filename, mdIndex, this.currentUploadId);
+        await this._addProjectFile(filename, mdIndex, this.uploadedFileId);
         // Remove this id from the current upload id
         this.currentUploadId = null;
     }
