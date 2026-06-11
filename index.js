@@ -176,6 +176,13 @@ yargs
     .command({
         command: 'list',
         desc: 'list all projects and their status',
+        builder: yargs => yargs
+            .option('l', {
+                alias: 'limit',
+                description: 'Limit the number of rows shown in the table',
+                type: 'integer',
+                default: null,
+            }),
         handler: commonHandler('list'),
     })
     // delete
