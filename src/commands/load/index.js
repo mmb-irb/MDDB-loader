@@ -69,7 +69,7 @@ const load = async (
     skipFiles,
     skipAnalyses,
     gromacsPath,
-    timeoutMs,
+    timeout,
   },
   // Database handler
   database,
@@ -199,8 +199,8 @@ const load = async (
     return await database.createProject();
   })();
 
-  if (timeoutMs !== null && timeoutMs !== undefined) {
-    project.fileDocumentTimeoutMs = timeoutMs;
+  if (timeout !== null && timeout !== undefined) {
+    project.fileDocumentTimeoutMs = timeout * 1000;
   }
 
   // Display the project id. It may be useful if the load is abruptly interrupted to clean

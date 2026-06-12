@@ -111,8 +111,8 @@ yargs
             })
             // --timeout-ms
             .option('t', {
-                alias: 'timeout-ms',
-                description: 'Wait time in milliseconds for newly uploaded file documents to become visible in MongoDB',
+                alias: 'timeout',
+                description: 'Wait time in seconds for newly uploaded file documents to become visible in MongoDB',
                 type: 'integer',
                 default: null,
             }),
