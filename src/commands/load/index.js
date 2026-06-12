@@ -69,6 +69,7 @@ const load = async (
     skipFiles,
     skipAnalyses,
     gromacsPath,
+    timeoutMs,
   },
   // Database handler
   database,
@@ -197,6 +198,10 @@ const load = async (
     isNewProject = true;
     return await database.createProject();
   })();
+
+  if (timeoutMs !== null && timeoutMs !== undefined) {
+    project.fileDocumentTimeoutMs = timeoutMs;
+  }
 
   // Display the project id. It may be useful if the load is abruptly interrupted to clean
   console.log(chalk.cyan(`== Project '${project.data.accession}'`));

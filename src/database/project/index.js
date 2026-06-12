@@ -32,7 +32,9 @@ const N_COORDINATES = 3; // x, y, z
 const THROTTLE_TIME = 1000; // 1 second
 // Time it takes to the trajectory uploading logs to complain if there is no progress
 const TIMEOUT_WARNING = 30000; // 30 seconds
-
+// Default time to wait for newly uploaded file documents to become visible in MongoDB
+const FILE_DOCUMENT_TIMEOUT = 10000; // 10 seconds
+    
 // Set the project class
 class Project {
     constructor (data, database) {
@@ -51,6 +53,8 @@ class Project {
         // Set an internal variable to store when the user confirms the load of a group of associated data
         // Thus there is no need to ask the user again for every file/analysis in the group
         this._confirmedAssociatedDataLoad = {};
+        // Allow command-line overrides for timeout behavior
+        this.fileDocumentTimeoutMs = FILE_DOCUMENT_TIMEOUT;
     };
 
     // Update remote project data by overwritting it all with current project data
@@ -543,7 +547,7 @@ class Project {
         // Wait until the file document is visible in Mongo before registering it in the project
         // We check every 500ms until 10 seconds, which should be more than enough for the document to be visible
         const waitForFileDocument = async fileId => {
-            const timeoutMs = 10000;
+            const timeoutMs = this.fileDocumentTimeoutMs;
             const pollIntervalMs = 500;
             const startTime = Date.now();
             while (Date.now() - startTime < timeoutMs) {

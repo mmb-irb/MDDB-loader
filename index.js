@@ -108,6 +108,13 @@ yargs
                 type: 'string',
                 default: null,
                 coerce: idOrAccessionCoerce,
+            })
+            // --timeout-ms
+            .option('t', {
+                alias: 'timeout-ms',
+                description: 'Wait time in milliseconds for newly uploaded file documents to become visible in MongoDB',
+                type: 'integer',
+                default: null,
             }),
         handler: commonHandler('load'), // Call the command script with the command name as argument
     })
