@@ -159,7 +159,8 @@ yargs
     // publish many
     .command({
         command: 'publishall <query>',
-        desc: 'set as "published" multiple projects at once using a query',
+        desc: 'Set as "published" multiple projects at once using a query\n' + 
+              'Example: publishall \'{\"metadata.COLLECTIONS\": [\"mdbind\"]}\'',
         builder: yargs => yargs
             .positional('query', {
                 description: 'Use a query to select projects to be published',
@@ -170,7 +171,8 @@ yargs
     // unpublish many
     .command({
         command: 'unpublishall <query>',
-        desc: 'set as NOT "published" multiple projects at once using a query',
+        desc: 'Set as NOT "published" multiple projects at once using a query\n' + 
+              'Example: unpublishall \'{\"metadata.COLLECTIONS\": [\"mdbind\"]}\'',
         builder: yargs => yargs
             .positional('query', {
                 description: 'Use a query to select projects to be unpublished',
