@@ -155,7 +155,7 @@ class Project {
         logger.successLog(`🗑️  Deleted project ${this.id}`);
         // If this was the last issued project then reuse its accession for further projects
         const lastIssuedAccession = await this.database.getLastAccession();
-        if (lastIssuedAccession === this.accession) await this.database.updateCounter(-1);
+        if (lastIssuedAccession === this.accession) await this.database.useCounter(-1);
         // Update option counters
         await this.database.updateOptionCounts();
         // Remove references if they are not used by other projects
