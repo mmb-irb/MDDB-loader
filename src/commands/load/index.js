@@ -499,6 +499,9 @@ const load = async (
   // DANI: Alternatively I could update specific values from the counters every time they are updated, but this is too much work
   // DANI: This solution is easy and reliable, at the cost of making the process a bit slower
   await project.database.updateOptionCounts();
+  
+  // Calculate and store the total size of all files in the project
+  await project.updateTotalSize();
 
   return () => {
     console.log(
