@@ -25,13 +25,20 @@ const main = async () => {
     // Iterate over all projects and calculate their total size
     const availableProjects = await database.projects.find({});
     let updatedCount = 0;
+    let skippedCount = 0;
     let errorCount = 0;
     
     for await (const projectData of availableProjects) {
         try {
             // Create a Project instance to reuse the updateTotalSize method
             const project = new Project(projectData, database);
-            
+            // Skip projects that already have a totalSize field
+            console.log(`Processing ${project.data.totalSize}`);
+            if (project.data.totalSize !== 0) {
+                console.log(`⏭️ Skipping ${project.accession || 'no accession'} (${project.id}) - already has totalSize`);
+                skippedCount++;
+                continue;
+            }
             // Call the Project.updateTotalSize method
             await project.updateTotalSize();
             
@@ -46,6 +53,7 @@ const main = async () => {
     // Summary
     console.log(`\n📈 Summary:`);
     console.log(`   Updated: ${updatedCount} projects`);
+    console.log(`   Skipped: ${skippedCount} projects`);
     console.log(`   Errors:  ${errorCount} projects`);
     console.log(`\n✅ Done!\n`);
     
