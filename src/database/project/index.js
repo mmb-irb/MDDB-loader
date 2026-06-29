@@ -50,6 +50,8 @@ class Project {
         // Fix data format issues
         // These may come from old project formats
         if (this.data.analyses === undefined) this.data.analyses = [];
+        // Initialize totalSize if not present (for backward compatibility)
+        if (this.data.totalSize === undefined) this.data.totalSize = 0;
         // Set an internal variable to store when the user confirms the load of a group of associated data
         // Thus there is no need to ask the user again for every file/analysis in the group
         this._confirmedAssociatedDataLoad = {};
@@ -66,6 +68,98 @@ class Project {
         const result = await this.database.projects.replaceOne({ _id: this.id }, this.data);
         if (result.acknowledged === false) return logger.failLog('📝 Failed to update database project data');
         logger.successLog('📝 Updated database project data');
+    };
+
+    // Calculate total simulation time from framestep and frames
+    // Total time = framestep (ns) * frames
+    // Also calculates and stores per-MD simulation times
+    updateTotalTime = async () => {
+        const projectMetadata = this.data.metadata;
+        const framestep = projectMetadata?.FRAMESTEP;
+        if (!framestep || !isNumber(framestep)) {
+            console.log(chalk.grey('Cannot calculate simulation times: FRAMESTEP not found in project metadata'));
+            return 1;
+        }
+
+        let totalFrames = 0;
+        let totalTime = 0;
+
+        if (this.data.mds && this.data.mds.length > 0) {
+            // Initialize array to store per-MD simulation times
+            for (const [mdIndex, md] of Object.entries(this.data.mds)) {
+                if (md.frames && isNumber(md.frames)) {
+                    // Calculate per-MD simulation time
+                    md.time = framestep * md.frames;
+                    totalFrames += md.frames;
+                    totalTime += md.time;
+                } else {
+                    // Store null for MDs without frames
+                    console.log(chalk.grey(`  MD ${md.name || `replica_${parseInt(mdIndex)+1}`}: frames not found, cannot calculate simulation time`));
+                }
+            }
+        }
+
+        if (totalFrames === 0) {
+            console.log(chalk.grey('Cannot calculate simulation times: no frames found in MDs'));
+            return 1;
+        }
+
+        // Store total simulation time
+        this.data.totalTime = totalTime;
+        console.log(chalk.grey(`Total simulation time: ${totalTime} ns`));
+        this.data.totalFrames = totalFrames;
+        await this.updateRemote();
+        return 0;
+    };
+
+    // Calculate and update the total size of all files in the project
+    // This is done once at the end of the load process to avoid per-file overhead
+    updateTotalSize = async () => {
+        logger.startLog(`📏 Calculating total project size`);
+        // Collect all file IDs from project files and MD files
+        const allFileIds = [];
+        
+        // Add project-level files
+        if (this.data.files && this.data.files.length > 0) {
+            allFileIds.push(...this.data.files.map(f => f.id));
+        }
+        
+        // Add MD-level files from each MD
+        if (this.data.mds && this.data.mds.length > 0) {
+            for (const md of this.data.mds) {
+                if (md.files && md.files.length > 0) {
+                    allFileIds.push(...md.files.map(f => f.id));
+                }
+            }
+        }
+        
+        // If no files, set totalSize to 0
+        if (allFileIds.length === 0) {
+            this.data.totalSize = 0;
+            await this.updateRemote();
+            logger.successLog(`📏 Total project size: 0 bytes (no files)`);
+            return;
+        }
+        
+        // Aggregate the total size from GridFS
+        const result = await this.database.files.aggregate([
+            { $match: { _id: { $in: allFileIds } } },
+            { $group: { _id: null, totalBytes: { $sum: '$length' } } }
+        ]).toArray();
+        
+        const totalBytes = result.length > 0 ? result[0].totalBytes : 0;
+        this.data.totalSize = totalBytes;
+        await this.updateRemote();
+        logger.successLog(`📏 Total project size: ${this.formatBytes(totalBytes)}`);
+    };
+
+    // Format bytes to human-readable string
+    formatBytes = (bytes) => {
+        if (bytes === 0) return '0 bytes';
+        const k = 1000;
+        const sizes = ['bytes', 'KB', 'MB', 'GB', 'TB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
     };
 
     // Get a summary of the project contents
@@ -344,6 +438,7 @@ class Project {
         if (!previousMetadata) {
             this.data.metadata = newMetadata;
             await this.updateRemote();
+            this.updatedAnyMetadata = true;
             return;
         }
         // If there is an already existing metadata then we modify it and send it back to mongo
@@ -354,6 +449,7 @@ class Project {
         if (!changed) return console.log(chalk.grey(`Project metadata is already up to date`));
         // Finally, load the modified current metadata object into mongo
         await this.updateRemote();
+        this.updatedAnyMetadata = true;
     };
 
 
@@ -371,6 +467,7 @@ class Project {
         if (!changed) return console.log(chalk.grey(`MD metadata is already up to date`));
         // Finally, load the new mds object into mongo
         await this.updateRemote();
+        this.updatedAnyMetadata = true;
     };
 
     // Check if there is a previous document already saved
@@ -560,7 +657,8 @@ class Project {
         const uploadedFileId = this.currentUploadId;
         const result = await waitForFileDocument(uploadedFileId);
         // Update project data as the new file has been loaded
-        await this._addProjectFile(filename, mdIndex, uploadedFileId);
+        // Pass the file length (size in bytes) to update the totalSize
+        await this._addProjectFile(filename, mdIndex, uploadedFileId, result.length);
         // Remove this id from the current upload id
         this.currentUploadId = null;
     }
@@ -747,6 +845,8 @@ class Project {
         const fileIndex = availableFiles.indexOf(currentFile);
         availableFiles.splice(fileIndex, 1);
         await this.updateRemote();
+        // Recalculate the total size after deletion (only if not called from deleteAssociatedData)
+        if (handleAssociatedData) await this.updateTotalSize();
     }
 
     // Rename a file, both in the files collection and in project data
