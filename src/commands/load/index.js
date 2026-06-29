@@ -380,7 +380,7 @@ const load = async (
       mdIndex = project.findMDIndexByDirectory(mdir);
       // If the MD is new and there is no metadata we must stop here
       if (mdIndex === null) {
-        console.log(chalk.red(`New MD directory '${mdir}' has no metadata so the load will be skipped`));
+        console.log(chalk.red(`Can't find which MD corresponds to MD directory '${mdir}'. This directory will be skipped.`));
         continue;
       }
       // Get the MD name from the already existing metadata
