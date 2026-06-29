@@ -2,23 +2,18 @@
 // Also add the creationDate and mdcount fields if they don't exist yet
 // Run this once to populate these fields for existing projects
 
-// Read the '.env' configuration file
-const dotenvLoad = require('dotenv').config({ path: __dirname + '/../.env' });
-if (dotenvLoad.error) throw dotenvLoad.error;
 
-const getDatabase = require('../src/database');
-const logger = require('../src/utils/logger');
-const Project = require('../src/database/project');
+
+const getDatabase = require('../../database');
+const logger = require('../../utils/logger');
+const Project = require('../../database/project');
 
 // -------------------------------------------------------------------------------------------------
 // -------------------------------------------------------------------------------------------------
 
 // The main function
 // This is an async wrapper to be able to call await
-const main = async () => {
-    // Set the database handler
-    const database = await getDatabase();
-
+const addTotals = async (database, verbose) => {
     // Get the number of projects just for the logs
     const projectCount = await database.projects.countDocuments();
     console.log(`\n📊 Updating totalSize, totalTime, and creationDate for ${projectCount} projects\n`);
@@ -48,21 +43,22 @@ const main = async () => {
             // Add creationDate if not already set
             if (!hasCreationDate) {
                 project.data.creationDate = projectData._id.getTimestamp();
-                await project.updateRemote();
-                console.log(`📅 Added creationDate for ${project.accession || 'no accession'} (${project.id})`);
+                if (verbose) console.log(`📅 Added creationDate for ${project.accession || 'no accession'} (${project.id})`);
             }
 
             // Add mdcount if not already set
             if (!hasMdCount) {
                 project.data.mdcount = project.countAvailableMDs();
-                await project.updateRemote();
-                console.log(`🔢 Added mdcount for ${project.accession || 'no accession'} (${project.id})`);
+                if (verbose) console.log(`🔢 Added mdcount for ${project.accession || 'no accession'} (${project.id})`);
             }
+
+            if (!hasCreationDate || !hasMdCount)
+                await project.updateRemote();
 
             // Calculate total size if not already set
             if (!hasTotalSize) {
                 await project.updateTotalSize();
-                console.log(`💾 Updated totalSize for ${project.accession || 'no accession'} (${project.id})`);
+                if (verbose) console.log(`💾 Updated totalSize for ${project.accession || 'no accession'} (${project.id})`);
             }
             // Calculate total time if not already set
             if (!hasTotalTime) {
@@ -71,7 +67,7 @@ const main = async () => {
                     skippedCount++;
                     continue;
                 }
-                console.log(`⏱️ Updated totalTime for ${project.accession || 'no accession'} (${project.id})`);
+                if (verbose) console.log(`⏱️ Updated totalTime for ${project.accession || 'no accession'} (${project.id})`);
             }
             updatedCount++;
             console.log(`✅ Updated ${project.accession || 'no accession'} (${project.id})`);
@@ -87,9 +83,6 @@ const main = async () => {
     console.log(`   Skipped: ${skippedCount} projects`);
     console.log(`   Errors:  ${errorCount} projects`);
     console.log(`\n✅ Done!\n`);
-    
-    // Clean exit
-    process.exit(0);
 };
 
-main();
+module.exports = { addTotals };

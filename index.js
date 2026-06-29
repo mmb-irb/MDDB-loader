@@ -240,6 +240,26 @@ yargs
         builder: yargs => yargs,
         handler: commonHandler('setup'),
     })
+    // update
+    .command({
+        command: 'update',
+        aliases: ['upgrade'],
+        desc: 'Update the database schema and data to the latest version',
+        builder: yargs => yargs
+            .options('force', {
+                alias: 'f',
+                description: 'Apply the update even if the database is already at the latest version',
+                type: 'boolean',
+                default: false,
+            })
+            .options('verbose', {
+                alias: 'v',
+                description: 'Display detailed information about the update process',
+                type: 'boolean',
+                default: false,
+            }),
+        handler: commonHandler('update'),
+    })
     .demandCommand() // Demand a minimmum of 1 command
     .strict()
     // Display all descriptions when the command --help is asked or there is no command

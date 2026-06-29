@@ -839,14 +839,12 @@ class Project {
         }
         // However a desynchronization between projects and fs.files may happen if the loader is abuptly interrupted
         else {
-            logger.warnLog(`🗑️  File ${filename} does not exist already <- ${currentFile.id}`);
+            logger.failLog(`🗑️  File ${filename} does not exist already <- ${currentFile.id}`);
         }
         // Remove the current file entry from the files list and update the project
         const fileIndex = availableFiles.indexOf(currentFile);
         availableFiles.splice(fileIndex, 1);
         await this.updateRemote();
-        // Recalculate the total size after deletion (only if not called from deleteAssociatedData)
-        if (handleAssociatedData) await this.updateTotalSize();
     }
 
     // Rename a file, both in the files collection and in project data

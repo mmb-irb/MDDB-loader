@@ -146,31 +146,34 @@ const deleteFunction = async (
         // If no MD number was passed then we asume that the whole project is to be deleted
         if (target.mdIndex === undefined) return await project.deleteProject();
         // If a MD number was passed then we asume that only the specified MD is to be deleted
-        return await project.removeMDirectory(target.mdIndex, forced=confirm);
+        await project.removeMDirectory(target.mdIndex, forced=confirm);
     }
     // ----- Analysis -----
-    if (target.collectionKey === 'analyses') {
+    else if (target.collectionKey === 'analyses') {
         const name = target.document.name;
         const mdIndex = target.document.md;
-        return await project.deleteAnalysis(name, mdIndex);
+        await project.deleteAnalysis(name, mdIndex);
     }
     // ----- Analysis not recognized by their parent -----
-    if (target.collectionKey === 'bastardAnalyses') {
+    else if (target.collectionKey === 'bastardAnalyses') {
         const result = await database.analyses.deleteOne(id);
         if (!result) throw new Error(`Failed to delete analysis with internal ID ${id}`);
-        return;
     }
     // ----- File -----
-    if (target.collectionKey === 'files') {
+    else if (target.collectionKey === 'files') {
         const filename = target.document.filename;
         const mdIndex = target.document.metadata.md;
-        return await project.deleteFile(filename, mdIndex);
+        await project.deleteFile(filename, mdIndex);
     }
     // ----- File not recognized by their parent -----
-    if (target.collectionKey === 'bastardFiles') {
-        return await database.bucket.delete(id);
+    else if (target.collectionKey === 'bastardFiles') {
+        await database.bucket.delete(id);
     }
-    throw new Error(`Deletion of ${documentName} is not yet supported`);
+    else throw new Error(`Deletion of ${documentName} is not yet supported`);
+
+    // If the parent project still exists, recompute its totals
+    await project.updateTotalSize();
+    await project.updateTotalTime();
 };
 
 module.exports = deleteFunction;
