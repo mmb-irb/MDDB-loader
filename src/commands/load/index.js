@@ -503,6 +503,11 @@ const load = async (
   // Calculate and store the total size of all files in the project
   await project.updateTotalSize();
 
+  if (project.updatedAnyMetadata) {
+    // Calculate total simulation time now that we have frames for this MD
+    await project.updateTotalTime();
+  }
+
   return () => {
     console.log(
       chalk.cyan(`== finished loading '${projectDirectory}' in ${prettyMs(Date.now() - startTime)} with id:`),

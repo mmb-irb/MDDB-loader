@@ -70,6 +70,48 @@ class Project {
         logger.successLog('📝 Updated database project data');
     };
 
+    // Calculate total simulation time from framestep and frames
+    // Total time = framestep (ns) * frames
+    // Also calculates and stores per-MD simulation times
+    updateTotalTime = async () => {
+        const projectMetadata = this.data.metadata;
+        const framestep = projectMetadata?.FRAMESTEP;
+        if (!framestep || !isNumber(framestep)) {
+            console.log(chalk.grey('Cannot calculate simulation times: FRAMESTEP not found in project metadata'));
+            return 1;
+        }
+
+        let totalFrames = 0;
+        let totalTime = 0;
+
+        if (this.data.mds && this.data.mds.length > 0) {
+            // Initialize array to store per-MD simulation times
+            for (const [mdIndex, md] of Object.entries(this.data.mds)) {
+                if (md.frames && isNumber(md.frames)) {
+                    // Calculate per-MD simulation time
+                    md.time = framestep * md.frames;
+                    totalFrames += md.frames;
+                    totalTime += md.time;
+                } else {
+                    // Store null for MDs without frames
+                    console.log(chalk.grey(`  MD ${md.name || `replica_${parseInt(mdIndex)+1}`}: frames not found, cannot calculate simulation time`));
+                }
+            }
+        }
+
+        if (totalFrames === 0) {
+            console.log(chalk.grey('Cannot calculate simulation times: no frames found in MDs'));
+            return 1;
+        }
+
+        // Store total simulation time
+        this.data.totalTime = totalTime;
+        console.log(chalk.grey(`Total simulation time: ${totalTime} ns`));
+        this.data.totalFrames = totalFrames;
+        await this.updateRemote();
+        return 0;
+    };
+
     // Calculate and update the total size of all files in the project
     // This is done once at the end of the load process to avoid per-file overhead
     updateTotalSize = async () => {
@@ -396,6 +438,7 @@ class Project {
         if (!previousMetadata) {
             this.data.metadata = newMetadata;
             await this.updateRemote();
+            this.updatedAnyMetadata = true;
             return;
         }
         // If there is an already existing metadata then we modify it and send it back to mongo
@@ -406,6 +449,7 @@ class Project {
         if (!changed) return console.log(chalk.grey(`Project metadata is already up to date`));
         // Finally, load the modified current metadata object into mongo
         await this.updateRemote();
+        this.updatedAnyMetadata = true;
     };
 
 
@@ -423,6 +467,7 @@ class Project {
         if (!changed) return console.log(chalk.grey(`MD metadata is already up to date`));
         // Finally, load the new mds object into mongo
         await this.updateRemote();
+        this.updatedAnyMetadata = true;
     };
 
     // Check if there is a previous document already saved
