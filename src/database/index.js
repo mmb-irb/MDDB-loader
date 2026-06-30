@@ -10,8 +10,6 @@ const {
     userConfirm,
     userConfirmOrphanDataDeletion,
 } = require('../utils/auxiliar-functions');
-// Mongo ObjectId class
-const { ObjectId } = require('mongodb');
 // The project class is used to handle database data from a specific project
 const Project = require('./project');
 // Import a version handler
@@ -51,9 +49,9 @@ class Database4Loader extends Database {
         // If it is an object id we can directly query with it
         if (mongoidFormat.test(idOrAccession)) {
             // If it is a mongo object id already then use it as is
-            if (idOrAccession.constructor === ObjectId) query = idOrAccession;
+            if (idOrAccession.constructor === Database.ObjectId) query = idOrAccession;
             // If it is a string the set the mongo object id from it
-            else query = new ObjectId(idOrAccession);
+            else query = new Database.ObjectId(idOrAccession);
         }
         // If it is an accession we have to query in a specific format
         else query = { accession: idOrAccession };
@@ -435,7 +433,7 @@ class Database4Loader extends Database {
             // If the value is an array then add every value on it
             if (value.constructor === Array) value.forEach(v => parentValues.add(v));
             // If the value is a mongo object id then keep only the id string
-            if (value.constructor === ObjectId) parentValues.add(value.toString());
+            if (value.constructor === Database.ObjectId) parentValues.add(value.toString());
             // Otherwise simply add the value
             else parentValues.add(value);
         });
@@ -462,7 +460,7 @@ class Database4Loader extends Database {
             let value = doc;
             for (const field of localFields) { value = value[field] };
             // If the value is a mongo object id then make it a string
-            if (value.constructor === ObjectId) value = value.toString();
+            if (value.constructor === Database.ObjectId) value = value.toString();
             // If value is among the parent values then skip to the next
             if (parentValues.has(value)) continue;
             // If the value is not among the parent values then add the result id to the list of orphan ids

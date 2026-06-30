@@ -6,8 +6,8 @@
 const prompts = require('prompts');
 // Add colors in console
 const chalk = require('chalk');
-// ObjectId return
-const { ObjectId } = require('mongodb');
+// Database for ObjectId return
+const { Database } = require('mddb-database');
 // Files system from node
 const fs = require('fs');
 // Utilities for working with file and directory paths
@@ -135,18 +135,16 @@ const joinPaths = (dir, subdir) => {
     return dir + '/' + subdir;
 }
 
-// Save the object from mongo which is associated to the provided id
-// WARNING: If the argument passed to this function is null a new ObjectId is generated
-const idCoerce = id => new ObjectId(id);
-
 // Convert the input accession string into a valid accession format
 const accessionCoerce = accession => accession.trim();
 
 // Try to coerce the input argument as a mongo id
 // If fails, try it as an accession
+// Save the object from mongo which is associated to the provided id
+// WARNING: If the argument passed to this function is null a new ObjectId is generated
 const idOrAccessionCoerce = idOrAccession => {
     if (!idOrAccession) return null;
-    if (mongoidFormat.test(idOrAccession)) return idCoerce(idOrAccession);
+    if (mongoidFormat.test(idOrAccession)) return new Database.ObjectId(idOrAccession);
     return accessionCoerce(idOrAccession);
 };
 
