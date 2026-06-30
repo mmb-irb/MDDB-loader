@@ -215,9 +215,13 @@ class Database4Loader extends Database {
         const differenceMessage = `${difference > 0 ? '+' : ''}${difference}`;
         if (verbose) logger.startLog(`🧮 Updating accession counter (${differenceMessage})`);
         // Get the current counter as we update it with the provided difference
+        // Note that since MongoDB driver v6 findOneAndUpdate returns the matched document
+        // directly unless includeResultMetadata is set to true, which restores the legacy
+        // { value } result wrapper this code relies on
         const counter = await this.counters.findOneAndUpdate(
             { accessions: true },
-            { $inc: { last: difference } });
+            { $inc: { last: difference } },
+            { includeResultMetadata: true });
         // This document is created in the database.setup, so it should exist already
         if (!counter || !counter.value) {
             if (verbose) logger.failLog(`🧮 Failed to update accession counter (${differenceMessage})`);

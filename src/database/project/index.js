@@ -772,7 +772,7 @@ class Project {
                 // Calculate the number of atoms in the loaded trajectory and add it to the metadata object
                 metadata.atoms = uploadStream.length / frameCount / Float32Array.BYTES_PER_ELEMENT / N_COORDINATES;
                 // Updated the recently created file document with additional metadata
-                const result = await this.database.files.findOneAndUpdate({ _id: uploadStream.id }, { $set: { metadata: metadata } });
+                const result = await this.database.files.findOneAndUpdate({ _id: uploadStream.id }, { $set: { metadata: metadata } }, { includeResultMetadata: true });
                 // If the operation failed then warn the user
                 if (result.acknowledged === false) throw new Error(`Failed to update file data`);
                 if (result.value === null) throw new Error(`File not found`);
@@ -854,7 +854,7 @@ class Project {
         if (!currentFile) throw new Error(`File ${filename} is not in the available files list (MD index ${mdIndex})`);
         logger.startLog(`📝 Renaming file ${filename} from MD with index ${mdIndex} (${currentFile.id}) as ${newFilename}`);
         // Update filename in the files collection document
-        const result = await this.database.files.findOneAndUpdate({ _id: currentFile.id }, { $set: { filename: newFilename }});
+        const result = await this.database.files.findOneAndUpdate({ _id: currentFile.id }, { $set: { filename: newFilename }}, { includeResultMetadata: true });
         if (result.acknowledged === false) return logger.failLog(`📝 Failed to renamed file ${filename} from MD with index ${mdIndex} (${currentFile.id}) as ${newFilename}`);
         logger.successLog(`📝 Renamed file ${filename} from MD with index ${mdIndex} (${currentFile.id}) as ${newFilename}`);
         // Rename the file object name and update the project
@@ -976,7 +976,7 @@ class Project {
         if (!currentAnalysis) throw new Error(`Analysis ${oldName} is not in the available analyses list (MD index ${mdIndex})`);
         logger.startLog(`📝 Renaming analysis ${oldName} from MD with index ${mdIndex} (${currentAnalysis.id}) as ${newName}`);
         // Update analysis name in the analyses collection document
-        const result = await this.database.analyses.findOneAndUpdate({ _id: currentAnalysis.id }, { $set: { name: newName }});
+        const result = await this.database.analyses.findOneAndUpdate({ _id: currentAnalysis.id }, { $set: { name: newName }}, { includeResultMetadata: true });
         if (result.acknowledged === false) return logger.failLog(`📝 Failed to renamed analysis ${oldName} from MD with index ${mdIndex} (${currentAnalysis.id}) as ${newName}`);
         logger.successLog(`📝 Renamed analysis ${oldName} from MD with index ${mdIndex} (${currentAnalysis.id}) as ${newName}`);
         // Rename the analysis object name and update the project
