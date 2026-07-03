@@ -77,8 +77,8 @@ class Project {
         const projectMetadata = this.data.metadata;
         const framestep = projectMetadata?.FRAMESTEP;
         if (!framestep || !isNumber(framestep)) {
-            console.log(chalk.grey('Cannot calculate simulation times: FRAMESTEP not found in project metadata'));
-            return 1;
+            console.log(chalk.grey('⏱️ Cannot calculate simulation times: FRAMESTEP not found in project metadata'));
+            return 0;
         }
 
         let totalFrames = 0;
@@ -100,22 +100,22 @@ class Project {
         }
 
         if (totalFrames === 0) {
-            console.log(chalk.grey('Cannot calculate simulation times: no frames found in MDs'));
-            return 1;
+            console.log(chalk.grey('⏱️ Cannot calculate simulation times: no frames found in MDs'));
+            return 0;
         }
 
         // Store total simulation time
         this.data.totalTime = totalTime;
-        console.log(chalk.grey(`Total simulation time: ${totalTime} ns`));
         this.data.totalFrames = totalFrames;
+        console.log(`  ⏱️  Total simulation time: ${totalTime} ns`);
+        console.log(`  🎞️  Total frames: ${totalFrames}`);
         await this.updateRemote();
-        return 0;
+        return 1;
     };
 
     // Calculate and update the total size of all files in the project
     // This is done once at the end of the load process to avoid per-file overhead
     updateTotalSize = async () => {
-        logger.startLog(`📏 Calculating total project size`);
         // Collect all file IDs from project files and MD files
         const allFileIds = [];
         
@@ -136,8 +136,7 @@ class Project {
         // If no files, set totalSize to 0
         if (allFileIds.length === 0) {
             this.data.totalSize = 0;
-            await this.updateRemote();
-            logger.successLog(`📏 Total project size: 0 bytes (no files)`);
+            console.log(`  📏 Total project size: 0 bytes (no files)`);
             return;
         }
         
@@ -149,8 +148,18 @@ class Project {
         
         const totalBytes = result.length > 0 ? result[0].totalBytes : 0;
         this.data.totalSize = totalBytes;
+        console.log(`  📏 Total project size: ${this.formatBytes(totalBytes)}`);
+    };
+
+    updateTotals = async () => {
+        // Calculate and store the total size of all files in the project
+        await this.updateTotalSize();
+        if (this.updatedAnyMetadata) {
+            // Calculate total simulation time
+            await this.updateTotalTime();
+        }
+        // Save to remote
         await this.updateRemote();
-        logger.successLog(`📏 Total project size: ${this.formatBytes(totalBytes)}`);
     };
 
     // Format bytes to human-readable string

@@ -52,9 +52,6 @@ const addTotals = async (database, verbose) => {
                 if (verbose) console.log(`🔢 Added mdcount for ${project.accession || 'no accession'} (${project.id})`);
             }
 
-            if (!hasCreationDate || !hasMdCount)
-                await project.updateRemote();
-
             // Calculate total size if not already set
             if (!hasTotalSize) {
                 await project.updateTotalSize();
@@ -62,13 +59,10 @@ const addTotals = async (database, verbose) => {
             }
             // Calculate total time if not already set
             if (!hasTotalTime) {
-                const result = await project.updateTotalTime();
-                if (result) {
-                    skippedCount++;
-                    continue;
-                }
-                if (verbose) console.log(`⏱️ Updated totalTime for ${project.accession || 'no accession'} (${project.id})`);
+                const success = await project.updateTotalTime();
+                if (success && verbose) console.log(`⏱️ Updated totalTime for ${project.accession || 'no accession'} (${project.id})`);
             }
+            await project.updateRemote();
             updatedCount++;
             console.log(`✅ Updated ${project.accession || 'no accession'} (${project.id})`);
         } catch (error) {

@@ -491,13 +491,8 @@ const load = async (
     }
 
   }
-  // Calculate and store the total size of all files in the project
-  await project.updateTotalSize();
-
-  if (project.updatedAnyMetadata) {
-    // Calculate total simulation time now that we have frames for this MD
-    await project.updateTotalTime();
-  }
+  // Update total size, time and frames
+  await project.updateTotals();
 
   // At the end of the load update the option counters
   // DANI: Adding 1 to the values of this project would be way faster but it would not be reliable

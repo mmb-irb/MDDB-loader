@@ -171,9 +171,10 @@ const deleteFunction = async (
     }
     else throw new Error(`Deletion of ${documentName} is not yet supported`);
 
+    // 
     // If the parent project still exists, recompute its totals
-    await project.updateTotalSize();
-    await project.updateTotalTime();
+    this.updatedAnyMetadata = true;
+    await project.updateTotals();
 };
 
 module.exports = deleteFunction;
