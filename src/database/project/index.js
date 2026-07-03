@@ -109,7 +109,6 @@ class Project {
         this.data.totalFrames = totalFrames;
         console.log(`  ⏱️  Total simulation time: ${totalTime} ns`);
         console.log(`  🎞️  Total frames: ${totalFrames}`);
-        await this.updateRemote();
         return 1;
     };
 
