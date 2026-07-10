@@ -23,3 +23,16 @@ The DB user needs to have writing rights
 | DB_AUTH_PASSWORD | string  | db password                         |
 | DB_AUTHSOURCE    | string  | authentication db                   |
 | ACCESSION_PREFIX | string  | prefix for the accession (ex: MCNS) |
+
+## Development
+
+### Make a new version
+
+1. Update the version in `package.json`, `package-lock.json`, commit the changes and create a tag with:
+```bash
+npm version X.Y.Z
+```
+2. Push the changes and the tag to the repository:
+```bash
+git push
+git push origin vX.Y.Z
