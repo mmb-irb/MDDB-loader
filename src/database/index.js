@@ -310,7 +310,12 @@ class Database4Loader extends Database {
             // Get the option counts
             // Make sure we are not using the saved counts, but we count from scratch!
             const options = await this.countOptions(query, this.OPTIONS_QUERY_FIELDS, true, false);
-            if (options.error) throw new Error(options.error);
+            if (options.error) {
+                // If there error comes from the qery being empty then simply skip this query
+                // This may happen in a starting database whcih may be almost empty
+                if (options.code === '404') continue
+                throw new Error(options.error);
+            }
             // To allow specific field queries and projections in these counters we must get rid of dots
             // Otherwise there is no way to make reference to these fields
             // e.g. { fields: { 'metadata.WHATEVER' } } is not reachable as 'fields.metadata.WHATEVER'
