@@ -260,6 +260,13 @@ yargs
             }),
         handler: commonHandler('update'),
     })
+    // check
+    .command({
+        command: 'check',
+        desc: 'print the number of projects in the database',
+        builder: yargs => yargs,
+        handler: commonHandler('check'),
+    })
     .demandCommand() // Demand a minimmum of 1 command
     .strict()
     // Display all descriptions when the command --help is asked or there is no command
