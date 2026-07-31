@@ -2,8 +2,8 @@
 
 // Allow reading to the current working directory
 const process = require('process');
-// These 2 lines alone allow all scripts to access the env file through process.env
-const dotenvLoad = require('dotenv').config({ path: __dirname + '/.env' });
+// Load .env file but let variables already set in the environment take priority
+const dotenvLoad = require('dotenv').config({ path: __dirname + '/.env', override: false });
 
 // The environment can be provided also through the command line as environment variables
 // e.g. NODE_ENV=production node index.js load /path/to/project
