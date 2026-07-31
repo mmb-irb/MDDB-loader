@@ -7,6 +7,8 @@ const prettyMs = require('pretty-ms');
 // This function displays in console a dynamic loading status
 const getSpinner = () => {
   const instance = ora();
+  // Make these outputs streamed by the standard output, not the standard error (default behaviour)
+  instance.stream = process.stdout
   // Object.freeze prevents changing any propierties or their values inside the object
   return Object.freeze({
     // "instance." variables are set here when the spinner status changes (start/succeed/fail)
