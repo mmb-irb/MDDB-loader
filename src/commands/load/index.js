@@ -38,6 +38,14 @@ const ESSENTIAL_MD_FILES = {
   mainTrajectory: 'MD trajectory file'
 };
 
+// Set which project files are references
+const REFERENCE_FILES_CATEGORIES = new Set([
+  'proteinReferencesDataFile',
+  'inchikeyReferencesDataFile',
+  'pdbReferencesDataFile',
+  'chainReferencesDataFile',
+])
+
 // Given a analysis filename, get the name of the analysis from the filename itself
 const ANALYSIS_PATTERN = new RegExp('^mda.([A-Za-z0-9_-]*).json$');
 const nameAnalysis = filepath => {
@@ -119,6 +127,57 @@ const load = async (
   // Find all files in the "projectDirectory" argument path and classify them
   // Classification is performed according to file names
   const [categorizedProjectFiles, categorizedMdFiles] = await categorizeFiles(projectFiles, mdFiles);
+
+  // Set a function to load references
+  // We se it this early because it may be used now or later in the code
+  // Set the input files to be read for every different reference type
+  const loadReferences = async () => {
+    // Set the input files to be read for every different reference type
+    const referenceInputDataFiles = {
+      proteins: categorizedProjectFiles.proteinReferencesDataFile,
+      inchikeys: categorizedProjectFiles.inchikeyReferencesDataFile,
+      pdbs: categorizedProjectFiles.pdbReferencesDataFile,
+      chains: categorizedProjectFiles.chainReferencesDataFile
+    };
+    // Iterate the different type of references (proteins, inchikeys, PDBs and chains)
+    for await (const referenceName of Object.keys(database.REFERENCES)) {
+      // Get the input data filepath
+      const referenceInputDataFile = referenceInputDataFiles[referenceName];
+      // If there is no input data filepath then go to the next reference
+      if (!referenceInputDataFile) continue;
+      // Load the reference input data
+      const referenceInputDataFilepath = projectDirectory + referenceInputDataFile;
+      const referenceInputData = await loadJSON(referenceInputDataFilepath);
+      if (!referenceInputData)
+        throw new Error(`There is something wrong with the references file ${referenceInputDataFilepath}`);
+      // Iterate over the different references among the input data
+      for await (const referenceData of referenceInputData) {
+        await database.loadReferenceIfProper(referenceName, referenceData, conserve, overwrite);
+      }
+    }
+  }
+
+  // Check if the available files are references only
+  // If this is the case then we don't really need a project to upload
+
+  // Get categories of project files which are not empty arrays or undefined
+  const nonEmptyProjectCategories = Object.keys(categorizedProjectFiles).filter(
+    category => categorizedProjectFiles[category] !== undefined &&
+      categorizedProjectFiles[category].length !== 0);
+
+  // If all categories belong to references then simply load them and exit
+  const allReferences = nonEmptyProjectCategories.every(
+    category => REFERENCE_FILES_CATEGORIES.has(category));
+  if (allReferences) {
+    await loadReferences();
+    // At the end of the load update the option counters
+    await database.updateOptionCounts();
+    return () => {
+      console.log(
+        chalk.cyan(`== finished loading '${projectDirectory}' in ${prettyMs(Date.now() - startTime)} with references only`),
+      );
+    };
+  }
 
   // Set a function to verify we have the essential files required for the project to run flawlessly in the web
   // Do not run it yet, since we only care about this if it is a new project load
@@ -237,30 +296,8 @@ const load = async (
 
   // ---- References ----
 
-  // Set the input files to be read for every different reference type
-  const referenceInputDataFiles = {
-    proteins: categorizedProjectFiles.proteinReferencesDataFile,
-    inchikeys: categorizedProjectFiles.inchikeyReferencesDataFile,
-    pdbs: categorizedProjectFiles.pdbReferencesDataFile,
-    chains: categorizedProjectFiles.chainReferencesDataFile
-  };
-
-  // Iterate the different type of references (proteins, inchikeys, PDBs and chains)
-  for await (const referenceName of Object.keys(database.REFERENCES)) {
-    // Get the input data filepath
-    const referenceInputDataFile = referenceInputDataFiles[referenceName];
-    // If there is no input data filepath then go to the next reference
-    if (!referenceInputDataFile) continue;
-    // Load the reference input data
-    const referenceInputDataFilepath = projectDirectory + referenceInputDataFile;
-    const referenceInputData = await loadJSON(referenceInputDataFilepath);
-    if (!referenceInputData)
-      throw new Error(`There is something wrong with the references file ${referenceInputDataFilepath}`);
-    // Iterate over the different references among the input data
-    for await (const referenceData of referenceInputData) {
-      await database.loadReferenceIfProper(referenceName, referenceData, conserve, overwrite);
-    }
-  }
+  // Load reference files
+  await loadReferences();
 
   // Check if the load has been aborted at this point
   await checkAbort();
@@ -500,7 +537,7 @@ const load = async (
   // DANI: Interrupted loads would mess numbers silently. If we always update numbers from scratch this will be solved on its own
   // DANI: Alternatively I could update specific values from the counters every time they are updated, but this is too much work
   // DANI: This solution is easy and reliable, at the cost of making the process a bit slower
-  await project.database.updateOptionCounts();
+  await database.updateOptionCounts();
   
 
   return () => {
