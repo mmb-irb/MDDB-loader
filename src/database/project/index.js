@@ -44,9 +44,6 @@ class Project {
         this.id = this.data._id;
         // Store the database handler
         this.database = database;
-        // Keep track of the currently inserting file
-        // This way, in case anything goes wrong, we can delete orphan chunks
-        this.currentUploadId = null;
         // Fix data format issues
         // These may come from old project formats
         if (this.data.analyses === undefined) this.data.analyses = [];
@@ -61,13 +58,14 @@ class Project {
 
     // Update remote project data by overwritting it all with current project data
     updateRemote = async () => {
-        logger.startLog(`📝 Updating database project data`);
+        logger.startLog(`📝 Updating database project "${this.accession}" data`);
         // Add last modification timestamp
         this.data.updateDate = new Date();
         // Replace remote project data by local project data
         const result = await this.database.projects.replaceOne({ _id: this.id }, this.data);
-        if (result.acknowledged === false) return logger.failLog('📝 Failed to update database project data');
-        logger.successLog('📝 Updated database project data');
+        if (result.acknowledged === false)
+            return logger.failLog(`📝 Failed to update database project "${this.accession}" data`);
+        logger.successLog(`📝 Updated database project "${this.accession}" data`);
     };
 
     // Calculate total simulation time from framestep and frames
@@ -265,14 +263,14 @@ class Project {
         if (!metadata) return;
         // Iterate the different reference types
         // Iterate the different type of references (proteins, inchikeys, etc.)
-        for await (const [ referenceName, refereceConfig ] of Object.entries(this.database.REFERENCES)) {
+        for await (const [ referenceType, refereceConfig ] of Object.entries(this.database.REFERENCES)) {
             const projectIdsField = refereceConfig.projectIdsField;
             const referenceIdsGetter = getValueGetter(projectIdsField);
             // Iterate the project reference ids
             const referenceIds = referenceIdsGetter(this.data);
             for await (const referenceId of referenceIds || []) {
                 // Delete the reference if it is not used by other projects
-                await this.database.deleteReferenceIfProper(referenceName, referenceId);
+                await this.database.deleteReferenceIfProper(referenceType, referenceId);
             }
         }
     }
@@ -578,79 +576,13 @@ class Project {
 
     // Load a file using the mongo gridfs bucket
     loadFile = async (filename, mdIndex, sourceFilepath, abort) => {
+        // Set the default metadata
+        const metadata = { project: this.id, md: mdIndex };
         // Wrap all this function inside a promise which is resolved by the stream
-        await new Promise((resolve, reject) => {
-            // If there is a metadata file associated to this file then load it
-            let additionalMetadata = {};
-            const metadataFilepath = sourceFilepath + '.meta.json';
-            const metadataExists = fs.existsSync(metadataFilepath)
-            if (metadataExists) additionalMetadata = loadJSON(metadataFilepath);
-            // Set metadata to be written in the file entry
-            const metadata = { project: this.id, md: mdIndex, ...additionalMetadata };
-            // Start the logs
-            const label = `${filename}${metadataExists ? ' (+ meta)' : ''}`; 
-            logger.startLog(`💽 Loading new file: ${label}`);
-            // Create variables to track the ammount of data to be passed and already passed
-            const totalData = fs.statSync(sourceFilepath).size;
-            let currentData = 0;
-            const startTime = Date.now();
-            // Start reading the file by streaming
-            const readStream = fs.createReadStream(sourceFilepath,
-                { highWaterMark: 4 * 1024 * 1024 } // 4 MiB buffer
-            );
-            // Open the mongo writable stream with a few customized options
-            // All data uploaded to mongo by this way is stored in fs.chunks
-            // fs.chunks is a default collection of mongo which is managed internally
-            const uploadStream = this.database.bucket.openUploadStream(filename, {
-                // Check that the file format is accepted. If not, change it to "octet-stream"
-                contentType: getMimeTypeFromFilename(filename),
-                metadata: metadata,
-                chunkSizeBytes: 4 * 1024 * 1024, // 4 MiB
-            });
-            // The resulting id of the current upload stream is saved as an environment variable
-            // In case of abort, this id is used by the automatic cleanup to find orphan chunks
-            this.currentUploadId = uploadStream.id;
-            // Promise is not resolved if the readable stream returns error
-            readStream.on('error', () => {
-                const progress = Math.round((currentData / totalData) * 10000) / 100;
-                logger.failLog(`💽 Failed to load file ${label} -> ${uploadStream.id} at ${progress} %`);
-                reject();
-            });
-            // Output the percentaje of data already loaded to the logs
-            readStream.on('data', async data => {
-                // Sum the new data chunk number of bytes
-                currentData += data.length;
-                // Calculate the progress rounded to 2 decimals
-                const progress = Math.round((currentData / totalData) * 10000) / 100;
-                // Calculate the amount of time we have been loading the file
-                const time = prettyMs(Date.now() - logger.logTime());
-                // Calculate upload speed
-                const elapsedSeconds = (Date.now() - startTime) / 1000;
-                const speedMBps = (currentData / elapsedSeconds / (1000 * 1000)).toFixed(2);
-                // Update the logs
-                logger.updateLog(`💽 Loading file ${label} -> ${uploadStream.id}\n  at ${progress} % (in ${time}) [${speedMBps} MB/s]`);
-                // Pause and wait for the callback to resume
-                readStream.pause();
-                // Check that local buffer is sending data out before continue to prevent memory leaks
-                uploadStream.write(data, 'utf8', async () => {
-                    await abort();
-                    readStream.resume();
-                });
-                // At the end
-                if (currentData / totalData === 1) {
-                    uploadStream.end(() => {
-                        // Calculate final average speed
-                        const totalSeconds = (Date.now() - startTime) / 1000;
-                        const avgSpeedMBps = (totalData / totalSeconds / (1000 * 1000)).toFixed(2);
-                        // Display it through the logs
-                        logger.successLog(`💽 Loaded file ${label} -> ${uploadStream.id} (100 %) [avg: ${avgSpeedMBps} MB/s]`);
-                        resolve();
-                    });
-                }
-            });
-        });
+        await this.database.loadFile(sourceFilepath, filename, metadata, abort);
         // Wait until the file document is visible in Mongo before registering it in the project
         // We check every 500ms until 10 seconds, which should be more than enough for the document to be visible
+        // This shouldn't be necessary but we had a problem with one of the databases not being updated on time
         const waitForFileDocument = async fileId => {
             const timeoutMs = this.fileDocumentTimeoutMs;
             const pollIntervalMs = 500;
@@ -662,13 +594,13 @@ class Project {
             }
             throw new Error(`File not found with id: ${fileId}`);
         };
-        const uploadedFileId = this.currentUploadId;
+        const uploadedFileId = this.database.currentUploadId;
         const result = await waitForFileDocument(uploadedFileId);
         // Update project data as the new file has been loaded
         // Pass the file length (size in bytes) to update the totalSize
         await this._addProjectFile(filename, mdIndex, uploadedFileId, result.length);
         // Remove this id from the current upload id
-        this.currentUploadId = null;
+        this.database.currentUploadId = null;
     }
 
     // Load a file using the mongo gridfs bucket
@@ -694,7 +626,7 @@ class Project {
             const progressInfo = totalFrames > 0 
                 ? `${((frameCount / totalFrames) * 100).toFixed(1)}% `
                 : '';
-            logger.updateLog(`💽 Loading trajectory file '${basename}' as '${filename}' [${this.currentUploadId}]\n`+
+            logger.updateLog(`💽 Loading trajectory file '${basename}' as '${filename}' [${this.database.currentUploadId}]\n`+
                 `     ${progressInfo}(frame ${frameCount}${totalFrames > 0 ? '/' + totalFrames : ''} in ${timeTaken}) [${speedMBps} MB/s]`);
             // Warn user if the process is stuck
             // "setTimeout" and "clearTimeout" are node built-in functions
@@ -728,7 +660,7 @@ class Project {
             });
             // The resulting id of the current upload stream is saved as an environment variable
             // In case of abort, this id is used by the automatic cleanup to find orphan chunks
-            this.currentUploadId = uploadStream.id;
+            this.database.currentUploadId = uploadStream.id;
             // If there is an error then display the end of this process as failure in console
             uploadStream.on('error', error => {
                 logger.failLog(error);
@@ -788,9 +720,9 @@ class Project {
             });
         });
         // Update project data as the new file has been loaded
-        await this._addProjectFile(filename, mdIndex, this.currentUploadId);
+        await this._addProjectFile(filename, mdIndex, this.database.currentUploadId);
         // Remove this id from the current upload id
-        this.currentUploadId = null;
+        this.database.currentUploadId = null;
     }
 
     // Update the project to register that a file has been loaded
@@ -825,7 +757,8 @@ class Project {
         // Find the file summary
         const currentFile = availableFiles.find(file => file.name === filename);
         // Find the file summary
-        if (!currentFile) throw new Error(`File ${filename} is not in the available files list (MD index ${mdIndex})`);
+        if (!currentFile)
+            throw new Error(`File ${filename} is not in the available files list (MD index ${mdIndex})`);
         // If there is data associated to this analysis then delete the whole group of data instead
         if (handleAssociatedData) {
             const associatedDataLabel = this.findFileAssociatedDataLabel(filename);

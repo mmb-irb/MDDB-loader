@@ -1,3 +1,5 @@
+// File system
+const fs = require('fs');
 // Visual tool which allows to add colors in console
 const chalk = require('chalk');
 // This tool converts miliseconds (ms) to a more human friendly string
@@ -44,6 +46,7 @@ const REFERENCE_FILES_CATEGORIES = new Set([
   'inchikeyReferencesDataFile',
   'pdbReferencesDataFile',
   'chainReferencesDataFile',
+  'collectionReferencesDataFile',
 ])
 
 // Given a analysis filename, get the name of the analysis from the filename itself
@@ -137,12 +140,13 @@ const load = async (
       proteins: categorizedProjectFiles.proteinReferencesDataFile,
       inchikeys: categorizedProjectFiles.inchikeyReferencesDataFile,
       pdbs: categorizedProjectFiles.pdbReferencesDataFile,
-      chains: categorizedProjectFiles.chainReferencesDataFile
+      chains: categorizedProjectFiles.chainReferencesDataFile,
+      collections: categorizedProjectFiles.collectionReferencesDataFile,
     };
     // Iterate the different type of references (proteins, inchikeys, PDBs and chains)
-    for await (const referenceName of Object.keys(database.REFERENCES)) {
+    for await (const referenceType of Object.keys(database.REFERENCES)) {
       // Get the input data filepath
-      const referenceInputDataFile = referenceInputDataFiles[referenceName];
+      const referenceInputDataFile = referenceInputDataFiles[referenceType];
       // If there is no input data filepath then go to the next reference
       if (!referenceInputDataFile) continue;
       // Load the reference input data
@@ -152,7 +156,8 @@ const load = async (
         throw new Error(`There is something wrong with the references file ${referenceInputDataFilepath}`);
       // Iterate over the different references among the input data
       for await (const referenceData of referenceInputData) {
-        await database.loadReferenceIfProper(referenceName, referenceData, conserve, overwrite);
+        // Load the reference data itself
+        await database.loadReferenceIfProper(referenceType, referenceData, conserve, overwrite);
       }
     }
   }
@@ -160,13 +165,20 @@ const load = async (
   // Check if the available files are references only
   // If this is the case then we don't really need a project to upload
 
-  // Get categories of project files which are not empty arrays or undefined
+  // Get categories of project and MD files which are not empty arrays or undefined
   const nonEmptyProjectCategories = Object.keys(categorizedProjectFiles).filter(
     category => categorizedProjectFiles[category] !== undefined &&
       categorizedProjectFiles[category].length !== 0);
-
+  const nonEmptMDCategories = [];
+  Object.values(categorizedMdFiles).forEach(currentMdFIles => {
+    Object.keys(currentMdFIles).forEach(category => {
+      if (currentMdFIles[category] !== undefined && currentMdFIles[category].length !== 0)
+        nonEmptMDCategories.push(category);
+    });
+  });
+  
   // If all categories belong to references then simply load them and exit
-  const allReferences = nonEmptyProjectCategories.every(
+  const allReferences = nonEmptMDCategories.length === 0 && nonEmptyProjectCategories.every(
     category => REFERENCE_FILES_CATEGORIES.has(category));
   if (allReferences) {
     await loadReferences();
@@ -383,7 +395,6 @@ const load = async (
   // ---------------------------
   // ----- MD Directories ------
   // ---------------------------
-
   // Iterate over the different MD directores
   for await (const mdir of mdDirectories) {
     console.log(chalk.cyan(`== MD directory '${mdir}'`));
@@ -417,7 +428,8 @@ const load = async (
       mdIndex = project.findMDIndexByDirectory(mdir);
       // If the MD is new and there is no metadata we must stop here
       if (mdIndex === null) {
-        console.log(chalk.red(`Can't find which MD corresponds to MD directory '${mdir}'. This directory will be skipped.`));
+        const expectedKeys = Object.values(project.data.mds).map(md => md.name).join(', ');
+        console.log(chalk.red(`Can't find which MD corresponds to MD directory '${mdir}'. Expected MD names: ${expectedKeys}. This directory will be skipped.`));
         continue;
       }
       // Get the MD name from the already existing metadata

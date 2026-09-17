@@ -1,19 +1,24 @@
+// Files system
+const fs = require('fs');
 // Import the MDDB database handler
 const { databaseConnection, Database } = require('mddb-database');
 // This utility displays in console a dynamic loading status
 const logger = require('../utils/logger');
 // Add colors in console
 const chalk = require('chalk');
+// This tool converts miliseconds (ms) to a more human friendly string (e.g. 1337000000 -> 15d 11h 23m 20s)
+const prettyMs = require('pretty-ms');
 // Load auxiliar functions
 const {
     mongoidFormat,
     userConfirm,
     userConfirmOrphanDataDeletion,
+    getMimeTypeFromFilename,
 } = require('../utils/auxiliar-functions');
 // The project class is used to handle database data from a specific project
 const Project = require('./project');
-// Import a version handler
-const Version = require('../utils/version');
+// The reference class is used to handle database data from a specific reference
+const Reference = require('./reference');
 
 // Set the loader-specific database handler class
 class Database4Loader extends Database {
@@ -25,6 +30,9 @@ class Database4Loader extends Database {
         // This way, in case anything goes wrong, we can revert changes
         this.inserted_data = [];
         this.new_accession_issued = false;
+        // Keep track of the currently inserting file
+        // This way, in case anything goes wrong, we can delete orphan chunks
+        this.currentUploadId = null;
     };
 
     // Get the generic name of a document by the collection it belongs to
@@ -128,67 +136,155 @@ class Database4Loader extends Database {
         }
     }
 
-    // Add a new reference in the references collection in case it does not exist yet
-    loadReferenceIfProper = async (referenceName, referenceData, conserve, overwrite) => {
+    // Find a reference in the database from its type and id
+    findReference = async (referenceType, referenceId) => {
         // Set the reference configuration
-        const refereceConfig = this.REFERENCES[referenceName];
+        const refereceConfig = this.REFERENCES[referenceType];
         const collection = this[refereceConfig.collectionName];
         const idField = refereceConfig.idField;
-        const label = `${referenceName} reference ${referenceData[idField]}`;
         // Check if the reference is already in the database
-        const referenceQuery = { [idField]: referenceData[idField] };
-        const previousData = await collection.findOne(referenceQuery);
+        const referenceQuery = { [idField]: referenceId };
+        return await collection.findOne(referenceQuery);
+    }
+
+    // Find an already existing reference in the database and return the reference data handler
+    // Return null if the reference does not exist
+    syncReference = async (referenceType, referenceId) => {
+        const refereceData = await this.findReference(referenceType, referenceId)
+        if (!refereceData) return null;
+        return new Reference(referenceType, refereceData, this);
+    }
+
+    // Add a new reference in the references collection in case it does not exist yet
+    loadReferenceIfProper = async (referenceType, referenceData, conserve, overwrite) => {
+        // Set a handler for the new reference
+        const newReference = new Reference(referenceType, referenceData, this);
+        // Check if the reference is already in the database
+        const previousReference = await this.syncReference(referenceType, newReference.id);
         // If so we must compare previous and new reference data
-        if (previousData) {
-            // Compare both versions
-            const previousVersion = new Version(previousData.version);
-            const newVersion = new Version(referenceData.version);
-            // If there are no changes then there is nothing to upload
-            if (newVersion <= previousVersion)
-                return console.log(chalk.grey(`  The ${label} is already in the database and updated`));
-            // Otherwise we must load the updated reference data
-            logger.startLog(`💽 Updating ${label}`);
-            // Replace the old reference with the updated data
-            const result = await collection.replaceOne(referenceQuery, referenceData);
-            // If the operation failed
-            if (result.acknowledged === false) return logger.failLog(`💽 Failed to update ${label}`);
-            logger.successLog(`💽 Updated ${label}`);
+        if (previousReference) {
+            // If there are no changes or the new reference is older then there is nothing to upload
+            if (newReference.version <= previousReference.version)
+                return console.log(chalk.grey(`  The ${previousReference.label} is already in the database and updated`));
+            // Otherwise we must delete the old refernce, to purge any possible associated files
+            // Then update the reference itself
+            await previousReference.deleteReference();
         }
-        else {
-            // Otherwise load the new reference data as it is
-            logger.startLog(`💽 Loading ${label}`);
-            // Load the new reference
-            const result = await collection.insertOne(referenceData);
-            // If the operation failed
-            if (result.acknowledged === false) return logger.failLog(`💽 Failed to load ${label}`);
-            logger.successLog(`💽 Loaded new ${label} -> ${result.insertedId}`);
-            // Update the inserted data in case we need to revert the change
-            this.inserted_data.push({
-                name: `new ${label}`,
-                collection: collection,
-                id: result.insertedId
-            });
-        }
+        // Load the new reference, including its associated files
+        await newReference.loadReference();
     };
 
     // Check if a reference is still under usage
     // i.e. there is at least one project using it
     // Delete the reference otherwise
-    deleteReferenceIfProper = async (referenceName, referenceId) => {
-        // Set the reference configuration
-        const refereceConfig = this.REFERENCES[referenceName];
-        const projectIdsField = refereceConfig.projectIdsField;
-        const label = `${referenceName} reference ${referenceId}`;
-        const collection = this[refereceConfig.collectionName];
-        const idField = refereceConfig.idField;
+    deleteReferenceIfProper = async (referenceType, referenceId) => {
+        // Make sure the reference exists
+        const reference = await this.syncReference(referenceType, referenceId);
+        if (!reference)
+            return console.log(chalk.red(`The "${referenceType}" reference "${referenceId}" does not exist already`));
         // If the reference is still used by at least 1 project then stop here
-        const count = await this.projects.count({ [projectIdsField]: referenceId });
-        if (count > 0) return console.log(chalk.grey(`  The ${label} is still used by ${count} other projects`));
-        // Delete the reference
-        logger.startLog(`🗑️  Deleting ${label}`);
-        const result = await collection.deleteOne({ [idField]: referenceId });
-        if (!result) return logger.failLog(`🗑️  Failed to delete ${label}`);
-        logger.successLog(`🗑️  Deleted ${label}`);
+        const count = await this.projects.count({ [reference.projectIdsField]: referenceId });
+        if (count > 0)
+            return console.log(chalk.grey(`The ${reference.label} is still used by ${count} other projects`));
+        // Delete the reference from the database
+        await reference.deleteReference();
+    }
+
+    // Load a file with additional custom metadata to the database
+    loadFile = async (sourceFilepath, filename, metadata, abort = null) => new Promise((resolve, reject) => {
+        // If there is a metadata file associated to this file then load it
+        const metadataFilepath = sourceFilepath + '.meta.json';
+        const metadataExists = fs.existsSync(metadataFilepath);
+        if (metadataExists) {
+            const additionalMetadata = loadJSON(metadataFilepath);
+            Object.assign(metadata, additionalMetadata);
+        }
+        // Start the logs
+        const label = `${filename}${metadataExists ? ' (+ meta)' : ''}`; 
+        logger.startLog(`💽 Loading new file: ${label}`);
+        // Create variables to track the ammount of data to be passed and already passed
+        const totalData = fs.statSync(sourceFilepath).size;
+        let currentData = 0;
+        const startTime = Date.now();
+        // Start reading the file by streaming
+        const readStream = fs.createReadStream(sourceFilepath,
+            { highWaterMark: 4 * 1024 * 1024 } // 4 MiB buffer
+        );
+        // Open the mongo writable stream with a few customized options
+        // All data uploaded to mongo by this way is stored in fs.chunks
+        // fs.chunks is a default collection of mongo which is managed internally
+        const uploadStream = this.bucket.openUploadStream(filename, {
+            // Check that the file format is accepted. If not, change it to "octet-stream"
+            contentType: getMimeTypeFromFilename(filename),
+            metadata: metadata,
+            chunkSizeBytes: 4 * 1024 * 1024, // 4 MiB
+        });
+        // The resulting id of the current upload stream is saved as an environment variable
+        // In case of abort, this id is used by the automatic cleanup to find orphan chunks
+        this.currentUploadId = uploadStream.id;
+        // Promise is not resolved if the readable stream returns error
+        readStream.on('error', () => {
+            const progress = Math.round((currentData / totalData) * 10000) / 100;
+            logger.failLog(`💽 Failed to load file ${label} -> ${uploadStream.id} at ${progress} %`);
+            reject();
+        });
+        // Output the percentaje of data already loaded to the logs
+        readStream.on('data', async data => {
+            // Sum the new data chunk number of bytes
+            currentData += data.length;
+            // Calculate the progress rounded to 2 decimals
+            const progress = Math.round((currentData / totalData) * 10000) / 100;
+            // Calculate the amount of time we have been loading the file
+            const time = prettyMs(Date.now() - logger.logTime());
+            // Calculate upload speed
+            const elapsedSeconds = (Date.now() - startTime) / 1000;
+            const speedMBps = (currentData / elapsedSeconds / (1000 * 1000)).toFixed(2);
+            // Update the logs
+            logger.updateLog(`💽 Loading file ${label} -> ${uploadStream.id}\n  at ${progress} % (in ${time}) [${speedMBps} MB/s]`);
+            // Pause and wait for the callback to resume
+            readStream.pause();
+            // Check that local buffer is sending data out before continue to prevent memory leaks
+            uploadStream.write(data, 'utf8', async () => {
+                if (abort) await abort();
+                readStream.resume();
+            });
+            // At the end
+            if (currentData / totalData === 1) {
+                uploadStream.end(() => {
+                    // Calculate final average speed
+                    const totalSeconds = (Date.now() - startTime) / 1000;
+                    const avgSpeedMBps = (totalData / totalSeconds / (1000 * 1000)).toFixed(2);
+                    // Display it through the logs
+                    logger.successLog(`💽 Loaded file ${label} -> ${uploadStream.id} (100 %) [avg: ${avgSpeedMBps} MB/s]`);
+                    resolve();
+                });
+            }
+        });
+    });
+
+    // Delete a file from the database both from fs.files / fs.chunks
+    deleteFile = async query => {
+        // Find the file first
+        const fileDescriptor = await this.files.findOne(query);
+        if (!fileDescriptor) return console.log(chalk.red(` The following query does not match any file:\n`
+            + ` ${JSON.stringify(query)}\n No file will be deleted.`));
+        const filename = fileDescriptor.filename;
+        const targetId = fileDescriptor._id;
+        logger.startLog(`🗑️  Deleting file ${filename} <- ${targetId}`);
+        const fileCursor = await this.bucket.find(targetId);
+        const targetFile = await fileCursor.next();
+        // The file should always exist at this point, but make sure it does
+        if (targetFile) {
+            // Delete the file from fs.files and its chunks from fs.chunks using the file id
+            // GridFSBucket.delete has no callback but when it fails (i.e. file not found) it kills the process
+            // https://mongodb.github.io/node-mongodb-native/6.3/classes/GridFSBucket.html#delete
+            await this.bucket.delete(targetId);
+            logger.successLog(`🗑️  Deleted file ${filename} <- ${targetId}`);
+        }
+        // However a desynchronization between projects and fs.files may happen if the loader is abuptly interrupted
+        else {
+            logger.failLog(`🗑️  File ${filename} does not exist already <- ${targetId}`);
+        }
     }
 
     // Given an id, find the document and the collection it belongs to
@@ -197,7 +293,13 @@ class Database4Loader extends Database {
         for await (const collectionKey of Object.keys(this.COLLECTIONS)) {
             const collection = this[collectionKey];
             const document = await collection.findOne({ _id: id });
-            if (document) return { document, collectionKey };
+            if (!document) continue;
+            // If we had a match then return the data and some directions to it
+            const referenceType = Object.keys(this.REFERENCES).find(key => {
+                const referenceConfig = this.REFERENCES[key];
+                if (referenceConfig.collectionName === collectionKey) return true;
+            });
+            return { document, collectionKey, referenceType };
         }
         // If there was no result then null is returned
         return null;

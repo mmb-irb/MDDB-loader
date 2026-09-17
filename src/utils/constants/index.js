@@ -43,6 +43,11 @@ module.exports = {
             pattern: /^chains.json$/i,
             singleFile: true,
         },
+        // The collections references data file, one for project
+        collectionReferencesDataFile: {
+            pattern: /^collections.json$/i,
+            singleFile: true,
+        },
         // The populations data file, one for project
         populationsDataFile: {
             pattern: /^populations.json$/i,
@@ -52,7 +57,7 @@ module.exports = {
         analysisFiles: {
             pattern: /^mda.[\s\S]*.(json)$/i,
         },
-        // Additional files to load, any number
+        // Additional project files to load, any number
         uploadableFiles: {
             pattern: /^mdf.*(?<!.meta.json)$/i,
         },
@@ -92,7 +97,7 @@ module.exports = {
         analysisFiles: {
             pattern: /^mda.[\s\S]*.(json)$/i,
         },
-        // Additional files to load, any number
+        // Additional MD files to load, any number
         uploadableFiles: {
             pattern: /^mdf.*(?<!.meta.json)$/i,
         },

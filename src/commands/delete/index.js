@@ -12,8 +12,10 @@ const deleteFunction = async (
     database,
 ) => {
     console.log(chalk.cyan(`== Deletion of '${id}'`));
-    // Set the project affected by this deletion
+    // Set the project affected by this deletion, if any
     let project;
+    // Set the reference affected by this deletion, if any
+    let reference;
     // Find the document with the requested Id, no matter in which collection it is
     // Find also the collection it belongs to
     let target;
@@ -98,39 +100,90 @@ const deleteFunction = async (
     }
     // If it is a file log its filename and the project it belongs to
     else if (target.collectionKey === 'files') {
-        // Load remote project data in the database handler
-        const projectId = target.document.metadata.project;
-        project = await database.syncProject(projectId);
-        if (!project) throw new Error(`Parent project ${projectId} not found. Is the file orphan?`);
-        // Get the analysis name
+        // Get the file name
         const filename = target.document.filename;
-        // Get the MD index
-        const mdIndex = target.document.metadata.md;
-        // Make sure the parent recognizes this file as one of its own
-        const currentFile = await project.findFile(filename, mdIndex);  
-        if (!currentFile || currentFile.id.toString() !== id.toString()) {
-            console.log('WARNING: The parent project does not recognize this file as one of its own');
-            target.collectionKey = 'bastardFiles';
+        // Set the message to be shown before deleting the file
+        let msg = `About to delete ${documentName} "${filename}"`;
+        // As for today, files may belong either to a project or to a reference
+        const projectId = target.document.metadata.project;
+        const referenceType = target.document.metadata.reftype;
+        // Check if it belongs to a project
+        if (projectId) {
+            // Load remote project data in the database handler
+            project = await database.syncProject(projectId);
+            if (!project) throw new Error(`Parent project ${projectId} not found. Is the file orphan?`);
+            // Get the MD index
+            const mdIndex = target.document.metadata.md;
+            // Make sure the parent recognizes this file as one of its own
+            const currentFile = await project.findFile(filename, mdIndex);  
+            if (!currentFile || currentFile.id.toString() !== id.toString()) {
+                console.log('WARNING: The parent project does not recognize this file as one of its own');
+                target.collectionKey = 'bastardFiles';
+            }
+            // Update the final message
+            msg += ` of project ${project.accession}`;
+            if (isNumber(mdIndex)) {
+                // Get the MD name
+                const mdName = project.data.mds[mdIndex].name;
+                msg += `, ${mdName}.`
+            }
+            // Check if there is additional associated data, which would be also deleted
+            const associatedDataLabel = project.findFileAssociatedDataLabel(filename);
+            const associatedData = associatedDataLabel &&
+                await project.findAssociatedData(associatedDataLabel, mdIndex);
+            if (associatedData && associatedData.count > 1) {
+                const analysisCount = associatedData.analyses.length;
+                const fileCount = associatedData.files.length;
+                msg += (` This file is part of a group of associated data. ` +
+                    `The group includes ${analysisCount} analyses and ${fileCount} files. ` +
+                    `These analyses and files will be deleted together.`);
+            }
+            // Change the collection key
+            target.collectionKey = 'projectFiles';
         }
-        // Log the summary
-        let msg = `About to delete ${documentName} "${filename}" of project ${project.accession}`;
-        if (isNumber(mdIndex)) {
-            // Get the MD name
-            const mdName = project.data.mds[mdIndex].name;
-            msg += `, ${mdName}.`
+        // Check if it belongs to a reference
+        else if (referenceType) {
+            // Get the reference id
+            const referenceId = target.document.metadata.refid;
+            msg += ` of "${referenceType}" reference "${referenceId}"`;
+            // Make sure the parent recognizes this file as one of its own
+            reference = await database.syncReference(referenceType, referenceId);
+            if (reference) {
+                // Make sure the reference has a field pointing to this file
+                const referenceField = target.document.metadata.field;
+                const referenceFieldValue = reference.data[referenceField];
+                const expectedValue = `file:${filename}`;
+                if (referenceFieldValue !== expectedValue) {
+                    console.log('WARNING: The parent reference does not recognize this file');
+                    target.collectionKey = 'bastardFiles';
+                }
+                // Change the collection key
+                target.collectionKey = 'referenceFiles';
+            }
+            else {
+                console.log('WARNING: The parent reference does not exist. This file is orphan.');
+                target.collectionKey = 'bastardFiles';
+            }
         }
-        // Check if there is additional associated data, which would be also deleted
-        const associatedDataLabel = project.findFileAssociatedDataLabel(filename);
-        const associatedData = associatedDataLabel &&
-            await project.findAssociatedData(associatedDataLabel, mdIndex);
-        if (associatedData && associatedData.count > 1) {
-            const analysisCount = associatedData.analyses.length;
-            const fileCount = associatedData.files.length;
-            msg += (` This file is part of a group of associated data. ` +
-                `The group includes ${analysisCount} analyses and ${fileCount} files. ` +
-                `These analyses and files will be deleted together.`);
+        // Otherwise we do not know what this is
+        else {
+            throw new Error(`File ${filename} does not belong to any project or reference.`);
         }
         console.log(msg);
+    }
+    else if (target.referenceType) {
+        const referenceOptions = database.REFERENCES[target.referenceType];
+        const referenceId = target.document[referenceOptions.idField];
+        console.log(` About to delete "${target.referenceType}" reference "${referenceId}"` +
+            ` from the '${target.collectionKey}' collection`);
+        // Save the reference for later
+        reference = await database.syncReference(target.referenceType, referenceId);
+        // Warn about associated files which would be deleted as well
+        const associatedFiles = [...reference.iterateAssociatedFiles()].map(([field, filename]) => filename);
+        if (associatedFiles.length > 0) {
+            console.log(' The following files are associated with the reference and will be deleted as well:')
+            associatedFiles.forEach(filename => { console.log(` - ${filename}`) });
+        }
     }
     else {
         console.log(` About to delete a document from the '${target.collectionKey}' collection`);
@@ -159,22 +212,31 @@ const deleteFunction = async (
         const result = await database.analyses.deleteOne(id);
         if (!result) throw new Error(`Failed to delete analysis with internal ID ${id}`);
     }
-    // ----- File -----
-    else if (target.collectionKey === 'files') {
+    // ----- File associated to a project -----
+    else if (target.collectionKey === 'projectFiles') {
         const filename = target.document.filename;
         const mdIndex = target.document.metadata.md;
         await project.deleteFile(filename, mdIndex);
     }
-    // ----- File not recognized by their parent -----
+    // ----- File associated to a reference -----
+    else if (target.collectionKey === 'referenceFiles') {
+        const filename = target.document.filename;
+        const field = target.document.metadata.field;
+        await reference.deleteFile(filename, field);
+    }
+    // ----- File not recognized by its parent -----
     else if (target.collectionKey === 'bastardFiles') {
-        await database.bucket.delete(id);
+        await database.deleteFile({ _id: id });
+    }
+    else if (target.referenceType) {
+        await reference.deleteReference();
     }
     else throw new Error(`Deletion of ${documentName} is not yet supported`);
 
     // 
     // If the parent project still exists, recompute its totals
     this.updatedAnyMetadata = true;
-    await project.updateTotals();
+    if (project) await project.updateTotals();
 };
 
 module.exports = deleteFunction;
