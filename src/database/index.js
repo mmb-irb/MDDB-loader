@@ -14,6 +14,7 @@ const {
     userConfirm,
     userConfirmOrphanDataDeletion,
     getMimeTypeFromFilename,
+    loadJSON,
 } = require('../utils/auxiliar-functions');
 // The project class is used to handle database data from a specific project
 const Project = require('./project');
