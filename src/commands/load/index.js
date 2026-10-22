@@ -88,9 +88,6 @@ const load = async (
   // Run the database setup
   // This makes only sense the first time but it is run always just in case there is a new collection
   await database.setup();
-  // Get the correct gromacs command while checking it is installed in the system
-  // If trajectories are to be skipped then skip this part as well since Gromacs is used for loading trajectories only
-  const gromacsCommand = skipTrajectories ? null : getGromacsCommand(gromacsPath);
   // Set the aborting function in case the load is interrupted further
   const checkAbort = getAbortingFunction(database);
 
@@ -130,6 +127,19 @@ const load = async (
   // Find all files in the "projectDirectory" argument path and classify them
   // Classification is performed according to file names
   const [categorizedProjectFiles, categorizedMdFiles] = await categorizeFiles(projectFiles, mdFiles);
+
+  // Get the trajectory files to be parse-loaded for every MD directory
+  // If trajectories are to be skipped then the main trajectory (trajectory.xtc) is ignored
+  // Note that additional trajectories (e.g. PCA projections) are still loaded
+  const getParsedTrajectoryFiles = directoryFiles => [
+    skipTrajectories ? undefined : directoryFiles.mainTrajectory,
+    ...directoryFiles.uploadableTrajectories
+  ].filter(file => file && file.length !== 0);
+  // Get the correct gromacs command while checking it is installed in the system
+  // If there are no trajectories to load then skip this part as well since Gromacs is used for loading trajectories only
+  const anyParsedTrajectory = Object.values(categorizedMdFiles)
+    .some(directoryFiles => getParsedTrajectoryFiles(directoryFiles).length !== 0);
+  const gromacsCommand = anyParsedTrajectory ? getGromacsCommand(gromacsPath) : null;
 
   // Set a function to load references
   // We se it this early because it may be used now or later in the code
@@ -444,48 +454,42 @@ const load = async (
     // ---- Trajectories ----
 
     // Load trajectories into the database
-    if (!skipTrajectories) {
-      // Get trajectory files which are to be loaded to the database in a parsed way
-      const trajectoryFiles = [
-        directoryFiles.mainTrajectory,
-        ...directoryFiles.uploadableTrajectories
-      ].filter(file => file && file.length !== 0);
-      // Iterate over the different trajectory files
-      let ntrajectory = 0;
-      for (const file of trajectoryFiles) {
-        ntrajectory += 1;
-        // Check if the load has been aborted at this point
-        await checkAbort();
-        // Set the name of the file once loaded in the database
-        let databaseFilename = getBasename(file).replace('.xtc', '.bin');
-        // In case the filename starts with 'mdt.' set the database filename without the prefix
-        if (databaseFilename.slice(0, 4) === 'mdt.')
-          databaseFilename = databaseFilename.slice(4);
-        // Handle any conflicts and ask the user if necessary
-        // Delete previous files in case we want to overwrite data
-        const confirm = await project.forestallFileLoad(databaseFilename, mdIndex, conserve, overwrite);
-        if (!confirm) continue;
-        // Set the path to the current file
-        const trajectoryPath = mdir + '/' + file;
-        // Load the trajectory parsedly
-        await project.loadTrajectoryFile(
-          databaseFilename,
-          mdIndex,
-          trajectoryPath,
-          gromacsCommand,
-          checkAbort
-        );
-      }
+    // Get trajectory files which are to be loaded to the database in a parsed way
+    const trajectoryFiles = getParsedTrajectoryFiles(directoryFiles);
+    // Iterate over the different trajectory files
+    for (const file of trajectoryFiles) {
+      // Check if the load has been aborted at this point
+      await checkAbort();
+      // Set the name of the file once loaded in the database
+      let databaseFilename = getBasename(file).replace('.xtc', '.bin');
+      // In case the filename starts with 'mdt.' set the database filename without the prefix
+      if (databaseFilename.slice(0, 4) === 'mdt.')
+        databaseFilename = databaseFilename.slice(4);
+      // Handle any conflicts and ask the user if necessary
+      // Delete previous files in case we want to overwrite data
+      const confirm = await project.forestallFileLoad(databaseFilename, mdIndex, conserve, overwrite);
+      if (!confirm) continue;
+      // Set the path to the current file
+      const trajectoryPath = mdir + '/' + file;
+      // Load the trajectory parsedly
+      await project.loadTrajectoryFile(
+        databaseFilename,
+        mdIndex,
+        trajectoryPath,
+        gromacsCommand,
+        checkAbort
+      );
     }
 
     // ---- Files ----
 
     if (!skipFiles) {
       // Set which files are to be uploaded to the database
+      // If trajectories are to be skipped then the main trajectory (trajectory.xtc) is not uploaded either
       const loadableFiles = [
         directoryFiles.topologyFile,
         directoryFiles.structureFile,
-        directoryFiles.mainTrajectory,
+        skipTrajectories ? undefined : directoryFiles.mainTrajectory,
         ...directoryFiles.uploadableFiles,
       ].filter(file => file && file.length !== 0);
       // Iterate over loadable files

@@ -83,7 +83,7 @@ yargs
             // --skip-trajectories
             .option('st', {
                 alias: 'skip-trajectories',
-                description: 'Skip the load of any trajectory file (xtc) in the binary format (bin)',
+                description: 'Skip the load of the main trajectory file (trajectory.xtc), both in the binary format (bin) and as is',
                 type: 'boolean',
                 default: false,
             })
