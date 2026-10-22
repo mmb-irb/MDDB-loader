@@ -604,7 +604,8 @@ class Project {
     }
 
     // Load a file using the mongo gridfs bucket
-    loadTrajectoryFile = async (filename, mdIndex, sourceFilepath, gromacsCommand, abort) => {
+    // If a box filename is passed then box vectors are loaded as well in a separated file
+    loadTrajectoryFile = async (filename, mdIndex, sourceFilepath, gromacsCommand, abort, boxFilename) => {
         // Get the filename alone, without the whole path, for displaying
         const basename = getBasename(sourceFilepath);
         // Display the start of this process in console
@@ -646,6 +647,23 @@ class Project {
             frameCount += 1
             updateLogs();
         };
+        // Open a second upload stream for the box vectors, if requested
+        let boxUploadStream;
+        let boxCount = 0;
+        if (boxFilename) {
+            boxUploadStream = this.database.bucket.openUploadStream(boxFilename, {
+                filename: boxFilename,
+                contentType: 'application/octet-stream',
+                metadata: { project: this.id, md: mdIndex },
+            });
+        }
+        // Set a function which writes a box to the box upload stream
+        // Note that we do not wait for the drain here
+        // Box data is tiny compared to coordinates so the coordinates backpressure is enough
+        const addOneBox = boxUploadStream && (box => {
+            boxCount += 1;
+            boxUploadStream.write(box);
+        });
         await new Promise(async (resolve, reject) => {
             // Set initial metadata for the file document
             const metadata = { project: this.id, md: mdIndex };
@@ -670,7 +688,7 @@ class Project {
             // gmx dump -f path/to/trajectory
             // This assembly runs Gromacs as a paralel process which returns an output in string chunks
             // These strings are converted in standarized "lines"
-            const trajectoryCoordinates = readAndParseTrajectory(sourceFilepath, gromacsCommand, addOneFrame, abort);
+            const trajectoryCoordinates = readAndParseTrajectory(sourceFilepath, gromacsCommand, addOneFrame, abort, addOneBox);
             // Set a timeout
             let timeout;
             // Iterate over buffers of binary coordinates
@@ -723,6 +741,21 @@ class Project {
         await this._addProjectFile(filename, mdIndex, this.database.currentUploadId);
         // Remove this id from the current upload id
         this.database.currentUploadId = null;
+        // If there is no box then we are done
+        if (!boxUploadStream) return;
+        // Wait for the box upload to finish
+        await new Promise(resolve => boxUploadStream.end(resolve));
+        // Make sure we have one box per frame
+        if (boxCount !== frameCount) throw new Error(
+            `Number of boxes (${boxCount}) does not match the number of frames (${frameCount}) in trajectory '${basename}'`);
+        // Add the number of frames to the box file metadata
+        const boxMetadata = { project: this.id, md: mdIndex, frames: boxCount };
+        const boxResult = await this.database.files.findOneAndUpdate({ _id: boxUploadStream.id }, { $set: { metadata: boxMetadata } }, { includeResultMetadata: true });
+        if (boxResult.acknowledged === false) throw new Error(`Failed to update file data`);
+        if (boxResult.value === null) throw new Error(`File not found`);
+        logger.successLog(`💽 Loaded box vectors as '${boxFilename}' [${boxUploadStream.id}] (${boxCount} frames)`);
+        // Update project data as the new box file has been loaded
+        await this._addProjectFile(boxFilename, mdIndex, boxUploadStream.id);
     }
 
     // Update the project to register that a file has been loaded

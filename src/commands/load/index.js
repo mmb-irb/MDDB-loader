@@ -469,6 +469,13 @@ const load = async (
       // Delete previous files in case we want to overwrite data
       const confirm = await project.forestallFileLoad(databaseFilename, mdIndex, conserve, overwrite);
       if (!confirm) continue;
+      // Box vectors are loaded only for the main trajectory and only when the box is dynamic
+      // Constant boxes are already in the project metadata
+      const isMainTrajectory = file === directoryFiles.mainTrajectory;
+      const boxFilename = isMainTrajectory && project.data.metadata?.BOX === 'dyn' ? database.STANDARD_BOX_FILENAME : undefined;
+      // The previous box file belongs to the previous trajectory so it must go away as well
+      if (isMainTrajectory && project.findFile(database.STANDARD_BOX_FILENAME, mdIndex))
+        await project.deleteFile(database.STANDARD_BOX_FILENAME, mdIndex);
       // Set the path to the current file
       const trajectoryPath = mdir + '/' + file;
       // Load the trajectory parsedly
@@ -477,7 +484,8 @@ const load = async (
         mdIndex,
         trajectoryPath,
         gromacsCommand,
-        checkAbort
+        checkAbort,
+        boxFilename
       );
     }
 

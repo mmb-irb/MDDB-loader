@@ -7,11 +7,18 @@ const { Worker, isMainThread, parentPort, workerData } = require('worker_threads
 const UNIT_CONVERSION_SCALE = 10;
 const N_COORDINATES = 3;
 const BYTES_PER_ATOM = Float32Array.BYTES_PER_ELEMENT * N_COORDINATES;
+// The box is a 3x3 matrix where every row is a box vector
+const N_BOX_VECTORS = 3;
+const BYTES_PER_BOX = BYTES_PER_ATOM * N_BOX_VECTORS;
 // example matches:
 // '      x[    0]={ 6.40500e+00,  7.53800e+00,  9.81800e+00}'
 // '      x[35999]={-8.50000e-02,  1.82000e+00,  7.23700e+00}'
 const COORDINATES_REGEXP = /^\s*x\[\s*\d*]={\s*(-?\d+\.\d+e[+-]\d{2}),\s*(-?\d+\.\d+e[+-]\d{2}),\s*(-?\d+\.\d+e[+-]\d{2})\s*}\s*$/;
 const FRAME_REGEXP = / frame \d+:$/;
+// example matches:
+// '      box[    0]={ 1.56529e+01,  7.16996e-16,  1.82343e-15}'
+// '      box[    2]={ 2.53369e-15, -3.58799e-17,  1.56529e+01}'
+const BOX_REGEXP = /^\s*box\[\s*(\d+)]={\s*(-?\d+\.\d+e[+-]\d{2}),\s*(-?\d+\.\d+e[+-]\d{2}),\s*(-?\d+\.\d+e[+-]\d{2})\s*}\s*$/;
 
 // Batch size: number of atoms to accumulate before yielding
 const BATCH_SIZE = 1000; // Adjust based on memory/performance tradeoff
@@ -37,7 +44,7 @@ const MAX_QUEUE_SIZE = 5000;
 //
 // ===================== WORKER THREAD CODE =====================
 if (!isMainThread) {
-    const { filepath, gromacsCommand } = workerData;
+    const { filepath, gromacsCommand, parseBox } = workerData;
     
     // Backpressure: wait for resume signal from main thread when queue is full
     let canSend = true;
@@ -106,11 +113,26 @@ if (!isMainThread) {
         // Pre-allocate a batch buffer
         const atomBatchBuffer = Buffer.alloc(BYTES_PER_ATOM * BATCH_SIZE);
         let batchOffset = 0;
+        // Pre-allocate a buffer for the box vectors of the current frame
+        const boxBuffer = Buffer.alloc(BYTES_PER_BOX);
         // Iterate over the command output lines
         for await (const line of yieldCommandOutputPerLines(gromacsCommand, commandArgs)) {
             // Save matches with a long RegExp pattern defined above
             const match = line.match(COORDINATES_REGEXP);
             if (!match) {
+                // Check if it is a box vector line, only if the box was requested
+                const boxMatch = parseBox && line.match(BOX_REGEXP);
+                if (boxMatch) {
+                    const vectorIndex = +boxMatch[1];
+                    const boxOffset = vectorIndex * BYTES_PER_ATOM;
+                    boxBuffer.writeFloatLE(+boxMatch[2] * UNIT_CONVERSION_SCALE, boxOffset);     // x
+                    boxBuffer.writeFloatLE(+boxMatch[3] * UNIT_CONVERSION_SCALE, boxOffset + 4); // y
+                    boxBuffer.writeFloatLE(+boxMatch[4] * UNIT_CONVERSION_SCALE, boxOffset + 8); // z
+                    // Send the whole box once the last vector is written
+                    if (vectorIndex === N_BOX_VECTORS - 1)
+                        parentPort.postMessage({ type: 'box', buffer: Buffer.from(boxBuffer) });
+                    continue; // Next line
+                }
                 // try to check if it's a "frame number" line
                 if (FRAME_REGEXP.test(line)) {
                     // Flush remaining buffer before frame update
@@ -152,13 +174,15 @@ if (!isMainThread) {
     // ===================== MAIN THREAD CODE =====================
     
     // Read a trajectory file while coordinates are parsed to float32 binary data
-    const readAndParseTrajectory = async function* (filepath, gromacsCommand, newFrameUpdate, abort) {
+    // If a box update function is passed then box vectors are parsed as well and sent to this function frame by frame
+    // Every box is a buffer with 9 float32 values: the 3 box vectors, in Ångstroms
+    const readAndParseTrajectory = async function* (filepath, gromacsCommand, newFrameUpdate, abort, newBoxUpdate) {
         // Track the last time we checked if the load was aborted
         let lastCheck = Date.now();
         
         // Create worker thread for parsing
         const worker = new Worker(__filename, {
-            workerData: { filepath, gromacsCommand }
+            workerData: { filepath, gromacsCommand, parseBox: Boolean(newBoxUpdate) }
         });
         
         // Queue to hold chunks from worker until consumed
@@ -191,6 +215,14 @@ if (!isMainThread) {
             } else if (msg.type === 'frame') {
                 // Signal frame update - push a special marker
                 chunkQueue.push({ isFrame: true });
+                if (resolveWaiting) {
+                    const resolve = resolveWaiting;
+                    resolveWaiting = null;
+                    resolve();
+                }
+            } else if (msg.type === 'box') {
+                // Push the box as a special marker to keep it in order with frames
+                chunkQueue.push({ isBox: true, buffer: Buffer.from(msg.buffer) });
                 if (resolveWaiting) {
                     const resolve = resolveWaiting;
                     resolveWaiting = null;
@@ -245,6 +277,12 @@ if (!isMainThread) {
             // Handle frame marker
             if (item.isFrame) {
                 newFrameUpdate(); // Send a log update signal every time a new frame is completed
+                continue;
+            }
+
+            // Handle box marker
+            if (item.isBox) {
+                newBoxUpdate(item.buffer);
                 continue;
             }
             
