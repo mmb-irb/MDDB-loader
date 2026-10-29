@@ -85,7 +85,7 @@ module.exports = {
         },
         // Structure file, one for every MD directory
         structureFile: {
-            pattern: /^structure.pdb$/i,
+            pattern: /^structure.(cif|pdb)$/i,
             singleFile: true,
         },
         // The main trajectory, one for every MD directory
