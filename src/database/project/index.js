@@ -277,7 +277,12 @@ class Project {
 
     // Get the index of an already existing MD or null
     // To find the MD, guess its name using a directory
-    findMDIndexByDirectory = directory => {
+    // If inputs MDs are passed, MDs with an explicit 'mdir' are matched by directory first
+    findMDIndexByDirectory = (directory, inputMds) => {
+        // Check if the directory is explicitly declared in the inputs
+        // If so, use the name in the inputs to find the MD
+        const inputMd = inputMds && inputMds.find(md => md.mdir && getBasename(md.mdir) === getBasename(directory));
+        if (inputMd) return this.findMDIndexByName(inputMd.name);
         // Get the last directory in the path
         const basename = getBasename(directory).toLowerCase();
         // For every MD, find out the directory it should have according to its name
@@ -484,7 +489,10 @@ class Project {
         // In case it does not exist we are done
         if (!exist) return true;
         // In case it exists and the 'conserve' flag has been passed we end here
-        if (conserve) return false;
+        if (conserve) {
+            console.log(chalk.grey(`There is already a topology in this project -> Not loaded (conserve)`));
+            return false;
+        }
         // Check if both documents are identical
         // In this case we stop here since it makes not sense uploading the same
         if (JSON.stringify(exist) === JSON.stringify(newTopology)) return false;
@@ -530,6 +538,9 @@ class Project {
         logger.successLog(`🗑️  Deleted topology data`);
     };
 
+    // Get a text to say which MD we are talking about in the logs, or nothing for project data
+    mdLabel = mdIndex => isNumber(mdIndex) ? ` in MD "${this.data.mds[mdIndex].name}"` : '';
+
     // Get the MD index corresponding list of available files
     getAvailableFiles = mdIndex => isNumber(mdIndex)
         ? this.data.mds[mdIndex].files
@@ -546,7 +557,11 @@ class Project {
         const associatedDataLabel = this.findFileAssociatedDataLabel(filename);
         const previousConfirm = this.getAssociatedDataLoadConfirmation(mdIndex, associatedDataLabel);
         // In case it exists and the 'conserve' flag has been passed we end here
-        if (conserve || previousConfirm === false) return false;
+        if (conserve) {
+            console.log(chalk.grey(`There is already a file named "${filename}"${this.mdLabel(mdIndex)} -> Not loaded (conserve)`));
+            return false;
+        }
+        if (previousConfirm === false) return false;
         // Note that here we do not check if files are identical since they may be huge
         // Ask the user in case the 'overwrite' flag has not been passed
         let confirm = overwrite || previousConfirm === true;
@@ -853,7 +868,11 @@ class Project {
         const associatedDataLabel = this.findAnalysisAssociatedDataLabel(name);
         const previousConfirm = this.getAssociatedDataLoadConfirmation(mdIndex, associatedDataLabel);
         // In case it exists and the 'conserve' flag has been passed we end here
-        if (conserve || previousConfirm === false) return false;
+        if (conserve) {
+            console.log(chalk.grey(`There is already an analysis named "${name}"${this.mdLabel(mdIndex)} -> Not loaded (conserve)`));
+            return false;
+        }
+        if (previousConfirm === false) return false;
         // Note that here we do not check if analyses are identical since they may be huge
         // Ask the user in case the 'overwrite' flag has not been passed
         let confirm = overwrite || previousConfirm === true;

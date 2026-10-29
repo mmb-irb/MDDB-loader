@@ -435,7 +435,7 @@ const load = async (
     }
     // If no metadata is found
     else {
-      mdIndex = project.findMDIndexByDirectory(mdir);
+      mdIndex = project.findMDIndexByDirectory(mdir, inputs && inputs.mds);
       // If the MD is new and there is no metadata we must stop here
       if (mdIndex === null) {
         const expectedKeys = Object.values(project.data.mds).map(md => md.name).join(', ');
