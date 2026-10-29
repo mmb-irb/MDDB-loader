@@ -2,6 +2,8 @@
 // The execution of this code keeps running
 const { spawn } = require('child_process');
 const { Worker, isMainThread, parentPort, workerData } = require('worker_threads');
+// Exit code for interruptions
+const { INTERRUPTION_EXIT_CODE } = require('../constants');
 
 // Constants
 const UNIT_CONVERSION_SCALE = 10;
@@ -291,7 +293,7 @@ if (!isMainThread) {
             if (now > lastCheck + 1000) {
                 if (await abort()) {
                     worker.terminate();
-                    process.exit(0);
+                    process.exit(INTERRUPTION_EXIT_CODE);
                 }
                 lastCheck = now;
             }

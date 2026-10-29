@@ -6,6 +6,8 @@ const logger = require('../utils/logger');
 const chalk = require('chalk');
 // The project manager class
 const getDatabase = require('../database/index');
+// Exit codes for errors and interruptions
+const { ERROR_EXIT_CODE, INTERRUPTION_EXIT_CODE } = require('../utils/constants');
 
 // This handler calls the requested command
 // Also contains common logic for all commands which is runned before and after the main command:
@@ -33,16 +35,20 @@ const commonHandler = commandName => async argv => {
     if (!process.env.abort) {
       process.env.abort = 'abort';
       // In case of any error happening stop the logger
-      if (logger.isLogRunning()) logger.failLog(`Aborted while doing: ${logger.logText()}`);
+      // Note that we must not throw an error here or the process would be killed before asking the user
+      if (logger.isLogRunning()) logger.stopFailLog(`Aborted while doing: ${logger.logText()}`);
     }
     // In case the abort was already in progress and we receive a new 'abort' request
     else {
       // We instantly kill the whole process
       // This would lead to generate trash data in the database
       console.error(chalk.bgRed('Process was instantly killed. Trash data may have been generated in the database'));
-      process.exit(0);
+      process.exit(INTERRUPTION_EXIT_CODE);
     }
   });
+
+  // Exit with an error code if something goes wrong
+  let exitCode = 0;
 
   // Run the command wrapped by a try
   // This way we can catch the fail and better log the error if something goes wrong
@@ -55,18 +61,23 @@ const commonHandler = commandName => async argv => {
     const finalMessage = await command(argv, database);
     if (finalMessage) finalMessage();
   } catch (error) {
+    exitCode = ERROR_EXIT_CODE;
     process.env.abort = 'abort';
     // Stop the logger
-    if (logger.isLogRunning()) logger.failLog(`Interrupted while doing '${logger.logText()}' due to error:\n${error.stack}`);
+    // Note that we must not throw an error here or the changes would not be reverted
+    if (logger.isLogRunning()) logger.stopFailLog(`Interrupted while doing '${logger.logText()}' due to error:\n${error.stack}`);
     else if (error) console.error(chalk.bgRed(error.stack));
     // Try to revert changes
-    await database.revertLoad();
+    // When overwriting we are updating the project, so changes are never reverted and the new data is kept
+    // Note that the overwritten data was already deleted, so reverting would leave the project without it
+    // When conserving, the previous data is never deleted, so we can safely revert without asking
+    if (!argv.overwrite) await database.revertLoad(argv.conserve);
   } finally {
     // End mongo client
     const client = database.client;
     if (client && client.close) client.close();
-    // Exit the node shell. The "0" argument stands for success
-    process.exit(0);
+    // Exit the node shell. The "0" exit code stands for success
+    process.exit(exitCode);
   }
 };
 

@@ -119,5 +119,9 @@ module.exports = {
     // These are just URLs to access web pages with useful alaytical tools
     interProScanURL: 'https://www.ebi.ac.uk/Tools/services/rest/iprscan5',
     hmmerURL: 'https://www.ebi.ac.uk/Tools/hmmer/',
+    // Exit codes, so whoever runs the loader knows if it went wrong
+    // Interruptions use 130, which is the usual code for a process stopped with Control + C
+    ERROR_EXIT_CODE: 1,
+    INTERRUPTION_EXIT_CODE: 130,
   };
   

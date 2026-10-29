@@ -87,6 +87,9 @@ const logger = {
       spinnerRef.current.fail(message);
       throw new Error(message);
     },
+    // Show the fail without throwing an error
+    // Use this when we are already handling an error or an interruption
+    stopFailLog: message => spinnerRef.current.fail(message),
     logText: () => spinnerRef.current.text,
     logTime: () => spinnerRef.current.time,
     isLogRunning: () => spinnerRef.current && spinnerRef.current.running

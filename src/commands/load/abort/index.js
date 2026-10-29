@@ -1,5 +1,7 @@
 // Load auxiliar functions
 const { userConfirm } = require('../../../utils/auxiliar-functions');
+// Exit code for interruptions
+const { INTERRUPTION_EXIT_CODE } = require('../../../utils/constants');
 
 // Set a function setup the aborting function
 const getAbortingFunction = database => {
@@ -15,10 +17,10 @@ const getAbortingFunction = database => {
             * - Resume load`,
         );
         if (confirm === 'C') {
-            process.exit(0)
+            process.exit(INTERRUPTION_EXIT_CODE)
         } else if (confirm === 'D') {
             await database.revertLoad(confirmed = true);
-            process.exit(0)
+            process.exit(INTERRUPTION_EXIT_CODE)
         } else {
             // Clean the 'abort' environmental variable
             process.env.abort = '';

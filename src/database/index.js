@@ -370,7 +370,8 @@ class Database4Loader extends Database {
         // If not, there is no point in asking the user
         if (this.inserted_data.length === 0 && this.new_accession_issued === false) return;
         // Stop the logs if it they are still alive
-        if (logger.isLogRunning()) logger.failLog(`Interrupted while doing: ${logger.logText}`);
+        // Note that we must not throw an error here or the changes would not be reverted
+        if (logger.isLogRunning()) logger.stopFailLog(`Interrupted while doing: ${logger.logText()}`);
         // Ask the user if already loaded data is to be conserved or cleaned up
         const confirm = confirmed || await userConfirm(
             `There was some problem and load has been aborted. Confirm further instructions:
