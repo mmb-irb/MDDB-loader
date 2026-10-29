@@ -29,7 +29,10 @@ merge_metadata = async (previousMetadata, newMetadata, conserve = false, overwri
         }
         // Keys with different values are conflictive and we must ask the user for each one
         // If the 'conserve' option is passed then we always keep the original value
-        if (conserve) continue;
+        if (conserve) {
+            console.log(chalk.grey(`The field '${key}' already has a different value -> Not loaded (conserve)`));
+            continue;
+        }
         // If the 'overwrite' option is passed then we always keep the new value
         if (overwrite) {
             previousMetadata[key] = newValue;
