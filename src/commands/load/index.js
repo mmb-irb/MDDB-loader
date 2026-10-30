@@ -24,8 +24,8 @@ const {
 } = require('./handle-directories');
 const findAllFiles = require('./find-all-files');
 const categorizeFiles = require('./categorize-files');
-// Get project id trace handlers
-const { leaveTrace, findTrace, removeTrace } = require('./project-id-trace');
+// Get loader register handlers
+const { leaveRegister, findRegisteredId, removeRegister } = require('./loader-register');
 
 // Set some essential files we need for a new entry to work in the web client
 // Keys correspond to the file keys in the file categorizer
@@ -237,12 +237,12 @@ const load = async (
   // Find if there is a prefeined accession to use such as:
   // 1 - A command line forced accession (-a)
   // 2 - A metadata forced accession
-  // 3 - A trace from a previous run
+  // 3 - A register from a previous run
   // If no accession is predefined we asume it is a new project and we create it
   // Set the project data handler and update the 'isNewProject' variable accordingly
   // This part of the code is set as a function just to use return
   let isNewProject = false;
-  const trace = findTrace(projectDirectory);
+  const registeredId = findRegisteredId(projectDirectory);
   const project = await (async () => {
     // If we have a forced accession in the coomand line or in the metadata then use it
     const forcedAccession = accession || (inputs && inputs.accession);
@@ -263,15 +263,15 @@ const load = async (
       isNewProject = true;
       return await database.createProject(forcedAccession);
     }
-    // If we had a trace then check it belongs to an existing project
-    if (trace) {
-      const alreadyExistingProject = await database.syncProject(trace);
-      // If we had a trace and the project exists then use it
+    // If we had a register then check it belongs to an existing project
+    if (registeredId) {
+      const alreadyExistingProject = await database.syncProject(registeredId);
+      // If we had a register and the project exists then use it
       if (alreadyExistingProject) return alreadyExistingProject;
-      // If we had a trace but the project does not exist then print a warning but keep going and create a new project
-      // Also remove the trace since it is not valid anymore
-      console.log(chalk.yellow(`WARNING: There was a trace of project '${trace}' but it does not exist anymore`));
-      removeTrace(projectDirectory);
+      // If we had a register but the project does not exist then print a warning but keep going and create a new project
+      // Also remove the register since it is not valid anymore
+      console.log(chalk.yellow(`WARNING: There was a register of project '${registeredId}' but it does not exist anymore`));
+      removeRegister(projectDirectory);
     }
     // Check we have the essentials
     if (!hasEssentials()) throw new Error(`Missing essential files`);
@@ -294,9 +294,8 @@ const load = async (
     console.log('Project was previously booked and is now being loaded with data');
   }
   
-  // Leave a trace of the project id
-  if (!trace || trace.toString() !== project.id.toString())
-    leaveTrace(projectDirectory, project.id);
+  // Leave a register of the project id and the load details
+  leaveRegister(projectDirectory, project);
 
   // Check if the load has been aborted at this point
   await checkAbort();
