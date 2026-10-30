@@ -79,6 +79,7 @@ const load = async (
     skipTrajectories,
     skipFiles,
     skipAnalyses,
+    skipCounters,
     gromacsPath,
     timeout,
   },
@@ -193,7 +194,7 @@ const load = async (
   if (allReferences) {
     await loadReferences();
     // At the end of the load update the option counters
-    await database.updateOptionCounts();
+    if (!skipCounters) await database.updateOptionCounts();
     return () => {
       console.log(
         chalk.cyan(`== finished loading '${projectDirectory}' in ${prettyMs(Date.now() - startTime)} with references only`),
@@ -560,7 +561,8 @@ const load = async (
   // DANI: Interrupted loads would mess numbers silently. If we always update numbers from scratch this will be solved on its own
   // DANI: Alternatively I could update specific values from the counters every time they are updated, but this is too much work
   // DANI: This solution is easy and reliable, at the cost of making the process a bit slower
-  await database.updateOptionCounts();
+  // Counters may be skipped (e.g. when loading many projects in a row) and updated at the end with the 'count' command
+  if (!skipCounters) await database.updateOptionCounts();
   
 
   return () => {

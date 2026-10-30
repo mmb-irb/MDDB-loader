@@ -7,7 +7,7 @@ const { mongoidFormat, userConfirm, isNumber } = require('../../utils/auxiliar-f
 // Note that a function cannot be named 'delete' in node
 const deleteFunction = async (
     // Command additional arguments
-    { id, confirm },
+    { id, confirm, skipCounters },
     // Database handler
     database,
 ) => {
@@ -197,7 +197,7 @@ const deleteFunction = async (
     if (target.collectionKey === 'projects') {
         // Remote project data should be loaded already
         // If no MD number was passed then we asume that the whole project is to be deleted
-        if (target.mdIndex === undefined) return await project.deleteProject();
+        if (target.mdIndex === undefined) return await project.deleteProject(skipCounters);
         // If a MD number was passed then we asume that only the specified MD is to be deleted
         await project.removeMDirectory(target.mdIndex, forced=confirm);
     }

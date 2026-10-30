@@ -101,6 +101,14 @@ yargs
                 type: 'boolean',
                 default: false,
             })
+            // --skip-counters
+            .option('sc', {
+                alias: 'skip-counters',
+                description: 'Skip the update of the option counters at the end of the load.\n' +
+                    'Useful when loading many projects in a row. Run the \'count\' command at the end to update them',
+                type: 'boolean',
+                default: false,
+            })
             // --gromacs-path
             .option('gro', {
                 alias: 'gromacs-path', // Option name. Useful for the help
@@ -207,6 +215,14 @@ yargs
                 type: 'boolean',
                 default: false,
             })
+            // --skip-counters
+            .option('sc', {
+                alias: 'skip-counters',
+                description: 'Skip the update of the option counters after deleting a project.\n' +
+                    'Useful when deleting many projects in a row. Run the \'count\' command at the end to update them',
+                type: 'boolean',
+                default: false,
+            })
             // id
             .positional('id', {
                 describe: 'ID of document to delete',
@@ -259,6 +275,14 @@ yargs
                 default: false,
             }),
         handler: commonHandler('update'),
+    })
+    // count
+    .command({
+        command: 'count',
+        aliases: ['counters'],
+        desc: 'Update the option counters from scratch',
+        builder: yargs => yargs,
+        handler: commonHandler('count'),
     })
     // check
     .command({

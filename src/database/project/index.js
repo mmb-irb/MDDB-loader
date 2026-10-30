@@ -220,7 +220,7 @@ class Project {
     }
 
     // Delete a project
-    deleteProject = async () => {
+    deleteProject = async (skipCounters = false) => {
         // Delete all project contents before deleteing the project itself to avoid having orphans in case of interruption
         // Delete the topology
         const topology = await this.getTopology();
@@ -257,7 +257,7 @@ class Project {
         const lastIssuedAccession = await this.database.getLastAccession();
         if (lastIssuedAccession === this.accession) await this.database.useCounter(-1);
         // Update option counters
-        await this.database.updateOptionCounts();
+        if (!skipCounters) await this.database.updateOptionCounts();
         // Remove references if they are not used by other projects
         const metadata = this.data.metadata;
         if (!metadata) return;
