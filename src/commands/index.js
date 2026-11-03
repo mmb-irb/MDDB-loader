@@ -9,6 +9,9 @@ const getDatabase = require('../database/index');
 // Exit codes for errors and interruptions
 const { ERROR_EXIT_CODE, INTERRUPTION_EXIT_CODE } = require('../utils/constants');
 
+// Commands which only read from the database, so they can run while it is locked for writing
+const READ_ONLY_COMMANDS = ['list', 'check'];
+
 // This handler calls the requested command
 // Also contains common logic for all commands which is runned before and after the main command:
 // - Process tracking and console output
@@ -22,6 +25,20 @@ const commonHandler = commandName => async argv => {
 
   // Initialize the database handler
   const database = await getDatabase();
+
+  // Refuse to run commands which write while the database is locked for writing
+  // Otherwise they would hang without any message until the lock is released
+  if (!READ_ONLY_COMMANDS.includes(commandName) && await database.isWriteLocked()) {
+    console.error(chalk.bgRed('The database is locked for writing.'));
+    console.error(chalk.red(
+      'This is most likely because the backup service (mongo-backup) is dumping the database,\n' +
+      'which keeps it read-only until the dump ends (this may take hours on large databases).\n' +
+      `The '${commandName}' command needs to write, so it was not started. Please try again later.\n` +
+      'To follow the backup, check the logs of the mongo-backup service or container.'
+    ));
+    await database.client.close();
+    process.exit(ERROR_EXIT_CODE);
+  }
 
   // When the process is interrupted from the keyboard (Control + C)
   process.on('SIGINT', async () => {

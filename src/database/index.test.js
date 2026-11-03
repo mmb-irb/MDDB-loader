@@ -38,6 +38,18 @@ describe('database getDatabase', () => {
         expect(database.new_accession_issued).toBe(false);
     });
 
+    it('reports whether the database is locked for writing', async () => {
+        const admin = database.client.db('admin');
+        expect(await database.isWriteLocked()).toBe(false);
+        await admin.command({ fsync: 1, lock: true });
+        try {
+            expect(await database.isWriteLocked()).toBe(true);
+        } finally {
+            await admin.command({ fsyncUnlock: 1 });
+        }
+        expect(await database.isWriteLocked()).toBe(false);
+    });
+
     it('exposes the seeded collections', async () => {
         // The references collection is exposed under the 'uniprot_refs' key
         expect(await database.projects.countDocuments()).toBe(2);

@@ -47,6 +47,16 @@ class Database4Loader extends Database {
         return numberOfDocuments === 1 ? documentNames.singular : documentNames.plural;
     }
 
+    // Whether the database server is locked for writing (db.fsyncLock)
+    // The MDDB backup service (mongo-backup) locks it while it dumps the database, and writes
+    // made meanwhile do not fail: they wait until the lock is released, which may take hours
+    // The '$ownOps' option lets users without admin privileges run 'currentOp'
+    // The response still reports the server-wide 'fsyncLock' state
+    isWriteLocked = async () => {
+        const status = await this.client.db('admin').command({ currentOp: 1, $ownOps: true });
+        return status.fsyncLock === true;
+    }
+
     // Find a project by its id or accession
     // Return null if project does not exist
     findProject = async idOrAccession => {
