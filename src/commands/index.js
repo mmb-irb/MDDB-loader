@@ -8,6 +8,8 @@ const chalk = require('chalk');
 const getDatabase = require('../database/index');
 // Exit codes for errors and interruptions
 const { ERROR_EXIT_CODE, INTERRUPTION_EXIT_CODE } = require('../utils/constants');
+// Warns the user when the database gets locked for writing while the command runs
+const { createWriteLockWatcher } = require('../utils/write-lock-watcher');
 
 // Commands which only read from the database, so they can run while it is locked for writing
 const READ_ONLY_COMMANDS = ['list', 'check'];
@@ -38,6 +40,12 @@ const commonHandler = commandName => async argv => {
     ));
     await database.client.close();
     process.exit(ERROR_EXIT_CODE);
+  }
+
+  // The database may still get locked while the command runs (e.g. the backup starts in the middle)
+  // Then the command waits without any message, so warn the user to keep waiting
+  if (!READ_ONLY_COMMANDS.includes(commandName)) {
+    createWriteLockWatcher({ isWriteLocked: database.isWriteLocked, print: logger.printLog }).start();
   }
 
   // When the process is interrupted from the keyboard (Control + C)

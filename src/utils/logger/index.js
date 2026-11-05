@@ -70,6 +70,15 @@ const getSpinner = () => {
       instance.running = false;
       return this;
     },
+    // Print - Print a message above the spinner without breaking it
+    // When the spinner is animated, it is cleared, the message printed and the spinner drawn again
+    print(message) {
+      const animated = instance.isEnabled && instance.isSpinning;
+      if (animated) instance.clear();
+      console.log(message);
+      if (animated) instance.render();
+      return this;
+    },
   });
 };
 
@@ -90,6 +99,11 @@ const logger = {
     // Show the fail without throwing an error
     // Use this when we are already handling an error or an interruption
     stopFailLog: message => spinnerRef.current.fail(message),
+    // Print a message without breaking the current log, if any
+    printLog: message => {
+      if (spinnerRef.current && spinnerRef.current.running) spinnerRef.current.print(message);
+      else console.log(message);
+    },
     logText: () => spinnerRef.current.text,
     logTime: () => spinnerRef.current.time,
     isLogRunning: () => spinnerRef.current && spinnerRef.current.running
