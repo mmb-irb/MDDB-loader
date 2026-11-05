@@ -288,6 +288,9 @@ const load = async (
   // Display the project id. It may be useful if the load is abruptly interrupted to clean
   console.log(chalk.cyan(`== Project '${project.data.accession}'`));
 
+  // Complete deletions which were interrupted in previous runs, if any
+  await project.resumePendingDeletions();
+
   // If the project was previously booked, unmark it as booked since we're now loading real data
   if (project.data.booked) {
     delete project.data.booked;

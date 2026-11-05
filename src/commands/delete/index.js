@@ -192,6 +192,9 @@ const deleteFunction = async (
     const confirmation = confirm || await userConfirm(`Confirm deletion of document with ${isMongoId ? 'id' : 'accession'} ${id} [y/*]`);
     // If we have no confirmation then we abort here
     if (confirmation !== true && confirmation !== 'y' && confirmation !== 'Y') return console.log('Data deletion has been aborted');
+    // Complete deletions which were interrupted in previous runs, if any
+    // Otherwise deleting the whole project would leave their data orphan
+    if (project) await project.resumePendingDeletions();
     // Use the right deleting protocol according to the type of document we are about to delete
     // ----- Projects -----
     if (target.collectionKey === 'projects') {

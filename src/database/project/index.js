@@ -815,25 +815,72 @@ class Project {
             if (associatedData && associatedData.count > 1)
                 return await this.deleteAssociatedData(associatedData);
         }
-        logger.startLog(`🗑️  Deleting file ${filename} <- ${currentFile.id}`);
-        const fileCursor = await this.database.bucket.find(currentFile.id);
-        const targetFile = await fileCursor.next();
-        // The file should always exist at this point, but make sure it does
-        if (targetFile) {
-            // Delete the file from fs.files and its chunks from fs.chunks using the file id
-            // GridFSBucket.delete has no callback but when it fails (i.e. file not found) it kills the process
-            // https://mongodb.github.io/node-mongodb-native/6.3/classes/GridFSBucket.html#delete
-            await this.database.bucket.delete(currentFile.id);
-            logger.successLog(`🗑️  Deleted file ${filename} <- ${currentFile.id}`);
-        }
-        // However a desynchronization between projects and fs.files may happen if the loader is abuptly interrupted
-        else {
-            logger.failLog(`🗑️  File ${filename} does not exist already <- ${currentFile.id}`);
-        }
-        // Remove the current file entry from the files list and update the project
+        // Move the file entry from the project files list to the pending deletions list in a single update
+        // Thus the project never points to a file which may not exist
+        // If the process is interrupted then the pending deletion is resumed the next time
         const fileIndex = availableFiles.indexOf(currentFile);
         availableFiles.splice(fileIndex, 1);
+        const pendingDeletion = this._addPendingDeletion('file', currentFile, mdIndex);
         await this.updateRemote();
+        await this._deleteFileData(pendingDeletion);
+        await this._removePendingDeletion(pendingDeletion);
+    }
+
+    // Delete a file from fs.files / fs.chunks
+    // The file must be already removed from the project files list
+    _deleteFileData = async ({ name, id }) => {
+        logger.startLog(`🗑️  Deleting file ${name} <- ${id}`);
+        const fileCursor = await this.database.bucket.find(id);
+        const targetFile = await fileCursor.next();
+        // The file may be missing if a previous deletion was interrupted after deleting it
+        // The project entry is already removed so this is just reported
+        if (!targetFile) return logger.warnLog(`🗑️  File ${name} did not exist already <- ${id}`);
+        // Delete the file from fs.files and its chunks from fs.chunks using the file id
+        // GridFSBucket.delete has no callback but when it fails (i.e. file not found) it kills the process
+        // https://mongodb.github.io/node-mongodb-native/6.3/classes/GridFSBucket.html#delete
+        await this.database.bucket.delete(id);
+        logger.successLog(`🗑️  Deleted file ${name} <- ${id}`);
+    }
+
+    // Register a deletion in progress in the project data
+    // Files and analyses are removed from the project before they are actually deleted
+    // This record allows to resume the deletion if it is interrupted and to trace orphan data
+    // Note that the remote project is not updated here
+    _addPendingDeletion = (type, entry, mdIndex) => {
+        if (!this.data.pending_deletions) this.data.pending_deletions = [];
+        const pendingDeletion = {
+            type,
+            name: entry.name,
+            id: entry.id,
+            md: isNumber(mdIndex) ? mdIndex : null,
+            date: new Date(),
+        };
+        this.data.pending_deletions.push(pendingDeletion);
+        return pendingDeletion;
+    }
+
+    // Remove a deletion from the pending deletions list once it is completed and update the remote project
+    _removePendingDeletion = async pendingDeletion => {
+        const pendingDeletions = this.data.pending_deletions;
+        const index = pendingDeletions.indexOf(pendingDeletion);
+        if (index === -1) throw new Error(`Pending deletion of ${pendingDeletion.type} ${pendingDeletion.name} not found`);
+        pendingDeletions.splice(index, 1);
+        if (pendingDeletions.length === 0) delete this.data.pending_deletions;
+        await this.updateRemote();
+    }
+
+    // Complete deletions which were interrupted in previous runs
+    resumePendingDeletions = async () => {
+        const pendingDeletions = this.data.pending_deletions;
+        if (!pendingDeletions || pendingDeletions.length === 0) return;
+        console.log(chalk.yellow(`There are ${pendingDeletions.length} deletions which were interrupted in previous runs. Resuming them now.`));
+        // Copy the list since it is truncated as deletions are completed
+        for await (const pendingDeletion of [...pendingDeletions]) {
+            if (pendingDeletion.type === 'file') await this._deleteFileData(pendingDeletion);
+            else if (pendingDeletion.type === 'analysis') await this._deleteAnalysisData(pendingDeletion);
+            else throw new Error(`Unknown pending deletion type '${pendingDeletion.type}'`);
+            await this._removePendingDeletion(pendingDeletion);
+        }
     }
 
     // Rename a file, both in the files collection and in project data
@@ -947,19 +994,30 @@ class Project {
             const associatedData = await this.findAssociatedData(associatedDataLabel, mdIndex);
             if (associatedData.count > 1) return await this.deleteAssociatedData(associatedData);
         }
-        logger.startLog(`🗑️  Deleting analysis ${name} (MD index ${mdIndex})`);
-        // Delete the current analysis from the database
+        // Move the analysis entry from the project analyses list to the pending deletions list in a single update
+        // If the process is interrupted then the pending deletion is resumed the next time
+        const analysisIndex = availableAnalyses.indexOf(currentAnalysis);
+        availableAnalyses.splice(analysisIndex, 1);
+        const pendingDeletion = this._addPendingDeletion('analysis', currentAnalysis, mdIndex);
+        await this.updateRemote();
+        await this._deleteAnalysisData(pendingDeletion);
+        await this._removePendingDeletion(pendingDeletion);
+    }
+
+    // Delete an analysis from the analyses collection
+    // The analysis must be already removed from the project analyses list
+    // Note that a null MD index matches project analyses, which have no MD index
+    _deleteAnalysisData = async ({ name, id, md }) => {
+        logger.startLog(`🗑️  Deleting analysis ${name} (MD index ${md})`);
         const result = await this.database.analyses.deleteOne({
             name: name,
             project: this.id,
-            md: mdIndex
+            md: md
         });
-        if (!result) logger.failLog(`🗑️  Failed to delete analysis ${name} (MD index ${mdIndex})`);
-        logger.successLog(`🗑️  Deleted analysis ${name} from MD with index ${mdIndex} <- ${currentAnalysis.id}`);
-        // Remove the current analysis entry from the analyses list and update the project
-        const analysisIndex = availableAnalyses.indexOf(currentAnalysis);
-        availableAnalyses.splice(analysisIndex, 1);
-        await this.updateRemote();
+        if (result.acknowledged === false) logger.failLog(`🗑️  Failed to delete analysis ${name} (MD index ${md})`);
+        // The analysis may be missing if a previous deletion was interrupted after deleting it
+        if (result.deletedCount === 0) return logger.warnLog(`🗑️  Analysis ${name} did not exist already (MD index ${md}) <- ${id}`);
+        logger.successLog(`🗑️  Deleted analysis ${name} from MD with index ${md} <- ${id}`);
     }
 
     // Rename an analysis, both in the analyses collection and in project data

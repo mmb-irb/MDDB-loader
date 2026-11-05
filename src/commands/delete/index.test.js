@@ -130,6 +130,98 @@ describe('delete command', () => {
         expect(updated.totalTime).toBeCloseTo(0.01);
     });
 
+    it('removes a project file entry whose GridFS file is already gone', async () => {
+        // An interrupted deletion may leave the project pointing to a file which no longer exists
+        // Deleting that entry must clean the project instead of failing on every following load
+        const projectId = new Database.ObjectId();
+        const missingFileId = new Database.ObjectId();
+        const filename = 'trajectory.bin';
+        await database.projects.insertOne({
+            _id: projectId,
+            accession: 'TESTM',
+            published: false,
+            metadata: {},
+            mds: [{ name: 'replica 1', files: [{ name: filename, id: missingFileId }], analyses: [] }],
+            mdref: 0,
+            files: [],
+            analyses: [],
+        });
+        const project = await database.syncProject(projectId);
+        await project.deleteFile(filename, 0);
+        const updated = await database.findProject(projectId);
+        expect(updated.mds[0].files).toHaveLength(0);
+        expect(updated.pending_deletions).toBeUndefined();
+    });
+
+    it('keeps a record of a file deletion which is interrupted', async () => {
+        const projectId = new Database.ObjectId();
+        const filename = 'interrupted.bin';
+        const fileId = await new Promise((resolve, reject) => {
+            const uploadStream = database.bucket.openUploadStream(filename, { metadata: { project: projectId, md: 0 } });
+            uploadStream.on('error', reject);
+            uploadStream.on('finish', () => resolve(uploadStream.id));
+            uploadStream.end(Buffer.from('fake file content'));
+        });
+        await database.projects.insertOne({
+            _id: projectId,
+            accession: 'TESTI',
+            published: false,
+            metadata: {},
+            mds: [{ name: 'replica 1', files: [{ name: filename, id: fileId }], analyses: [] }],
+            mdref: 0,
+            files: [],
+            analyses: [],
+        });
+        const project = await database.syncProject(projectId);
+        // Simulate an interruption while the file is being deleted
+        const deleteSpy = jest.spyOn(database.bucket, 'delete').mockRejectedValueOnce(new Error('Interrupted'));
+        try {
+            await expect(project.deleteFile(filename, 0)).rejects.toThrow('Interrupted');
+        } finally {
+            deleteSpy.mockRestore();
+        }
+        // The project no longer points to the file, but the deletion is recorded
+        const interrupted = await database.findProject(projectId);
+        expect(interrupted.mds[0].files).toHaveLength(0);
+        expect(interrupted.pending_deletions).toHaveLength(1);
+        expect(interrupted.pending_deletions[0]).toMatchObject({ type: 'file', name: filename, id: fileId, md: 0 });
+        expect(await database.files.findOne({ _id: fileId })).not.toBeNull();
+    });
+
+    it('resumes pending deletions of files and analyses', async () => {
+        const projectId = new Database.ObjectId();
+        const filename = 'pending.bin';
+        const fileId = await new Promise((resolve, reject) => {
+            const uploadStream = database.bucket.openUploadStream(filename, { metadata: { project: projectId, md: 0 } });
+            uploadStream.on('error', reject);
+            uploadStream.on('finish', () => resolve(uploadStream.id));
+            uploadStream.end(Buffer.from('fake file content'));
+        });
+        const { insertedId: analysisId } = await database.analyses.insertOne({ name: 'rmsd', project: projectId, md: 0, value: {} });
+        const date = new Date();
+        await database.projects.insertOne({
+            _id: projectId,
+            accession: 'TESTR',
+            published: false,
+            metadata: {},
+            mds: [{ name: 'replica 1', files: [], analyses: [] }],
+            mdref: 0,
+            files: [],
+            analyses: [],
+            pending_deletions: [
+                { type: 'file', name: filename, id: fileId, md: 0, date },
+                { type: 'analysis', name: 'rmsd', id: analysisId, md: 0, date },
+                // This one was already deleted when the previous run was interrupted
+                { type: 'file', name: 'gone.bin', id: new Database.ObjectId(), md: 0, date },
+            ],
+        });
+        const project = await database.syncProject(projectId);
+        await project.resumePendingDeletions();
+        expect(await database.files.findOne({ _id: fileId })).toBeNull();
+        expect(await database.analyses.findOne({ _id: analysisId })).toBeNull();
+        expect((await database.findProject(projectId)).pending_deletions).toBeUndefined();
+    });
+
     // This test is destructive: it removes the 'A0001' project, so it runs last
     it('deletes a whole project by its accession', async () => {
         // The fake project stores its file/analysis ids as plain strings instead of

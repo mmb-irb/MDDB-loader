@@ -294,7 +294,7 @@ class Database4Loader extends Database {
         }
         // However a desynchronization between projects and fs.files may happen if the loader is abuptly interrupted
         else {
-            logger.failLog(`🗑️  File ${filename} does not exist already <- ${targetId}`);
+            logger.warnLog(`🗑️  File ${filename} did not exist already <- ${targetId}`);
         }
     }
 
