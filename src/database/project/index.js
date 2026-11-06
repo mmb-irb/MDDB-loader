@@ -24,7 +24,9 @@ const {
 // Get metadata handlers
 const { merge_metadata } = require('./metadata-handlers');
 // Get constants
-const { ANALYSIS_ASSOCIATED_FILES } = require('../../utils/constants');
+const { ANALYSIS_ASSOCIATED_FILES, MAX_DOCUMENT_SIZE } = require('../../utils/constants');
+// Calculate the exact size of a document as it would be stored in MongoDB
+const { calculateObjectSize, ObjectId } = require('bson');
 
 // Constants
 const N_COORDINATES = 3; // x, y, z
@@ -945,6 +947,21 @@ class Project {
         await this.deleteAnalysis(name, mdIndex);
         return true;
     };
+
+    // Make sure an analysis fits in a single MongoDB document before trying to load it
+    // Otherwise MongoDB rejects it with an obscure error which does not say which analysis failed
+    // This must be checked before any previous analysis is deleted in favour of the new one
+    checkAnalysisSize = (analysis, mdIndex, filepath) => {
+        // Measure the document exactly as loadAnalysis will insert it
+        const document = { ...analysis, project: this.id, _id: new ObjectId() };
+        if (mdIndex !== undefined) document.md = mdIndex;
+        const size = calculateObjectSize(document);
+        if (size <= MAX_DOCUMENT_SIZE) return;
+        const toMiB = bytes => (bytes / 1024 / 1024).toFixed(2);
+        const location = mdIndex === undefined ? 'project' : `MD index ${mdIndex}`;
+        throw new Error(`Analysis '${analysis.name}' (${location}) from ${filepath} is too large to be loaded: ` +
+            `its document would take ${toMiB(size)} MiB but MongoDB documents can not exceed ${toMiB(MAX_DOCUMENT_SIZE)} MiB`);
+    }
 
     // Load a new analysis
     // The analysis object contains a name and a value (the actual content)

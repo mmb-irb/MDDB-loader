@@ -119,6 +119,8 @@ module.exports = {
     // Directories left by the workflow while a task is still running or after it was interrupted
     // Their content is not complete so they must never be loaded
     INCOMPLETE_DIRECTORY_PREFIX: 'incomplete_',
+    // Maximum size of a MongoDB document, in bytes (16 MiB)
+    MAX_DOCUMENT_SIZE: 16 * 1024 * 1024,
     // These are just URLs to access web pages with useful alaytical tools
     interProScanURL: 'https://www.ebi.ac.uk/Tools/services/rest/iprscan5',
     hmmerURL: 'https://www.ebi.ac.uk/Tools/hmmer/',

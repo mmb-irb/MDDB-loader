@@ -355,18 +355,19 @@ const load = async (
       // Get the standard name of the analysis
       const name = nameAnalysis(file);
       if (!name) continue;
+      // Read the analysis data
+      const filepath = projectDirectory + file;
+      const content = await loadJSON(filepath);
+      // If mining was unsuccessful return undefined value
+      if (!content) throw new Error(`There is something wrong with the ${name} analysis file`);
+      const analysis = { name: name, value: content };
+      // Make sure the analysis fits in the database before deleting any previous analysis
+      project.checkAnalysisSize(analysis, undefined, filepath);
       // Handle any conflicts and ask the user if necessary
       // Delete previous analyses in case we want to overwrite data
       const confirm = await project.forestallAnalysisLoad(name, undefined, conserve, overwrite);
       if (!confirm) continue;
-      // Load the analysis
-      const filepath = projectDirectory + file;
-      // Read the analysis data
-      const content = await loadJSON(filepath);
-      // If mining was unsuccessful return undefined value
-      if (!content) throw new Error(`There is something wrong with the ${name} analysis file`);
       // Upload new data to the database
-      const analysis = { name: name, value: content };
       await project.loadAnalysis(analysis, undefined);
     }
   }
@@ -538,18 +539,19 @@ const load = async (
         // Get the standard name of the analysis
         const name = nameAnalysis(file);
         if (!name) continue;
+        // Read the analysis data
+        const filepath = mdir + '/' + file;
+        const content = await loadJSON(filepath);
+        // If mining was unsuccessful return undefined value
+        if (!content) throw new Error(`There is something wrong with the ${name} analysis file`);
+        const analysis = { name: name, value: content };
+        // Make sure the analysis fits in the database before deleting any previous analysis
+        project.checkAnalysisSize(analysis, mdIndex, filepath);
         // Handle any conflicts and ask the user if necessary
         // Delete previous analyses in case we want to overwrite data
         const confirm = await project.forestallAnalysisLoad(name, mdIndex, conserve, overwrite);
         if (!confirm) continue;
-        // Load the analysis
-        const filepath = mdir + '/' + file;
-        // Read the analysis data
-        const content = await loadJSON(filepath);
-        // If mining was unsuccessful return undefined value
-        if (!content) throw new Error(`There is something wrong with the ${name} analysis file`);
         // Upload new data to the database
-        const analysis = { name: name, value: content };
         await project.loadAnalysis(analysis, mdIndex);
       }
     }
