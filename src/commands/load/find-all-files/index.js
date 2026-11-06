@@ -3,9 +3,19 @@ const fs = require('fs');
 // Load a tool to normalize paths
 const { normalize } = require('path');
 // Get project files to be found and loaded
-const { EXPECTED_PROJECT_FILE } = require('../../../utils/constants');
+const { EXPECTED_PROJECT_FILE, INCOMPLETE_DIRECTORY_PREFIX } = require('../../../utils/constants');
 // get auxiliar functions
 const { joinPaths } = require('../../../utils/auxiliar-functions');
+// Colors for the console
+const chalk = require('chalk');
+
+// Directories left incomplete by the workflow are never loaded
+// Report them so the user knows their files are being ignored
+const isNotIncomplete = (directory, subdir) => {
+    if (!subdir.startsWith(INCOMPLETE_DIRECTORY_PREFIX)) return true;
+    console.log(chalk.yellow(`WARNING: Skipping incomplete directory ${normalize(joinPaths(directory, subdir))}`));
+    return false;
+}
 
 // Find all files according to the input path directory
 const findAllFiles = (projectDirectory, mdirs, included, excluded) => {
@@ -44,7 +54,8 @@ const findAllFiles = (projectDirectory, mdirs, included, excluded) => {
     // Iterate subdirectories inside of the project directory to find more project files
     const subdirs = fs.readdirSync(projectDirectory)
         .filter(path => !mdirs.includes(normalize(joinPaths(projectDirectory, path))))
-        .filter(path => fs.lstatSync(joinPaths(projectDirectory, path)).isDirectory());
+        .filter(path => fs.lstatSync(joinPaths(projectDirectory, path)).isDirectory())
+        .filter(path => isNotIncomplete(projectDirectory, path));
     for (const subdir of subdirs) {
         const projectPath = normalize(joinPaths(projectDirectory, subdir));
         const projectFileFilter = filterCreator(projectPath);
@@ -58,7 +69,8 @@ const findAllFiles = (projectDirectory, mdirs, included, excluded) => {
         mdFiles[mdDirectory] = fs.readdirSync(mdDirectory).filter(mdFileFilter);
         // Iterate subdirectories inside of the MD directory to find more MD files
         const subdirs = fs.readdirSync(mdDirectory).filter(
-            path => fs.statSync(normalize(joinPaths(mdDirectory, path))).isDirectory());
+            path => fs.statSync(normalize(joinPaths(mdDirectory, path))).isDirectory())
+            .filter(path => isNotIncomplete(mdDirectory, path));
         for (const subdir of subdirs) {
             const mdPath = normalize(joinPaths(mdDirectory, subdir));
             const mdFileFilter = filterCreator(mdPath);

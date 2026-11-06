@@ -116,6 +116,9 @@ module.exports = {
         clusters: [ /^clusters_[0-9]*_screenshot_[0-9]*.jpg$/i ],
         pockets: [ /^pocket_[0-9]*.pdb$/i ]
     },
+    // Directories left by the workflow while a task is still running or after it was interrupted
+    // Their content is not complete so they must never be loaded
+    INCOMPLETE_DIRECTORY_PREFIX: 'incomplete_',
     // These are just URLs to access web pages with useful alaytical tools
     interProScanURL: 'https://www.ebi.ac.uk/Tools/services/rest/iprscan5',
     hmmerURL: 'https://www.ebi.ac.uk/Tools/hmmer/',

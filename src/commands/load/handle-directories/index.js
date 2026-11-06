@@ -4,6 +4,8 @@ const fs = require('fs');
 const glob = require("glob");
 // Load a tool to normalize paths
 const { normalize } = require('path');
+// Directories left incomplete by the workflow are never loaded
+const { INCOMPLETE_DIRECTORY_PREFIX } = require('../../../utils/constants');
 
 // Set the register filename
 // This file is created by the workflow
@@ -26,7 +28,10 @@ const findWildcardPaths = (projectDirectory, paths) => {
 // To do so, find directories which contain a register file
 const findMdDirectories = projectDirectory => {
     // Get all available directories
-    const subentries = fs.readdirSync(projectDirectory).map(entry => projectDirectory + entry);
+    // Skip directories left incomplete by the workflow (findAllFiles warns about them)
+    const subentries = fs.readdirSync(projectDirectory)
+        .filter(entry => !entry.startsWith(INCOMPLETE_DIRECTORY_PREFIX))
+        .map(entry => projectDirectory + entry);
     const subdirectories = subentries.filter(entry => fs.lstatSync(entry).isDirectory());
     const mdDirectories = subdirectories.filter(dir => fs.existsSync(dir + '/' + REGISTER_FILENAME));
     return mdDirectories.map(dir => normalize(dir));
