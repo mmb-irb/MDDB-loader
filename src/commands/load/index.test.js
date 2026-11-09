@@ -69,3 +69,69 @@ describe('load command input validation', () => {
         );
     });
 });
+
+describe('load command frames check for new MDs', () => {
+    let projectDir;
+
+    // Write a project with one MD directory whose metadata is the given one
+    const writeProject = mdMetadata => {
+        projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'load-frames-test-'));
+        fs.writeFileSync(path.join(projectDir, 'metadata.json'), JSON.stringify({}));
+        fs.writeFileSync(path.join(projectDir, 'topology.json'), JSON.stringify({}));
+        const mdDir = path.join(projectDir, 'replica_1');
+        fs.mkdirSync(mdDir);
+        fs.writeFileSync(path.join(mdDir, 'metadata.json'), JSON.stringify(mdMetadata));
+        fs.writeFileSync(path.join(mdDir, 'structure.pdb'), '');
+        fs.writeFileSync(path.join(mdDir, 'trajectory.xtc'), '');
+    };
+
+    afterEach(() => {
+        fs.rmSync(projectDir, { recursive: true, force: true });
+    });
+
+    // A project stub whose first write fails with a sentinel error
+    // Reaching it means the frames check passed
+    const projectStub = mdNames => ({
+        data: { accession: 'TEST', mds: mdNames.map(name => ({ name })) },
+        findMDIndexByName: name => {
+            const index = mdNames.indexOf(name);
+            return index === -1 ? null : index;
+        },
+        resumePendingDeletions: jest.fn().mockRejectedValue(new Error('passed the check')),
+    });
+
+    const makeDatabase = existingProject => ({
+        setup: jest.fn().mockResolvedValue(undefined),
+        syncProject: jest.fn().mockResolvedValue(existingProject),
+        createProject: jest.fn().mockRejectedValue(new Error('passed the check')),
+    });
+
+    const args = () => ({ pdir: projectDir, mdirs: ['replica_1'], accession: 'TEST', skipTrajectories: true });
+
+    it('stops before creating a new project when an MD has no frames', async () => {
+        writeProject({ name: 'replica 1' });
+        const database = makeDatabase(null);
+        await expect(load(args(), database)).rejects.toThrow("Missing 'frames'");
+        expect(database.createProject).not.toHaveBeenCalled();
+    });
+
+    it('creates a new project when all MDs have frames', async () => {
+        writeProject({ name: 'replica 1', frames: 10 });
+        const database = makeDatabase(null);
+        await expect(load(args(), database)).rejects.toThrow('passed the check');
+        expect(database.createProject).toHaveBeenCalledTimes(1);
+    });
+
+    it('stops before writing when a new MD in an existing project has no frames', async () => {
+        writeProject({ name: 'replica 2' });
+        const project = projectStub(['replica 1']);
+        await expect(load(args(), makeDatabase(project))).rejects.toThrow("Missing 'frames'");
+        expect(project.resumePendingDeletions).not.toHaveBeenCalled();
+    });
+
+    it('does not require frames for MDs already in the project', async () => {
+        writeProject({ name: 'replica 1' });
+        const project = projectStub(['replica 1']);
+        await expect(load(args(), makeDatabase(project))).rejects.toThrow('passed the check');
+    });
+});

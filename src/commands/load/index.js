@@ -230,6 +230,25 @@ const load = async (
     return true;
   };
 
+  // Make sure every new MD has the number of frames in its metadata
+  // An MD is new when its metadata name does not match any MD in the existing project
+  // If there is no existing project yet then all MDs are new
+  // This is checked before writing anything in the database so the load does not stop halfway
+  const checkNewMdsHaveFrames = async existingProject => {
+    for (const [mdir, directoryFiles] of Object.entries(categorizedMdFiles)) {
+      const mdMetadataFile = directoryFiles.metadataFile;
+      // MDs with no metadata are never new, they are matched by directory further
+      if (!mdMetadataFile) continue;
+      const mdMetadataFilepath = mdir + '/' + mdMetadataFile;
+      const mdMetadata = await loadJSON(mdMetadataFilepath);
+      if (!mdMetadata) throw new Error(`There is something wrong with the MD metadata file in ${mdir}`);
+      const isNewMD = !existingProject || existingProject.findMDIndexByName(mdMetadata.name) === null;
+      if (!isNewMD) continue;
+      if (mdMetadata.frames === undefined || mdMetadata.frames === null)
+        throw new Error(`Missing 'frames' in the metadata of new MD '${mdMetadata.name}' (${mdMetadataFilepath}). The whole load has been stopped.`);
+    }
+  };
+
   // Read the inputs file
   // Inputs file is not to be loaded but it may contain parameters which are to be considered during the load
   const inputsFile = categorizedProjectFiles.inputsFile;
@@ -257,9 +276,13 @@ const load = async (
       if (forcedAccession.includes('.')) throw new Error(`Accessions must not include dots`);
       // If the project exists then we sync it
       const alreadyExistingProject = await database.syncProject(forcedAccession);
-      if (alreadyExistingProject) return alreadyExistingProject;
+      if (alreadyExistingProject) {
+        await checkNewMdsHaveFrames(alreadyExistingProject);
+        return alreadyExistingProject;
+      }
       // Check we have the essentials
       if (!hasEssentials()) throw new Error(`Missing essential files`);
+      await checkNewMdsHaveFrames(null);
       // If the project does not exist then create it and set its accession as requested
       isNewProject = true;
       return await database.createProject(forcedAccession);
@@ -268,7 +291,10 @@ const load = async (
     if (registeredId) {
       const alreadyExistingProject = await database.syncProject(registeredId);
       // If we had a register and the project exists then use it
-      if (alreadyExistingProject) return alreadyExistingProject;
+      if (alreadyExistingProject) {
+        await checkNewMdsHaveFrames(alreadyExistingProject);
+        return alreadyExistingProject;
+      }
       // If we had a register but the project does not exist then print a warning but keep going and create a new project
       // Also remove the register since it is not valid anymore
       console.log(chalk.yellow(`WARNING: There was a register of project '${registeredId}' but it does not exist anymore`));
@@ -276,6 +302,7 @@ const load = async (
     }
     // Check we have the essentials
     if (!hasEssentials()) throw new Error(`Missing essential files`);
+    await checkNewMdsHaveFrames(null);
     // If there is no valid predefined accession then create a new project with a default formatted accession
     isNewProject = true;
     return await database.createProject();
