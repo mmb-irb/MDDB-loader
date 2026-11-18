@@ -501,9 +501,13 @@ const load = async (
       const confirm = await project.forestallFileLoad(databaseFilename, mdIndex, conserve, overwrite);
       if (!confirm) continue;
       // Box vectors are loaded only for the main trajectory and only when the box is dynamic
-      // Constant boxes are already in the project metadata
+      // Constant boxes are already in the metadata
+      // The project metadata has the box of the reference MD and other MDs have their box in their metadata only if it is different
+      // Note that the MD box may be null if this MD has no box
       const isMainTrajectory = file === directoryFiles.mainTrajectory;
-      const boxFilename = isMainTrajectory && project.data.metadata?.BOX === 'dyn' ? database.STANDARD_BOX_FILENAME : undefined;
+      const mdMetadata = project.data.mds[mdIndex]?.metadata;
+      const mdBox = mdMetadata && 'BOX' in mdMetadata ? mdMetadata.BOX : project.data.metadata?.BOX;
+      const boxFilename = isMainTrajectory && mdBox === 'dyn' ? database.STANDARD_BOX_FILENAME : undefined;
       // The previous box file belongs to the previous trajectory so it must go away as well
       if (isMainTrajectory && project.findFile(database.STANDARD_BOX_FILENAME, mdIndex))
         await project.deleteFile(database.STANDARD_BOX_FILENAME, mdIndex);
