@@ -129,9 +129,9 @@ const readBitsUpTo32 = count => {
     return ((high << 16) | readBits(16)) & ((1 << count) - 1);
 };
 
-// Read up to 24 bits written as bytes with the least significant byte first, the last byte having the bits left
-const readLimb = count => {
-    const value = readBits(count);
+// Numbers of several bytes are written with the least significant byte first, the last byte having the bits left
+// Given "count" bits (up to 24) as they were read, with the first bit as the most significant, returns the number
+const reverseBytes = (value, count) => {
     if (count <= 8) return value;
     if (count <= 16) {
         const last = count - 8;
@@ -140,6 +140,9 @@ const readLimb = count => {
     const last = count - 16;
     return (value >>> (8 + last)) | (((value >>> last) & 0xff) << 8) | ((value & ((1 << last) - 1)) << 16);
 };
+
+// Read a number of up to 24 bits
+const readLimb = count => reverseBytes(readBits(count), count);
 
 // receiveints: read 3 ints packed in "bits" bits as the number (int0 * size1 + int1) * size2 + int2
 // They are left in these variables, to return them without creating an array for every atom
@@ -178,9 +181,141 @@ const readHugeInts = (bits, size1, size2) => {
     int0 = (mid1 * LIMB + low1) | 0;
 };
 
+// Bits up to which the fast decoder below reads the 3 ints of an atom: with 52 bits the number is still exact
+// That is enough for a box of 160 nm with a precision of 1000
+const FAST_MAX_PACKED_BITS = 52;
+// And its 3 small differences: two pieces of 24 bits
+const FAST_MAX_SMALL_BITS = 48;
+
+// The loop of decodeCoordinates for the usual frames: the 3 ints of an atom packed in up to 52 bits, and its small
+// differences in up to 48. It does the same, but faster: it is one function, with the bit reader written
+// in place and its state in local variables, which the JavaScript engine keeps in registers
+// It returns false as soon as it finds anything it is not made for, damaged frames included: nothing fails here
+// decodeCoordinates then decodes the frame again from the start, so it is the one that says what is wrong
+const decodeUsualCoordinates = (bytes, dataOffset, dataBytes, natoms, coordinates, inversePrecision, min0, min1, min2, size1, size2, packedBits, smallidx) => {
+    const ncoordinates = natoms * 3;
+    const dataBits = dataBytes * 8;
+    // The 3 ints of an atom are read in up to 3 pieces of up to 24 bits
+    const firstBits = packedBits < 24 ? packedBits : 24;
+    const secondBits = packedBits < 48 ? packedBits - firstBits : 24;
+    const thirdBits = packedBits - firstBits - secondBits;
+    let smaller = MAGICINTS[smallidx - 1 > FIRSTIDX ? smallidx - 1 : FIRSTIDX] >> 1;
+    let smallnum = MAGICINTS[smallidx] >> 1;
+    let sizesmall = MAGICINTS[smallidx];
+    // Bits read so far. To read some bits, the 4 bytes with the next bit are joined and shifted
+    let read = 0;
+    let index = 0;
+    let window = 0;
+    let run = 0;
+    let c = 0;
+    while (c < ncoordinates) {
+        // The 3 ints of the atom
+        index = dataOffset + (read >>> 3);
+        window = (bytes[index] << 24) | (bytes[index + 1] << 16) | (bytes[index + 2] << 8) | bytes[index + 3];
+        let packed = reverseBytes((window << (read & 7)) >>> (32 - firstBits), firstBits);
+        read += firstBits;
+        if (secondBits > 0) {
+            index = dataOffset + (read >>> 3);
+            window = (bytes[index] << 24) | (bytes[index + 1] << 16) | (bytes[index + 2] << 8) | bytes[index + 3];
+            packed += reverseBytes((window << (read & 7)) >>> (32 - secondBits), secondBits) * LIMB;
+            read += secondBits;
+            if (thirdBits > 0) {
+                index = dataOffset + (read >>> 3);
+                window = (bytes[index] << 24) | (bytes[index + 1] << 16) | (bytes[index + 2] << 8) | bytes[index + 3];
+                packed += ((window << (read & 7)) >>> (32 - thirdBits)) * LIMB * LIMB;
+                read += thirdBits;
+            }
+        }
+        let rest = Math.floor(packed / size2);
+        let z = (packed - rest * size2 + min2) | 0;
+        let x = Math.floor(rest / size1);
+        let y = (rest - x * size1 + min1) | 0;
+        x = (x + min0) | 0;
+        // The bit that tells if the run length changes, and the 5 bits with the new one if it does
+        index = dataOffset + (read >>> 3);
+        window = (bytes[index] << 24) | (bytes[index + 1] << 16) | (bytes[index + 2] << 8) | bytes[index + 3];
+        const flagAndRun = (window << (read & 7)) >>> 26;
+        let isSmaller = 0;
+        if (flagAndRun >= 32) {
+            run = flagAndRun & 31;
+            read += 6;
+            isSmaller = run % 3;
+            run -= isSmaller;
+            isSmaller--;
+        } else read += 1;
+        if (c + 3 + run > ncoordinates) return false;
+        for (let k = 0; k < run; k += 3) {
+            // The 3 small differences with the atom before, packed in smallidx bits
+            let nextX;
+            let nextY;
+            let nextZ;
+            index = dataOffset + (read >>> 3);
+            window = (bytes[index] << 24) | (bytes[index + 1] << 16) | (bytes[index + 2] << 8) | bytes[index + 3];
+            if (smallidx <= 24) {
+                // One piece, which is an int32: so are its divisions
+                packed = reverseBytes((window << (read & 7)) >>> (32 - smallidx), smallidx);
+                read += smallidx;
+                rest = (packed / sizesmall) | 0;
+                nextZ = (packed - rest * sizesmall + z - smallnum) | 0;
+                nextX = (rest / sizesmall) | 0;
+                nextY = (rest - nextX * sizesmall + y - smallnum) | 0;
+                nextX = (nextX + x - smallnum) | 0;
+            } else {
+                packed = reverseBytes((window << (read & 7)) >>> 8, 24);
+                read += 24;
+                index = dataOffset + (read >>> 3);
+                window = (bytes[index] << 24) | (bytes[index + 1] << 16) | (bytes[index + 2] << 8) | bytes[index + 3];
+                packed += reverseBytes((window << (read & 7)) >>> (56 - smallidx), smallidx - 24) * LIMB;
+                read += smallidx - 24;
+                rest = Math.floor(packed / sizesmall);
+                nextZ = (packed - rest * sizesmall + z - smallnum) | 0;
+                nextX = Math.floor(rest / sizesmall);
+                nextY = (rest - nextX * sizesmall + y - smallnum) | 0;
+                nextX = (nextX + x - smallnum) | 0;
+            }
+            if (k === 0) {
+                // The first atom of a run is written after the second
+                coordinates[c++] = Math.fround(nextX) * inversePrecision;
+                coordinates[c++] = Math.fround(nextY) * inversePrecision;
+                coordinates[c++] = Math.fround(nextZ) * inversePrecision;
+                coordinates[c++] = Math.fround(x) * inversePrecision;
+                coordinates[c++] = Math.fround(y) * inversePrecision;
+                coordinates[c++] = Math.fround(z) * inversePrecision;
+            } else {
+                coordinates[c++] = Math.fround(nextX) * inversePrecision;
+                coordinates[c++] = Math.fround(nextY) * inversePrecision;
+                coordinates[c++] = Math.fround(nextZ) * inversePrecision;
+            }
+            x = nextX;
+            y = nextY;
+            z = nextZ;
+        }
+        if (run === 0) {
+            coordinates[c++] = Math.fround(x) * inversePrecision;
+            coordinates[c++] = Math.fround(y) * inversePrecision;
+            coordinates[c++] = Math.fround(z) * inversePrecision;
+        }
+        if (isSmaller !== 0) {
+            smallidx += isSmaller;
+            if (smallidx < FIRSTIDX || smallidx > FAST_MAX_SMALL_BITS) return false;
+            if (isSmaller < 0) {
+                smallnum = smaller;
+                smaller = smallidx > FIRSTIDX ? MAGICINTS[smallidx - 1] >> 1 : 0;
+            } else {
+                smaller = smallnum;
+                smallnum = MAGICINTS[smallidx] >> 1;
+            }
+            sizesmall = MAGICINTS[smallidx];
+        }
+        if (read > dataBits) return false;
+    }
+    return true;
+};
+
 // Decode the compressed coordinates of a frame into "coordinates"
 // "offset" is where the compression header starts and "dataOffset" where the compressed data does
-const decodeCoordinates = (bytes, view, offset, dataOffset, dataBytes, natoms, coordinates) => {
+// With "fast" the usual frames are decoded by the fast decoder. Returns true if it was the one that decoded this frame
+const decodeCoordinates = (bytes, view, offset, dataOffset, dataBytes, natoms, coordinates, fast) => {
     const precision = view.getFloat32(offset);
     const min0 = view.getInt32(offset + 4);
     const min1 = view.getInt32(offset + 8);
@@ -210,6 +345,17 @@ const decodeCoordinates = (bytes, view, offset, dataOffset, dataBytes, natoms, c
     // GROMACS never writes such a precision, and it would read coordinates that are infinite or not numbers
     if (!(precision > 0) || !(inversePrecision > 0) || inversePrecision === Infinity)
         throw new XtcError(`Wrong precision in xtc frame (${precision})`);
+    // Try the fast decoder if the frame is one of the usual ones. The bits of the data must fit in an int32
+    if (
+        fast &&
+        packedBits !== 0 &&
+        packedBits <= FAST_MAX_PACKED_BITS &&
+        smallidx >= FIRSTIDX &&
+        smallidx <= FAST_MAX_SMALL_BITS &&
+        dataBytes < 0x10000000 &&
+        decodeUsualCoordinates(bytes, dataOffset, dataBytes, natoms, coordinates, inversePrecision, min0, min1, min2, size1, size2, packedBits, smallidx)
+    )
+        return true;
     let smaller = magicInt(Math.max(FIRSTIDX, smallidx - 1)) >> 1;
     let smallnum = magicInt(smallidx) >> 1;
     let sizesmall = magicInt(smallidx);
@@ -292,6 +438,7 @@ const decodeCoordinates = (bytes, view, offset, dataOffset, dataBytes, natoms, c
         if (position > dataEnd || (position === dataEnd && bit > 0))
             throw new XtcError('Wrong xtc frame: its compressed data is too short');
     }
+    return false;
 };
 
 // Size in bytes of the frame starting at "offset", of which "available" bytes are there
@@ -329,9 +476,11 @@ const frameBytes = (view, offset, available, expectedAtoms) => {
 };
 
 // Decode the frame starting at "offset", which must be complete: see frameBytes
-// Returns { natoms, step, time, precision, box, coordinates }, with box and coordinates as Float32Array in nm
+// With "fast" the usual frames are decoded by the fast decoder
+// Returns { natoms, step, time, precision, box, coordinates, fast }, with box and coordinates as Float32Array in nm
+// "fast" tells if the fast decoder decoded the frame, which tests want to know
 // The box has its 3 vectors one after the other. The precision is -1 if the coordinates were not compressed, as in GROMACS
-const decodeFrame = (bytes, view, offset) => {
+const decodeFrame = (bytes, view, offset, fast) => {
     const magic = view.getInt32(offset);
     const natoms = view.getInt32(offset + 4);
     const frame = {
@@ -341,6 +490,7 @@ const decodeFrame = (bytes, view, offset) => {
         precision: -1,
         box: new Float32Array(9),
         coordinates: new Float32Array(natoms * 3),
+        fast: false,
     };
     // Floats are copied as their 4 bytes, so they stay the same whatever they are
     const boxBits = new Uint32Array(frame.box.buffer);
@@ -356,7 +506,7 @@ const decodeFrame = (bytes, view, offset) => {
     const dataBytes =
         (countBytes === 8 ? view.getInt32(dataOffset - 8) * 0x100000000 : 0) + view.getUint32(dataOffset - 4);
     try {
-        decodeCoordinates(bytes, view, offset + COORDINATES_OFFSET, dataOffset, dataBytes, natoms, frame.coordinates);
+        frame.fast = decodeCoordinates(bytes, view, offset + COORDINATES_OFFSET, dataOffset, dataBytes, natoms, frame.coordinates, fast);
     } finally {
         // Do not keep the bytes of the file after an error
         data = null;
@@ -368,6 +518,7 @@ const decodeFrame = (bytes, view, offset) => {
 // It ends returning { frames, incomplete }. As in GROMACS, if the file ends in the middle of a frame
 // the frames before are given and "incomplete" is true. Any other problem throws an XtcError
 // options.bufferBytes: bytes read from the file at once. The buffer grows if a frame is bigger
+// options.fast: false to decode all frames with the general decoder, to test it with the usual frames as well
 const readXtcFrames = function*(filepath, options = {}) {
     const fd = fs.openSync(filepath, 'r');
     try {
@@ -388,7 +539,7 @@ const readXtcFrames = function*(filepath, options = {}) {
             if (available === 0 && left === 0) return { frames, incomplete: false };
             const needed = available === 0 ? 1 : frameBytes(view, start, available, natoms);
             if (needed <= available) {
-                const frame = decodeFrame(bytes, view, start);
+                const frame = decodeFrame(bytes, view, start, options.fast !== false);
                 natoms = frame.natoms;
                 start += needed;
                 frames++;

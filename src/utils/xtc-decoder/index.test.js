@@ -15,26 +15,31 @@ const fixture = name => path.join(__dirname, 'fixtures', name);
 
 // Read an xtc file with the decoder
 // Returns its frames as GROMACS would dump them, and how it ended: incomplete or not, or with an error
+// "fast" is the number of frames the fast decoder decoded
 const read = (filepath, options) => {
     const dumps = [];
     const frames = readXtcFrames(filepath, options);
+    let fast = 0;
     let next;
     try {
-        while (!(next = frames.next()).done) dumps.push(dumpFrame(next.value));
+        while (!(next = frames.next()).done) {
+            dumps.push(dumpFrame(next.value));
+            if (next.value.fast) fast++;
+        }
     } catch (error) {
-        return { dumps, error };
+        return { dumps, error, fast };
     }
-    return { dumps, incomplete: next.value.incomplete, count: next.value.frames };
+    return { dumps, incomplete: next.value.incomplete, count: next.value.frames, fast };
 };
 
 // The same for some bytes, through a temporary file
 let temporaryDirectory;
 beforeAll(() => (temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'xtc-decoder-test-'))));
 afterAll(() => fs.rmSync(temporaryDirectory, { recursive: true, force: true }));
-const readBytes = bytes => {
+const readBytes = (bytes, options) => {
     const filepath = path.join(temporaryDirectory, 'test.xtc');
     fs.writeFileSync(filepath, bytes);
-    return read(filepath);
+    return read(filepath, options);
 };
 
 // Expect some frames to be the ones GROMACS dumped, bit by bit, telling the first value that is not
@@ -74,6 +79,15 @@ describe('xtc decoder', () => {
             expect(incomplete).toBe(false);
             expect(count).toBe(frames);
             expect(dumps[0].readInt32LE(0)).toBe(natoms);
+        });
+
+        it('reads the same frames with the general decoder alone', () => {
+            // By default the fast decoder takes the usual frames, so the general one would not see them
+            const { dumps, incomplete, error, fast } = read(fixture(`${name}.xtc`), { fast: false });
+            expect(error).toBeUndefined();
+            expectSameFrames(dumps, expected);
+            expect(incomplete).toBe(false);
+            expect(fast).toBe(0);
         });
 
         it('reads the same frames a few bytes at a time', () => {
@@ -142,6 +156,28 @@ describe('xtc decoder', () => {
                 expect(new Set(coordinates.filter((value, i) => i % 3 === 0)).size).toBe(30);
         });
 
+        it('have frames for the fast decoder and frames it leaves to the general one', () => {
+            const fast = name => read(fixture(`${name}.xtc`)).fast;
+            // Usual frames
+            expect(fast('waters')).toBe(3);
+            expect(fast('mixed')).toBe(3);
+            expect(fast('many-frames')).toBe(200);
+            // Not compressed
+            expect(fast('atoms-9')).toBe(0);
+            // Ints stored one by one
+            expect(fast('wide')).toBe(0);
+            // Atoms or small differences of more than 48 bits
+            expect(fast('zigzag')).toBe(0);
+            expect(fast('sparse')).toBe(0);
+            expect(fast('precision-100007')).toBe(0);
+            // Some frames of each
+            expect(fast('random-3')).toBe(3);
+            expect(fast('random-9')).toBe(1);
+            const all = fixtures.map(({ name, frames }) => fast(name) / frames);
+            expect(all.filter(share => share === 1).length).toBe(36);
+            expect(all.filter(share => share === 0).length).toBe(16);
+        });
+
         it('have the 2023 format with the frames of the 1995 format', () => {
             expect(header('magic-2023').magic).toBe(2023);
             expect(header('waters').magic).toBe(1995);
@@ -165,7 +201,7 @@ describe('xtc decoder', () => {
 
     describe('with a file that is not a trajectory', () => {
         it('reads no frames from an empty file', () => {
-            expect(readBytes(Buffer.alloc(0))).toEqual({ dumps: [], incomplete: false, count: 0 });
+            expect(readBytes(Buffer.alloc(0))).toEqual({ dumps: [], incomplete: false, count: 0, fast: 0 });
         });
 
         it('fails with a file that is not xtc', () => {
@@ -252,8 +288,8 @@ describe('xtc decoder', () => {
         const bytes = fs.readFileSync(fixture('bad-input-waters.xtc'));
         // Compare the decoder with what GROMACS did (in bad-input.json): [exit code, frames, warned of incomplete frame, hash]
         // Returns 'same', 'both fail', or the reason why the decoder fails when GROMACS does not
-        const compare = (damaged, [code, frames, warned, dumpHash]) => {
-            const { dumps, incomplete, error } = readBytes(damaged);
+        const compare = (damaged, [code, frames, warned, dumpHash], options) => {
+            const { dumps, incomplete, error } = readBytes(damaged, options);
             if (error && !(error instanceof XtcError)) throw error;
             // GROMACS failed or crashed: the decoder must fail
             if (code !== 0) {
@@ -271,13 +307,14 @@ describe('xtc decoder', () => {
             return 'same';
         };
 
-        it('fails when GROMACS fails and reads the same when GROMACS reads, with every byte changed in 3 ways', () => {
+        // With the fast decoder, which leaves to the general one what it cannot decode, and with the general one alone
+        it.each([[true], [false]])('fails when GROMACS fails and reads the same when GROMACS reads, with every byte changed in 3 ways (fast decoder: %s)', fast => {
             const results = {};
             for (const [key, gromacs] of Object.entries(badInput.damaged)) {
                 const [offset, flip] = key.split('^').map(Number);
                 const damaged = Buffer.from(bytes);
                 damaged[offset] ^= flip;
-                const result = compare(damaged, gromacs);
+                const result = compare(damaged, gromacs, { fast });
                 results[result] = (results[result] || 0) + 1;
             }
             // Changes in the time, the step, the box and most of the compressed data cannot be noticed: xtc has no checksum
@@ -336,9 +373,11 @@ describe('xtc decoder', () => {
         it.each(badInput.edited)('with $what', ({ what, changes, gromacs }) => {
             const damaged = Buffer.from(bytes);
             for (const [offset, hexadecimal] of changes) Buffer.from(hexadecimal, 'hex').copy(damaged, offset);
-            const result = compare(damaged, gromacs);
-            if (EDITS[what] === 'same') return expect(result).toBe('same');
-            expect(readBytes(damaged).error.message).toMatch(EDITS[what]);
+            for (const fast of [true, false]) {
+                const result = compare(damaged, gromacs, { fast });
+                if (EDITS[what] === 'same') expect(result).toBe('same');
+                else expect(readBytes(damaged, { fast }).error.message).toMatch(EDITS[what]);
+            }
         });
     });
 });
