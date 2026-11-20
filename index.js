@@ -120,7 +120,8 @@ yargs
             // --timeout-ms
             .option('t', {
                 alias: 'timeout',
-                description: 'Wait time in seconds for newly uploaded file documents to become visible in MongoDB',
+                description: 'Wait time in seconds for a newly uploaded file document to become visible in MongoDB. ' +
+                    'Only used if the MongoDB driver does not return the document once inserted, which current drivers do',
                 type: 'integer',
                 default: null,
             }),

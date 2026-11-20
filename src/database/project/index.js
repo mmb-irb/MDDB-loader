@@ -699,8 +699,10 @@ class Project {
             this.database.currentUploadId = uploadStream.id;
             // If there is an error then display the end of this process as failure in console
             // Without throwing (failLog throws), so the promise is rejected
-            uploadStream.on('error', error => {
+            // Delete the chunks already written before rejecting, since the loader exits right after
+            uploadStream.on('error', async error => {
                 logger.stopFailLog(`💽 Failed to load trajectory file '${basename}' as '${filename}' [${uploadStream.id}] (${error.message})`);
+                await this.database.abortUpload(uploadStream);
                 reject(error);
             });
             // This function is equivalent to openning a new terinal and typing this:

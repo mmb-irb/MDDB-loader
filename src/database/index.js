@@ -22,6 +22,9 @@ const Project = require('./project');
 const Reference = require('./reference');
 const { GRIDFS_CHUNK_BYTES, CHUNKS_PER_WRITE } = require('../utils/constants');
 
+// Time for the chunks still in flight to land before deleting the chunks of a failed upload
+const ABORT_SETTLE_MS = 2000;
+
 // Set the loader-specific database handler class
 class Database4Loader extends Database {
     constructor (client) {
@@ -233,30 +236,32 @@ class Database4Loader extends Database {
             metadata: metadata,
             chunkSizeBytes: GRIDFS_CHUNK_BYTES,
         });
-        // The resulting id of the current upload stream is saved as an environment variable
-        // In case of abort, this id is used by the automatic cleanup to find orphan chunks
+        // The id of the current upload, to register the file in its project
         this.currentUploadId = uploadStream.id;
-        // Promise is not resolved if the readable stream returns error
+        // Progress rounded to 2 decimals. An empty file is complete from the start
+        const getProgress = () => (totalData > 0 ? Math.round((currentData / totalData) * 10000) / 100 : 100);
+        // If reading or uploading fails, delete the chunks already written and reject
         // Show the fail without throwing (failLog throws), so the promise is rejected
-        readStream.on('error', error => {
-            const progress = Math.round((currentData / totalData) * 10000) / 100;
-            logger.stopFailLog(`💽 Failed to load file ${label} -> ${uploadStream.id} at ${progress} %`);
-            reject(error);
-        });
-        // Nor if the upload fails, e.g. MongoDB rejects a chunk or the file document
-        // Without this listener the error would crash the loader
-        uploadStream.on('error', error => {
-            const progress = Math.round((currentData / totalData) * 10000) / 100;
-            logger.stopFailLog(`💽 Failed to load file ${label} -> ${uploadStream.id} at ${progress} % (${error.message})`);
+        let failed = false;
+        const fail = async (error, message) => {
+            if (failed) return;
+            failed = true;
+            logger.stopFailLog(message);
             readStream.destroy();
+            await this.abortUpload(uploadStream);
             reject(error);
-        });
+        };
+        readStream.on('error', error =>
+            fail(error, `💽 Failed to read file ${label} -> ${uploadStream.id} at ${getProgress()} % (${error.message})`));
+        // E.g. MongoDB rejects a chunk or the file document. Without this listener the error would crash the loader
+        uploadStream.on('error', error =>
+            fail(error, `💽 Failed to load file ${label} -> ${uploadStream.id} at ${getProgress()} % (${error.message})`));
         // Output the percentaje of data already loaded to the logs
         readStream.on('data', async data => {
             // Sum the new data chunk number of bytes
             currentData += data.length;
             // Calculate the progress rounded to 2 decimals
-            const progress = Math.round((currentData / totalData) * 10000) / 100;
+            const progress = getProgress();
             // Calculate the amount of time we have been loading the file
             const time = prettyMs(Date.now() - logger.logTime());
             // Calculate upload speed
@@ -273,21 +278,34 @@ class Database4Loader extends Database {
                 if (abort) await abort();
                 readStream.resume();
             });
-            // At the end
-            if (currentData / totalData === 1) {
-                uploadStream.end(error => {
-                    if (error) return;
-                    // Calculate final average speed
-                    const totalSeconds = (Date.now() - startTime) / 1000;
-                    const avgSpeedMBps = (totalData / totalSeconds / (1000 * 1000)).toFixed(2);
-                    // Display it through the logs
-                    logger.successLog(`💽 Loaded file ${label} -> ${uploadStream.id} (100 %) [avg: ${avgSpeedMBps} MB/s]`);
-                    // The driver only calls back once the file document is inserted and acknowledged, and keeps it
-                    resolve(uploadStream.gridFSFile);
-                });
-            }
+        });
+        // At the end of the file, also of an empty one, which gives no data
+        // The read stream is paused until every write is inserted, so this comes after the last one
+        readStream.on('end', () => {
+            uploadStream.end(error => {
+                if (error) return;
+                // Calculate final average speed
+                const totalSeconds = (Date.now() - startTime) / 1000;
+                const avgSpeedMBps = (currentData / totalSeconds / (1000 * 1000)).toFixed(2);
+                // Display it through the logs
+                logger.successLog(`💽 Loaded file ${label} -> ${uploadStream.id} (100 %) [avg: ${avgSpeedMBps} MB/s]`);
+                // The driver only calls back once the file document is inserted and acknowledged, and keeps it
+                resolve(uploadStream.gridFSFile);
+            });
         });
     });
+
+    // Delete the chunks of a failed upload, which would stay in the database without their file document
+    // Other chunks of the same write may still be in flight when one fails: give them time to land first
+    // Best effort, since the failure may also keep this from working, e.g. if MongoDB is not reachable
+    abortUpload = async uploadStream => {
+        await new Promise(resolve => setTimeout(resolve, ABORT_SETTLE_MS));
+        try {
+            await this.db.collection('fs.chunks').deleteMany({ files_id: uploadStream.id });
+        } catch (error) {
+            logger.printLog(chalk.yellow(`💽 Failed to delete the chunks of the failed upload ${uploadStream.id} (${error.message})`));
+        }
+    };
 
     // Delete a file from the database both from fs.files / fs.chunks
     deleteFile = async query => {

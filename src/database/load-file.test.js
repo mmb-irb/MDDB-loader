@@ -29,12 +29,13 @@ describe('loading a file', () => {
         directory = fs.mkdtempSync(path.join(os.tmpdir(), 'loader-load-file-'));
     }, 60000);
 
+    // Stopping the Mongo Memory Server after the big test files can take a while
     afterAll(async () => {
         const client = database && database.client;
         if (client && 'close' in client) await client.close();
         if (client && client._mongod) await client._mongod.stop();
         if (directory) fs.rmSync(directory, { recursive: true, force: true });
-    });
+    }, 60000);
 
     // A project with one MD, in the database and as a handler
     let projects = 0;
@@ -119,7 +120,9 @@ describe('loading a file', () => {
     });
 
     // Record the size of every write of the next upload stream and the most chunk inserts in flight at once
-    const watchNextUpload = () => {
+    // With "failInsert", that chunk insert (1 for the first) fails
+    const watchNextUpload = ({ failInsert } = {}) => {
+        let inserts = 0;
         const writes = [];
         const inFlight = { now: 0, most: 0 };
         let chunksCollection;
@@ -136,7 +139,9 @@ describe('loading a file', () => {
             stream.chunks.insertOne = async (...insertArgs) => {
                 inFlight.now += 1;
                 inFlight.most = Math.max(inFlight.most, inFlight.now);
+                inserts += 1;
                 try {
+                    if (inserts === failInsert) throw new Error('insert failed');
                     return await insertOne(...insertArgs);
                 } finally {
                     inFlight.now -= 1;
@@ -170,6 +175,33 @@ describe('loading a file', () => {
         const downloaded = [];
         for await (const piece of database.bucket.openDownloadStream(fileDocument._id)) downloaded.push(piece);
         expect(Buffer.concat(downloaded).equals(content)).toBe(true);
+    });
+
+    it('loads an empty file and files of exactly 4 and 16 MiB', async () => {
+        // An empty file gives no data to read, so the upload must end on the end of the file
+        const empty = await database.loadFile(makeFile('empty.txt', ''), 'empty.txt', {});
+        expect(empty.length).toBe(0);
+        for (const mebibytes of [4, 16]) {
+            const name = `exact-${mebibytes}.bin`;
+            const fileDocument = await database.loadFile(makeFile(name, Buffer.alloc(mebibytes * 1024 * 1024, 1)), name, {});
+            expect(fileDocument.length).toBe(mebibytes * 1024 * 1024);
+            const chunks = await database.db.collection('fs.chunks').countDocuments({ files_id: fileDocument._id });
+            expect(chunks).toBe(mebibytes / 4);
+        }
+    });
+
+    it('deletes the chunks of an upload which fails in the middle', async () => {
+        // 13 MiB: one write of 4 chunks, whose second insert fails while the others land
+        const filepath = makeFile('failing-chunk.bin', crypto.randomBytes(13 * 1024 * 1024));
+        const watch = watchNextUpload({ failInsert: 2 });
+        try {
+            await expect(database.loadFile(filepath, 'failing-chunk.bin', {})).rejects.toThrow('insert failed');
+        } finally {
+            watch.restore();
+        }
+        const id = database.currentUploadId;
+        expect(await database.db.collection('fs.chunks').countDocuments({ files_id: id })).toBe(0);
+        expect(await database.files.countDocuments({ _id: id })).toBe(0);
     });
 
     it('writes a trajectory 4 chunks at a time, gathering its small pieces', async () => {
