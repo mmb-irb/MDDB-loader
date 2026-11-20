@@ -111,7 +111,7 @@ describe('delete command', () => {
 
         // Compute the project size while the file is present: it must be non-zero
         const project = await database.syncProject(projectId);
-        await project.updateTotalSize();
+        await project.updateTotals();
         const sizeWithFile = (await database.findProject(projectId)).totalSize;
         expect(sizeWithFile).toBeGreaterThan(0);
 

@@ -238,8 +238,11 @@ const deleteFunction = async (
 
     // 
     // If the parent project still exists, recompute its totals
-    this.updatedAnyMetadata = true;
-    if (project) await project.updateTotals();
+    if (project) {
+        // Recompute the simulation time too, as it was before updateTotals existed
+        project.updatedAnyMetadata = true;
+        await project.updateTotals();
+    }
 };
 
 module.exports = deleteFunction;
