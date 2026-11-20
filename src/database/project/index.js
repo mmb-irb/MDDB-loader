@@ -698,9 +698,10 @@ class Project {
             // In case of abort, this id is used by the automatic cleanup to find orphan chunks
             this.database.currentUploadId = uploadStream.id;
             // If there is an error then display the end of this process as failure in console
+            // Without throwing (failLog throws), so the promise is rejected
             uploadStream.on('error', error => {
-                logger.failLog(error);
-                reject();
+                logger.stopFailLog(`💽 Failed to load trajectory file '${basename}' as '${filename}' [${uploadStream.id}] (${error.message})`);
+                reject(error);
             });
             // This function is equivalent to openning a new terinal and typing this:
             // gmx dump -f path/to/trajectory
@@ -727,32 +728,41 @@ class Project {
             if (timeoutID) clearTimeout(timeoutID);
             logger.updateLog(`💽 All trajectory frames loaded (${frameCount}). Waiting for Mongo...`);
             // Wait until one of the endings has ended and stop any reamining timeout
-            uploadStream.end(async () => {
-                // Remove the timeout
-                if (timeout) clearTimeout(timeout);
-                // Check we actually loaded any frame
-                if (frameCount === 0) {
-                    // Delete the wrong trajectory entry
-                    // WARNING: If not deleted here, it would create a duplicate entry
-                    await this.database.bucket.delete(uploadStream.id);
-                    logger.failLog(`💽 Failed to load any frame in trajectory file '${basename}' as '${filename}' [${uploadStream.id}] -> Check Gromacs is working fine`);
-                    reject();
+            uploadStream.end(async error => {
+                // The error listener already rejected
+                if (error) return;
+                // This callback is async, so anything thrown here must reject the promise, or nothing would catch it
+                try {
+                    // Remove the timeout
+                    if (timeout) clearTimeout(timeout);
+                    // Check we actually loaded any frame
+                    if (frameCount === 0) {
+                        // Delete the wrong trajectory entry
+                        // WARNING: If not deleted here, it would create a duplicate entry
+                        await this.database.bucket.delete(uploadStream.id);
+                        const message = `💽 Failed to load any frame in trajectory file '${basename}' as '${filename}' [${uploadStream.id}] -> Check Gromacs is working fine`;
+                        logger.stopFailLog(message);
+                        // Stop here: the file is deleted, so it must not be updated nor registered
+                        return reject(new Error(message));
+                    }
+                    // Display the end of this process as success in console
+                    const totalSeconds = (Date.now() - startTime) / 1000;
+                    const avgSpeedMBps = (bytesWritten / totalSeconds / (1000 * 1000)).toFixed(2);
+                    logger.successLog(
+                        `💽 Loaded trajectory file '${basename}' as '${filename}' [${uploadStream.id}]\n(${frameCount} frames) [avg: ${avgSpeedMBps} MB/s]`);
+                    // Add the number of frames to the matadata object
+                    metadata.frames = frameCount;
+                    // Calculate the number of atoms in the loaded trajectory and add it to the metadata object
+                    metadata.atoms = uploadStream.length / frameCount / Float32Array.BYTES_PER_ELEMENT / N_COORDINATES;
+                    // Updated the recently created file document with additional metadata
+                    const result = await this.database.files.findOneAndUpdate({ _id: uploadStream.id }, { $set: { metadata: metadata } }, { includeResultMetadata: true });
+                    // If the operation failed then warn the user
+                    if (result.acknowledged === false) throw new Error(`Failed to update file data`);
+                    if (result.value === null) throw new Error(`File not found`);
+                    resolve();
+                } catch (error) {
+                    reject(error);
                 }
-                // Display the end of this process as success in console
-                const totalSeconds = (Date.now() - startTime) / 1000;
-                const avgSpeedMBps = (bytesWritten / totalSeconds / (1000 * 1000)).toFixed(2);
-                logger.successLog(
-                    `💽 Loaded trajectory file '${basename}' as '${filename}' [${uploadStream.id}]\n(${frameCount} frames) [avg: ${avgSpeedMBps} MB/s]`);
-                // Add the number of frames to the matadata object
-                metadata.frames = frameCount;
-                // Calculate the number of atoms in the loaded trajectory and add it to the metadata object
-                metadata.atoms = uploadStream.length / frameCount / Float32Array.BYTES_PER_ELEMENT / N_COORDINATES;
-                // Updated the recently created file document with additional metadata
-                const result = await this.database.files.findOneAndUpdate({ _id: uploadStream.id }, { $set: { metadata: metadata } }, { includeResultMetadata: true });
-                // If the operation failed then warn the user
-                if (result.acknowledged === false) throw new Error(`Failed to update file data`);
-                if (result.value === null) throw new Error(`File not found`);
-                resolve();
             });
         });
         // Update project data as the new file has been loaded

@@ -7,6 +7,9 @@ const { Writable } = require('stream');
 const { Database } = require('mddb-database');
 const getDatabase = require('./index');
 const Project = require('./project');
+// Trajectories are read with Gromacs. The tests give the frames instead
+jest.mock('../utils/read-and-parse-trajectory', () => jest.fn());
+const readAndParseTrajectory = require('../utils/read-and-parse-trajectory');
 
 describe('loading a file', () => {
     let database;
@@ -33,10 +36,12 @@ describe('loading a file', () => {
     });
 
     // A project with one MD, in the database and as a handler
+    let projects = 0;
     const makeProject = async () => {
+        projects += 1;
         const data = {
             _id: new Database.ObjectId(),
-            accession: 'TESTLF',
+            accession: `TESTLF${projects}`,
             published: false,
             metadata: {},
             mds: [{ name: 'replica 1', files: [], analyses: [] }],
@@ -110,5 +115,30 @@ describe('loading a file', () => {
         } finally {
             openUploadStream.mockRestore();
         }
+    });
+
+    it('rejects a trajectory with no frames, without registering its deleted file', async () => {
+        const project = await makeProject();
+        // Gromacs gives no frame
+        readAndParseTrajectory.mockImplementationOnce(async function* () {});
+        await expect(project.loadTrajectoryFile('trajectory.bin', 0, '/fake/trajectory.xtc', 'gmx', null))
+            .rejects.toThrow(/Failed to load any frame/);
+        expect(await database.files.countDocuments({ filename: 'trajectory.bin', 'metadata.project': project.id })).toBe(0);
+        expect(project.data.mds[0].files).toEqual([]);
+    });
+
+    it('loads a trajectory and stores its frames and atoms', async () => {
+        const project = await makeProject();
+        // Two frames of 3 atoms, of 3 coordinates of 4 bytes each
+        readAndParseTrajectory.mockImplementationOnce(async function* (filepath, gromacsCommand, addOneFrame) {
+            for (let frame = 0; frame < 2; frame++) {
+                addOneFrame();
+                yield Buffer.alloc(3 * 3 * 4);
+            }
+        });
+        await project.loadTrajectoryFile('trajectory.bin', 0, '/fake/trajectory.xtc', 'gmx', null);
+        const stored = await database.files.findOne({ filename: 'trajectory.bin', 'metadata.project': project.id });
+        expect(stored.metadata).toMatchObject({ frames: 2, atoms: 3 });
+        expect(project.data.mds[0].files.map(file => file.name)).toEqual(['trajectory.bin']);
     });
 });
