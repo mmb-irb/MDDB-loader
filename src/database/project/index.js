@@ -596,10 +596,12 @@ class Project {
         // Set the default metadata
         const metadata = { project: this.id, md: mdIndex };
         // Wrap all this function inside a promise which is resolved by the stream
-        await this.database.loadFile(sourceFilepath, filename, metadata, abort);
+        // It resolves with the file document, once MongoDB has acknowledged it
+        const fileDocument = await this.database.loadFile(sourceFilepath, filename, metadata, abort);
         // Wait until the file document is visible in Mongo before registering it in the project
-        // We check every 500ms until 10 seconds, which should be more than enough for the document to be visible
-        // This shouldn't be necessary but we had a problem with one of the databases not being updated on time
+        // Only needed if the driver did not return it: reads go to the primary, which already acknowledged it,
+        // and reading it back would cost one more round trip for every file
+        // We check every 500ms until the timeout
         const waitForFileDocument = async fileId => {
             const timeoutMs = this.fileDocumentTimeoutMs;
             const pollIntervalMs = 500;
@@ -612,10 +614,9 @@ class Project {
             throw new Error(`File not found with id: ${fileId}`);
         };
         const uploadedFileId = this.database.currentUploadId;
-        const result = await waitForFileDocument(uploadedFileId);
+        if (!fileDocument) await waitForFileDocument(uploadedFileId);
         // Update project data as the new file has been loaded
-        // Pass the file length (size in bytes) to update the totalSize
-        await this._addProjectFile(filename, mdIndex, uploadedFileId, result.length);
+        await this._addProjectFile(filename, mdIndex, uploadedFileId);
         // Remove this id from the current upload id
         this.database.currentUploadId = null;
     }

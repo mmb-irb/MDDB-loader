@@ -202,6 +202,7 @@ class Database4Loader extends Database {
     }
 
     // Load a file with additional custom metadata to the database
+    // Resolve with its file document (fs.files) once MongoDB has acknowledged it
     loadFile = async (sourceFilepath, filename, metadata, abort = null) => new Promise((resolve, reject) => {
         // If there is a metadata file associated to this file then load it
         const metadataFilepath = sourceFilepath + '.meta.json';
@@ -234,10 +235,19 @@ class Database4Loader extends Database {
         // In case of abort, this id is used by the automatic cleanup to find orphan chunks
         this.currentUploadId = uploadStream.id;
         // Promise is not resolved if the readable stream returns error
-        readStream.on('error', () => {
+        // Show the fail without throwing (failLog throws), so the promise is rejected
+        readStream.on('error', error => {
             const progress = Math.round((currentData / totalData) * 10000) / 100;
-            logger.failLog(`💽 Failed to load file ${label} -> ${uploadStream.id} at ${progress} %`);
-            reject();
+            logger.stopFailLog(`💽 Failed to load file ${label} -> ${uploadStream.id} at ${progress} %`);
+            reject(error);
+        });
+        // Nor if the upload fails, e.g. MongoDB rejects a chunk or the file document
+        // Without this listener the error would crash the loader
+        uploadStream.on('error', error => {
+            const progress = Math.round((currentData / totalData) * 10000) / 100;
+            logger.stopFailLog(`💽 Failed to load file ${label} -> ${uploadStream.id} at ${progress} % (${error.message})`);
+            readStream.destroy();
+            reject(error);
         });
         // Output the percentaje of data already loaded to the logs
         readStream.on('data', async data => {
@@ -255,19 +265,23 @@ class Database4Loader extends Database {
             // Pause and wait for the callback to resume
             readStream.pause();
             // Check that local buffer is sending data out before continue to prevent memory leaks
-            uploadStream.write(data, 'utf8', async () => {
+            uploadStream.write(data, 'utf8', async error => {
+                // The error listener already rejected
+                if (error) return;
                 if (abort) await abort();
                 readStream.resume();
             });
             // At the end
             if (currentData / totalData === 1) {
-                uploadStream.end(() => {
+                uploadStream.end(error => {
+                    if (error) return;
                     // Calculate final average speed
                     const totalSeconds = (Date.now() - startTime) / 1000;
                     const avgSpeedMBps = (totalData / totalSeconds / (1000 * 1000)).toFixed(2);
                     // Display it through the logs
                     logger.successLog(`💽 Loaded file ${label} -> ${uploadStream.id} (100 %) [avg: ${avgSpeedMBps} MB/s]`);
-                    resolve();
+                    // The driver only calls back once the file document is inserted and acknowledged, and keeps it
+                    resolve(uploadStream.gridFSFile);
                 });
             }
         });
