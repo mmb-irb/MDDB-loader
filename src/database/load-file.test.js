@@ -1,5 +1,6 @@
 // Tests for loading a file into GridFS and registering it in its project
 // getDatabase() connects to a fake Mongo Memory Server in 'test' context
+const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -115,6 +116,85 @@ describe('loading a file', () => {
         } finally {
             openUploadStream.mockRestore();
         }
+    });
+
+    // Record the size of every write of the next upload stream and the most chunk inserts in flight at once
+    const watchNextUpload = () => {
+        const writes = [];
+        const inFlight = { now: 0, most: 0 };
+        let chunksCollection;
+        const original = database.bucket.openUploadStream.bind(database.bucket);
+        const openUploadStream = jest.spyOn(database.bucket, 'openUploadStream').mockImplementationOnce((...args) => {
+            const stream = original(...args);
+            chunksCollection = stream.chunks;
+            const write = stream.write.bind(stream);
+            stream.write = (chunk, ...rest) => {
+                writes.push(chunk.length);
+                return write(chunk, ...rest);
+            };
+            const insertOne = stream.chunks.insertOne.bind(stream.chunks);
+            stream.chunks.insertOne = async (...insertArgs) => {
+                inFlight.now += 1;
+                inFlight.most = Math.max(inFlight.most, inFlight.now);
+                try {
+                    return await insertOne(...insertArgs);
+                } finally {
+                    inFlight.now -= 1;
+                }
+            };
+            return stream;
+        });
+        return { writes, inFlight, restore: () => {
+            openUploadStream.mockRestore();
+            // The wrapped insertOne is set on the collection object, shared by the next uploads
+            if (chunksCollection) delete chunksCollection.insertOne;
+        } };
+    };
+
+    it('writes a big file 4 chunks at a time, with its chunks in order', async () => {
+        // 37 MiB: 9 full chunks of 4 MiB and one of 1 MiB
+        const content = crypto.randomBytes(37 * 1024 * 1024);
+        const filepath = makeFile('big.bin', content);
+        const watch = watchNextUpload();
+        let fileDocument;
+        try {
+            fileDocument = await database.loadFile(filepath, 'big.bin', {});
+        } finally {
+            watch.restore();
+        }
+        expect(watch.inFlight.most).toBe(4);
+        const chunks = await database.db.collection('fs.chunks')
+            .find({ files_id: fileDocument._id }, { projection: { n: 1 } }).sort({ n: 1 }).toArray();
+        expect(chunks.map(chunk => chunk.n)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
+        // The file reads back as it was
+        const downloaded = [];
+        for await (const piece of database.bucket.openDownloadStream(fileDocument._id)) downloaded.push(piece);
+        expect(Buffer.concat(downloaded).equals(content)).toBe(true);
+    });
+
+    it('writes a trajectory 4 chunks at a time, gathering its small pieces', async () => {
+        const project = await makeProject();
+        // 1707 frames of 1024 atoms, 12 KiB each, as the trajectory reader gives them: about 20 MiB
+        const frameBytes = 1024 * 3 * 4;
+        readAndParseTrajectory.mockImplementationOnce(async function* (filepath, gromacsCommand, addOneFrame) {
+            for (let frame = 0; frame < 1707; frame++) {
+                addOneFrame();
+                yield Buffer.alloc(frameBytes, frame % 256);
+            }
+        });
+        const watch = watchNextUpload();
+        try {
+            await project.loadTrajectoryFile('trajectory.bin', 0, '/fake/trajectory.xtc', 'gmx', null);
+        } finally {
+            watch.restore();
+        }
+        // Every write but the last one has at least 4 chunks
+        expect(watch.writes.slice(0, -1).every(size => size >= 16 * 1024 * 1024)).toBe(true);
+        expect(watch.writes.reduce((sum, size) => sum + size, 0)).toBe(1707 * frameBytes);
+        const stored = await database.files.findOne({ filename: 'trajectory.bin', 'metadata.project': project.id });
+        expect(stored.metadata).toMatchObject({ frames: 1707, atoms: 1024 });
+        // 20,975,616 bytes: 5 full chunks and a small one
+        expect(await database.db.collection('fs.chunks').countDocuments({ files_id: stored._id })).toBe(6);
     });
 
     it('rejects a trajectory with no frames, without registering its deleted file', async () => {

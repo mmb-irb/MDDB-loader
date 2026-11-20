@@ -24,7 +24,7 @@ const {
 // Get metadata handlers
 const { merge_metadata } = require('./metadata-handlers');
 // Get constants
-const { ANALYSIS_ASSOCIATED_FILES, MAX_DOCUMENT_SIZE } = require('../../utils/constants');
+const { ANALYSIS_ASSOCIATED_FILES, MAX_DOCUMENT_SIZE, GRIDFS_CHUNK_BYTES, CHUNKS_PER_WRITE } = require('../../utils/constants');
 // Calculate the exact size of a document as it would be stored in MongoDB
 const { calculateObjectSize, ObjectId } = require('bson');
 
@@ -692,7 +692,7 @@ class Project {
                 filename: filename,
                 contentType: 'application/octet-stream',
                 metadata: metadata,
-                chunkSizeBytes: 4 * 1024 * 1024, // 4 MiB
+                chunkSizeBytes: GRIDFS_CHUNK_BYTES,
             });
             // The resulting id of the current upload stream is saved as an environment variable
             // In case of abort, this id is used by the automatic cleanup to find orphan chunks
@@ -710,19 +710,33 @@ class Project {
             const trajectoryCoordinates = readAndParseTrajectory(sourceFilepath, gromacsCommand, addOneFrame, abort, addOneBox);
             // Set a timeout
             let timeout;
-            // Iterate over buffers of binary coordinates
-            for await (const coordinates of trajectoryCoordinates) {
-                // Track bytes written
-                bytesWritten += coordinates.length;
+            // The coordinates come in small pieces. Gather them and write several chunks at a time,
+            // since the driver inserts the chunks of one write at the same time
+            const writeBytes = GRIDFS_CHUNK_BYTES * CHUNKS_PER_WRITE;
+            let pieces = [];
+            let piecesBytes = 0;
+            const writePieces = async () => {
+                const keepGoing = uploadStream.write(Buffer.concat(pieces, piecesBytes));
+                pieces = [];
+                piecesBytes = 0;
                 // In case of overload stop writing streams and wait until the drain is resolved
-                const keepGoing = uploadStream.write(coordinates);
                 if (!keepGoing) {
                     // Stop the loop here until the drain signal is sent
                     await new Promise(next => uploadStream.once('drain', next));
                     // Once passed, we remove the timeout
                     if (timeout) clearTimeout(timeout);
                 }
+            };
+            // Iterate over buffers of binary coordinates
+            for await (const coordinates of trajectoryCoordinates) {
+                // Track bytes written
+                bytesWritten += coordinates.length;
+                pieces.push(coordinates);
+                piecesBytes += coordinates.length;
+                if (piecesBytes >= writeBytes) await writePieces();
             }
+            // Write the last pieces
+            if (piecesBytes > 0) await writePieces();
             // Update the logs
             updateLogs.cancel();
             if (timeoutID) clearTimeout(timeoutID);

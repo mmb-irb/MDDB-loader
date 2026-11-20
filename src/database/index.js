@@ -20,6 +20,7 @@ const {
 const Project = require('./project');
 // The reference class is used to handle database data from a specific reference
 const Reference = require('./reference');
+const { GRIDFS_CHUNK_BYTES, CHUNKS_PER_WRITE } = require('../utils/constants');
 
 // Set the loader-specific database handler class
 class Database4Loader extends Database {
@@ -219,8 +220,9 @@ class Database4Loader extends Database {
         let currentData = 0;
         const startTime = Date.now();
         // Start reading the file by streaming
+        // Read several chunks at a time, since the driver inserts the chunks of one write at the same time
         const readStream = fs.createReadStream(sourceFilepath,
-            { highWaterMark: 4 * 1024 * 1024 } // 4 MiB buffer
+            { highWaterMark: GRIDFS_CHUNK_BYTES * CHUNKS_PER_WRITE } // 16 MiB buffer
         );
         // Open the mongo writable stream with a few customized options
         // All data uploaded to mongo by this way is stored in fs.chunks
@@ -229,7 +231,7 @@ class Database4Loader extends Database {
             // Check that the file format is accepted. If not, change it to "octet-stream"
             contentType: getMimeTypeFromFilename(filename),
             metadata: metadata,
-            chunkSizeBytes: 4 * 1024 * 1024, // 4 MiB
+            chunkSizeBytes: GRIDFS_CHUNK_BYTES,
         });
         // The resulting id of the current upload stream is saved as an environment variable
         // In case of abort, this id is used by the automatic cleanup to find orphan chunks

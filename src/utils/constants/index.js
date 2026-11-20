@@ -121,6 +121,11 @@ module.exports = {
     INCOMPLETE_DIRECTORY_PREFIX: 'incomplete_',
     // Maximum size of a MongoDB document, in bytes (16 MiB)
     MAX_DOCUMENT_SIZE: 16 * 1024 * 1024,
+    // Size of the GridFS chunks of the loaded files, in bytes (4 MiB)
+    GRIDFS_CHUNK_BYTES: 4 * 1024 * 1024,
+    // Files are written this many chunks at a time: the driver inserts the chunks of one write at the same time,
+    // so a slow link waits for one round trip per write instead of one per chunk
+    CHUNKS_PER_WRITE: 4,
     // These are just URLs to access web pages with useful alaytical tools
     interProScanURL: 'https://www.ebi.ac.uk/Tools/services/rest/iprscan5',
     hmmerURL: 'https://www.ebi.ac.uk/Tools/hmmer/',
