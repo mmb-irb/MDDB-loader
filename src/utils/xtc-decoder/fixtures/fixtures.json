@@ -1,0 +1,326 @@
+[
+ {
+  "name": "atoms-1",
+  "covers": "1 atom: 9 atoms or less are not compressed",
+  "natoms": 1,
+  "frames": 3
+ },
+ {
+  "name": "atoms-9",
+  "covers": "9 atoms: 9 atoms or less are not compressed",
+  "natoms": 9,
+  "frames": 3
+ },
+ {
+  "name": "atoms-10",
+  "covers": "10 atoms: the smallest compressed frame",
+  "natoms": 10,
+  "frames": 3
+ },
+ {
+  "name": "atoms-16",
+  "covers": "16 atoms: GROMACS has a fixed buffer for up to 16 atoms",
+  "natoms": 16,
+  "frames": 2
+ },
+ {
+  "name": "atoms-17",
+  "covers": "17 atoms: GROMACS has a fixed buffer for up to 16 atoms",
+  "natoms": 17,
+  "frames": 2
+ },
+ {
+  "name": "ndec-0",
+  "covers": "precision 10^0",
+  "natoms": 60,
+  "frames": 2
+ },
+ {
+  "name": "ndec-1",
+  "covers": "precision 10^1",
+  "natoms": 60,
+  "frames": 2
+ },
+ {
+  "name": "ndec-2",
+  "covers": "precision 10^2",
+  "natoms": 60,
+  "frames": 2
+ },
+ {
+  "name": "ndec-3",
+  "covers": "precision 10^3",
+  "natoms": 60,
+  "frames": 2
+ },
+ {
+  "name": "ndec-4",
+  "covers": "precision 10^4",
+  "natoms": 60,
+  "frames": 2
+ },
+ {
+  "name": "ndec-5",
+  "covers": "precision 10^5",
+  "natoms": 60,
+  "frames": 2
+ },
+ {
+  "name": "ndec-6",
+  "covers": "precision 10^6",
+  "natoms": 60,
+  "frames": 2
+ },
+ {
+  "name": "ndec-7",
+  "covers": "precision 10^7",
+  "natoms": 60,
+  "frames": 2
+ },
+ {
+  "name": "ndec-8",
+  "covers": "precision 10^8",
+  "natoms": 60,
+  "frames": 2
+ },
+ {
+  "name": "precision-3",
+  "covers": "precision 3, which is not a power of 10",
+  "natoms": 40,
+  "frames": 5
+ },
+ {
+  "name": "precision-500",
+  "covers": "precision 500, which is not a power of 10",
+  "natoms": 40,
+  "frames": 5
+ },
+ {
+  "name": "precision-1234",
+  "covers": "precision 1234, which is not a power of 10",
+  "natoms": 40,
+  "frames": 5
+ },
+ {
+  "name": "precision-100007",
+  "covers": "precision 100007, which is not a power of 10",
+  "natoms": 40,
+  "frames": 5
+ },
+ {
+  "name": "negative",
+  "covers": "negative coordinates only",
+  "natoms": 60,
+  "frames": 2
+ },
+ {
+  "name": "far-from-origin",
+  "covers": "coordinates over 1000 nm",
+  "natoms": 60,
+  "frames": 2
+ },
+ {
+  "name": "very-far-from-origin",
+  "covers": "integers over 2^24, which a float32 cannot hold exactly",
+  "natoms": 60,
+  "frames": 2
+ },
+ {
+  "name": "wide",
+  "covers": "a range over 2^24 in every dimension: the 3 integers of an atom are stored one by one, 25 bits each",
+  "natoms": 40,
+  "frames": 2
+ },
+ {
+  "name": "wide-waters",
+  "covers": "the same with water molecules, so there are runs too",
+  "natoms": 60,
+  "frames": 2
+ },
+ {
+  "name": "wide-x",
+  "covers": "a range over 2^24 in x only: integers stored one by one with 25, 13 and 1 bits",
+  "natoms": 40,
+  "frames": 2
+ },
+ {
+  "name": "range-30-bits",
+  "covers": "the widest range GROMACS reads well, 30 bits",
+  "natoms": 30,
+  "frames": 2
+ },
+ {
+  "name": "range-32-bits",
+  "covers": "a range of 2^30 or more takes 32 bits, which GROMACS reads as 0: all atoms get the minimum x and y",
+  "natoms": 30,
+  "frames": 2
+ },
+ {
+  "name": "waters",
+  "covers": "water molecules: runs of 2 atoms with the first two atoms interchanged",
+  "natoms": 300,
+  "frames": 3
+ },
+ {
+  "name": "chain",
+  "covers": "a chain: runs of 8 atoms, the longest",
+  "natoms": 200,
+  "frames": 2
+ },
+ {
+  "name": "mixed",
+  "covers": "a bit of everything: the run length and the size of the small differences go up and down",
+  "natoms": 400,
+  "frames": 3
+ },
+ {
+  "name": "same-point",
+  "covers": "all atoms at the same point: sizes of 1 and the smallest small differences",
+  "natoms": 30,
+  "frames": 2
+ },
+ {
+  "name": "plane",
+  "covers": "all atoms in a plane: a size of 1",
+  "natoms": 60,
+  "frames": 2
+ },
+ {
+  "name": "line",
+  "covers": "all atoms in a line: two sizes of 1",
+  "natoms": 60,
+  "frames": 2
+ },
+ {
+  "name": "zigzag",
+  "covers": "consecutive atoms 1.5 nm apart with precision 10^6: small differences and atoms of more than 48 bits",
+  "natoms": 30,
+  "frames": 2
+ },
+ {
+  "name": "sparse",
+  "covers": "consecutive atoms 10 nm apart with precision 10^6: smallidx is 73, after the end of the table, and atoms have 72 bits",
+  "natoms": 30,
+  "frames": 2
+ },
+ {
+  "name": "sparse-wide",
+  "covers": "the same 30 nm apart: smallidx 73 and integers stored one by one",
+  "natoms": 30,
+  "frames": 2
+ },
+ {
+  "name": "single-frame",
+  "covers": "only one frame",
+  "natoms": 100,
+  "frames": 1
+ },
+ {
+  "name": "identical-frames",
+  "covers": "4 frames with the same coordinates",
+  "natoms": 100,
+  "frames": 4
+ },
+ {
+  "name": "many-frames",
+  "covers": "200 frames of 12 atoms that move a bit, with a box that grows",
+  "natoms": 12,
+  "frames": 200
+ },
+ {
+  "name": "boxes",
+  "covers": "cubic, rectangular, triclinic, huge, tiny and no box",
+  "natoms": 20,
+  "frames": 8
+ },
+ {
+  "name": "steps-and-times",
+  "covers": "steps up to the limits of an int32 and times a float32 cannot hold exactly",
+  "natoms": 20,
+  "frames": 7
+ },
+ {
+  "name": "waters-3000",
+  "covers": "3000 atoms: bigger frames, to read the file in several pieces",
+  "natoms": 3000,
+  "frames": 3
+ },
+ {
+  "name": "random-1",
+  "covers": "a system made at random",
+  "natoms": 227,
+  "frames": 4
+ },
+ {
+  "name": "random-2",
+  "covers": "a system made at random",
+  "natoms": 1890,
+  "frames": 4
+ },
+ {
+  "name": "random-3",
+  "covers": "a system made at random",
+  "natoms": 568,
+  "frames": 4
+ },
+ {
+  "name": "random-4",
+  "covers": "a system made at random",
+  "natoms": 7,
+  "frames": 4
+ },
+ {
+  "name": "random-5",
+  "covers": "a system made at random",
+  "natoms": 18,
+  "frames": 1
+ },
+ {
+  "name": "random-6",
+  "covers": "a system made at random",
+  "natoms": 14,
+  "frames": 2
+ },
+ {
+  "name": "random-7",
+  "covers": "a system made at random",
+  "natoms": 113,
+  "frames": 1
+ },
+ {
+  "name": "random-8",
+  "covers": "a system made at random",
+  "natoms": 121,
+  "frames": 2
+ },
+ {
+  "name": "random-9",
+  "covers": "a system made at random",
+  "natoms": 1813,
+  "frames": 2
+ },
+ {
+  "name": "random-10",
+  "covers": "a system made at random",
+  "natoms": 15,
+  "frames": 1
+ },
+ {
+  "name": "random-11",
+  "covers": "a system made at random",
+  "natoms": 11,
+  "frames": 2
+ },
+ {
+  "name": "random-12",
+  "covers": "a system made at random",
+  "natoms": 1104,
+  "frames": 3
+ },
+ {
+  "name": "magic-2023",
+  "covers": "magic number 2023, with the size of the compressed data as an int64",
+  "natoms": 300,
+  "frames": 3
+ }
+]
