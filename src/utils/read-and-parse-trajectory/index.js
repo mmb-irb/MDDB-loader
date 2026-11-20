@@ -1,309 +1,191 @@
-// Allows to call a unix command or run another script
-// The execution of this code keeps running
-const { spawn } = require('child_process');
 const { Worker, isMainThread, parentPort, workerData } = require('worker_threads');
-// Exit code for interruptions
-const { INTERRUPTION_EXIT_CODE } = require('../constants');
 
 // Constants
+// GROMACS coordinates are in nm and we store them in Ångström
 const UNIT_CONVERSION_SCALE = 10;
-const N_COORDINATES = 3;
-const BYTES_PER_ATOM = Float32Array.BYTES_PER_ELEMENT * N_COORDINATES;
-// The box is a 3x3 matrix where every row is a box vector
-const N_BOX_VECTORS = 3;
-const BYTES_PER_BOX = BYTES_PER_ATOM * N_BOX_VECTORS;
-// example matches:
-// '      x[    0]={ 6.40500e+00,  7.53800e+00,  9.81800e+00}'
-// '      x[35999]={-8.50000e-02,  1.82000e+00,  7.23700e+00}'
-const COORDINATES_REGEXP = /^\s*x\[\s*\d*]={\s*(-?\d+\.\d+e[+-]\d{2}),\s*(-?\d+\.\d+e[+-]\d{2}),\s*(-?\d+\.\d+e[+-]\d{2})\s*}\s*$/;
-const FRAME_REGEXP = / frame \d+:$/;
-// example matches:
-// '      box[    0]={ 1.56529e+01,  7.16996e-16,  1.82343e-15}'
-// '      box[    2]={ 2.53369e-15, -3.58799e-17,  1.56529e+01}'
-const BOX_REGEXP = /^\s*box\[\s*(\d+)]={\s*(-?\d+\.\d+e[+-]\d{2}),\s*(-?\d+\.\d+e[+-]\d{2}),\s*(-?\d+\.\d+e[+-]\d{2})\s*}\s*$/;
-
-// Batch size: number of atoms to accumulate before yielding
-const BATCH_SIZE = 1000; // Adjust based on memory/performance tradeoff
-// Batch size of 1000 atoms = 12KB per chunk
-// Backpressure control: max chunks in queue before worker pauses
-// GridFS uses 4MB chunks internally, so we want enough buffer to keep it fed
-const MAX_QUEUE_SIZE = 5000;
-// 5000 chunks × 12KB = ~60MB buffer, allowing worker to stay ahead of uploads
+// Backpressure control: bytes of coordinates the main thread may have waiting before the worker pauses
+// GridFS is written 16 MiB at a time, so this is enough to keep it fed
+const MAX_QUEUED_BYTES = 64 * 1024 * 1024;
+// Coordinates are given in chunks of this size at most, whatever the size of a frame
+// The loader gathers them to write 16 MiB at a time: with small chunks all its writes have about that size
+const MAX_CHUNK_BYTES = 64 * 1024;
 
 // ===================== WORKER THREAD ARCHITECTURE =====================
 // Because Node.js runs JavaScript in a single-threaded environment, heavy
-// computations (like regex parsing millions of lines) block the event loop
-// and prevent I/O operations (like MongoDB uploads) from running efficiently.
-// 
-// Solution: Use Worker Threads to run parsing in a separate CPU thread.
-// - WORKER THREAD: Spawns Gromacs, parses output lines, sends binary chunks
+// computations (like decoding the compressed coordinates of a trajectory) block
+// the event loop and prevent I/O operations (like MongoDB uploads) from running efficiently.
+//
+// Solution: Use Worker Threads to run the decoding in a separate CPU thread.
+// - WORKER THREAD: Reads the xtc file, decodes its frames, sends binary chunks
 // - MAIN THREAD: Receives chunks, uploads to MongoDB via GridFS
-// 
-// This allows true parallelism: parsing and uploading happen simultaneously
-// on different CPU cores, improving throughput by ~50% (8.6 -> 12.7 MB/sec).
+//
+// This allows true parallelism: decoding and uploading happen simultaneously
+// on different CPU cores.
 //
 // Reference: https://nodesource.com/blog/worker-threads-nodejs-multithreading-in-javascript
 //
 // ===================== WORKER THREAD CODE =====================
 if (!isMainThread) {
-    const { filepath, gromacsCommand, parseBox } = workerData;
-    
-    // Backpressure: wait for resume signal from main thread when queue is full
-    let canSend = true;
-    let resolveResume = null;
-    
-    parentPort.on('message', (msg) => {
-        if (msg.type === 'pause') {
-            canSend = false;
-        } else if (msg.type === 'resume') {
-            canSend = true;
-            if (resolveResume) {
-                const resolve = resolveResume;
-                resolveResume = null;
-                resolve();
-            }
-        }
-    });
-    
-    // Wait until main thread signals it's ready for more data
-    const waitForResume = async () => {
-        if (canSend) return;
-        await new Promise(resolve => { resolveResume = resolve; });
+    // The xtc file is decoded here, with no need of GROMACS: frames come with the same values GROMACS reads
+    const { readXtcFrames } = require('../xtc-decoder');
+    const { filepath, parseBox, queued, maxQueuedBytes } = workerData;
+
+    // Convert float32 values from nm to Ångström in place
+    // Every product is rounded once, when it is stored as float32: the same result as a float32 multiplication
+    const toAngstroms = values => {
+        for (let i = 0; i < values.length; i++) values[i] *= UNIT_CONVERSION_SCALE;
     };
-    
-    // The "*" next to function stands for this function to be a generator which returns an iterator
-    // This function is used to run Gromacs in a spawned child process and retrieve the output line by line
-    // The full command passed to this function is to be: gmx dump -f path/to/trajectory
-    const yieldCommandOutputPerLines = async function*(command, args) {
-        // "spawn" runs the provided programm in an additional process (child process)
-        // The expected command here may be for example "gmx", which runs Gromacs
-        // Gromacs is an independent program which must be installed in the computer
-        // WARNING!!
-        // Problems related to this child process not returning data may be related to backpressure
-        // The spawned Gromacs process will only return data if this data is consumed
-        // If data si not consumed the process sleeps. This is a default behaviour
-        // WARNING!! 'detached: true' prevents this child to be killed when user makes control + C
-        const spawnedProcess = spawn(command, args, { detached: true });
-        // If there is no output stream then return here
-        if (!spawnedProcess.stdout) return;
-        // Track the current stream
-        let previous = '';
-        for await (const chunk of spawnedProcess.stdout) {
-            // Add the new chunk to the current stream
-            previous += chunk;
-            // End of line (\n) index
-            let eolIndex;
-            // This while is runned multiple times for each chunk
-            while ((eolIndex = previous.indexOf('\n')) >= 0) {
-                // Yields a new string which is made by the characters from 0 to "eolIndex" in "previous"
-                // This yield does no include the end of line
-                yield previous.slice(0, eolIndex);
-                // Removes the yielded slice from the "previous" including the end of line
-                previous = previous.slice(eolIndex + 1);
-            }
+
+    // Decode the trajectory and send every frame to the main thread
+    // An error here (e.g. a damaged file) reaches the main thread as the 'error' event of the worker
+    const frames = readXtcFrames(filepath);
+    let next;
+    while (!(next = frames.next()).done) {
+        const { box, coordinates } = next.value;
+        // Send a log update signal every time a new frame starts
+        parentPort.postMessage({ type: 'frame' });
+        // Send the box, only if it was requested
+        if (parseBox) {
+            toAngstroms(box);
+            parentPort.postMessage({ type: 'box', buffer: box.buffer }, [box.buffer]);
         }
-        // Finally, if there is remaining data, send it
-        if (previous.length > 0) {
-            yield previous;
-        }
-    };
-    
-    // Parse trajectory and send chunks to main thread
-    (async () => {
-        // Run a gromacs 'dump' command to read a gromacs trajectroy file and output their coordinates in a human readable format
-        const commandArgs = ['dump', '-f', filepath];
-        // Pre-allocate a batch buffer
-        const atomBatchBuffer = Buffer.alloc(BYTES_PER_ATOM * BATCH_SIZE);
-        let batchOffset = 0;
-        // Pre-allocate a buffer for the box vectors of the current frame
-        const boxBuffer = Buffer.alloc(BYTES_PER_BOX);
-        // Iterate over the command output lines
-        for await (const line of yieldCommandOutputPerLines(gromacsCommand, commandArgs)) {
-            // Save matches with a long RegExp pattern defined above
-            const match = line.match(COORDINATES_REGEXP);
-            if (!match) {
-                // Check if it is a box vector line, only if the box was requested
-                const boxMatch = parseBox && line.match(BOX_REGEXP);
-                if (boxMatch) {
-                    const vectorIndex = +boxMatch[1];
-                    const boxOffset = vectorIndex * BYTES_PER_ATOM;
-                    boxBuffer.writeFloatLE(+boxMatch[2] * UNIT_CONVERSION_SCALE, boxOffset);     // x
-                    boxBuffer.writeFloatLE(+boxMatch[3] * UNIT_CONVERSION_SCALE, boxOffset + 4); // y
-                    boxBuffer.writeFloatLE(+boxMatch[4] * UNIT_CONVERSION_SCALE, boxOffset + 8); // z
-                    // Send the whole box once the last vector is written
-                    if (vectorIndex === N_BOX_VECTORS - 1)
-                        parentPort.postMessage({ type: 'box', buffer: Buffer.from(boxBuffer) });
-                    continue; // Next line
-                }
-                // try to check if it's a "frame number" line
-                if (FRAME_REGEXP.test(line)) {
-                    // Flush remaining buffer before frame update
-                    if (batchOffset > 0) {
-                        await waitForResume(); // Backpressure: wait if queue is full
-                        parentPort.postMessage({ type: 'data', buffer: Buffer.from(atomBatchBuffer.subarray(0, batchOffset)) });
-                        batchOffset = 0;
-                    }
-                    // Send a log update signal every time a new frame is completed
-                    parentPort.postMessage({ type: 'frame' });
-                }
-                continue; // Next line
-            }
-            // Write coordinates at the current batch offset
-            atomBatchBuffer.writeFloatLE(+match[1] * UNIT_CONVERSION_SCALE, batchOffset);     // x
-            atomBatchBuffer.writeFloatLE(+match[2] * UNIT_CONVERSION_SCALE, batchOffset + 4); // y
-            atomBatchBuffer.writeFloatLE(+match[3] * UNIT_CONVERSION_SCALE, batchOffset + 8); // z
-            batchOffset += BYTES_PER_ATOM;
-            
-            // Yield when batch is full
-            if (batchOffset >= atomBatchBuffer.length) {
-                await waitForResume(); // Backpressure: wait if queue is full
-                //Buffer.from() creates a copy, safe for async consumers
-                parentPort.postMessage({ type: 'data', buffer: Buffer.from(atomBatchBuffer) });
-                batchOffset = 0;
-            }
-        }
-        
-        // Flush any remaining data
-        if (batchOffset > 0) {
-            await waitForResume(); // Backpressure: wait if queue is full
-            parentPort.postMessage({ type: 'data', buffer: Buffer.from(atomBatchBuffer.subarray(0, batchOffset)) });
-        }
-        
-        parentPort.postMessage({ type: 'done' });
-    })();
-    
+        // Send the coordinates of the whole frame. The buffer is transferred, not copied
+        toAngstroms(coordinates);
+        Atomics.add(queued, 0, BigInt(coordinates.byteLength));
+        parentPort.postMessage({ type: 'data', buffer: coordinates.buffer }, [coordinates.buffer]);
+        // Backpressure: wait while the main thread has too many bytes waiting
+        // The main thread wakes us up every time it consumes a chunk. The timeout is just in case
+        let waiting;
+        while ((waiting = Atomics.load(queued, 0)) >= maxQueuedBytes) Atomics.wait(queued, 0, waiting, 1000);
+    }
+    // The file ended in the middle of a frame: the frames before it were sent
+    if (next.value.incomplete) parentPort.postMessage({ type: 'incomplete', frames: next.value.frames });
+    parentPort.postMessage({ type: 'done' });
+
 } else {
     // ===================== MAIN THREAD CODE =====================
-    
-    // Read a trajectory file while coordinates are parsed to float32 binary data
+    const os = require('os');
+    const chalk = require('chalk');
+    const logger = require('../logger');
+    // Exit code for interruptions
+    const { INTERRUPTION_EXIT_CODE } = require('../constants');
+
+    // Read a trajectory file (xtc) while coordinates are parsed to float32 binary data, in Ångström
     // If a box update function is passed then box vectors are parsed as well and sent to this function frame by frame
     // Every box is a buffer with 9 float32 values: the 3 box vectors, in Ångstroms
-    const readAndParseTrajectory = async function* (filepath, gromacsCommand, newFrameUpdate, abort, newBoxUpdate) {
+    // It throws if the file is damaged. If the file ends in the middle of a frame, it warns and gives the frames before it
+    // The gromacs command is not used any more, since the file is decoded here: the argument stays so callers do not change
+    // The last argument is for tests only, to try the limits above with small files
+    const readAndParseTrajectory = async function* (filepath, gromacsCommand, newFrameUpdate, abort, newBoxUpdate, limits = {}) {
+        const { maxQueuedBytes = MAX_QUEUED_BYTES, maxChunkBytes = MAX_CHUNK_BYTES } = limits;
+        // Chunks are the bytes of float32 values as they are in memory, and we store them little endian
+        if (os.endianness() !== 'LE') throw new Error('Trajectories can only be loaded from a little endian machine');
         // Track the last time we checked if the load was aborted
         let lastCheck = Date.now();
-        
+
+        // BACKPRESSURE MECHANISM: The worker produces data faster than MongoDB can upload.
+        // Without a limit the difference accumulates in the queue below, causing memory to grow
+        // (potentially to GB). When heap fills up, Node.js triggers garbage collection (GC),
+        // which pauses ALL JavaScript execution for 50-500ms, causing gaps in network upload.
+        // Solution: both threads share the number of bytes sent by the worker and not consumed yet.
+        // The worker adds to it and waits while it is over the limit, even if this thread is too busy to say so.
+        const queued = new BigInt64Array(new SharedArrayBuffer(BigInt64Array.BYTES_PER_ELEMENT));
+
         // Create worker thread for parsing
         const worker = new Worker(__filename, {
-            workerData: { filepath, gromacsCommand, parseBox: Boolean(newBoxUpdate) }
+            workerData: { filepath, parseBox: Boolean(newBoxUpdate), queued, maxQueuedBytes }
         });
-        
+
         // Queue to hold chunks from worker until consumed
-        // BACKPRESSURE MECHANISM: Without limiting queue size, the worker produces data
-        // faster than MongoDB can upload. The difference accumulates in this queue, causing
-        // memory to grow (potentially to GB). When heap fills up, Node.js triggers garbage
-        // collection (GC), which pauses ALL JavaScript execution for 50-500ms, causing gaps
-        // in network upload (the scattered pattern in monitoring).
-        // Solution: pause worker when queue reaches MAX_QUEUE_SIZE, resume when it drains.
         const chunkQueue = [];
         let resolveWaiting = null;
         let isDone = false;
         let workerError = null;
-        let workerPaused = false; // Track if worker is paused due to backpressure
-        
+        // Wake up the loop below, if it is waiting for the queue
+        const wakeUp = () => {
+            if (!resolveWaiting) return;
+            const resolve = resolveWaiting;
+            resolveWaiting = null;
+            resolve();
+        };
+
         // Handle messages from worker
         worker.on('message', (msg) => {
-            if (msg.type === 'data') {
-                chunkQueue.push(Buffer.from(msg.buffer));
-                // Pause worker if queue is getting too large
-                if (chunkQueue.length >= MAX_QUEUE_SIZE && !workerPaused) {
-                    workerPaused = true;
-                    worker.postMessage({ type: 'pause' });
-                }
-                if (resolveWaiting) {
-                    const resolve = resolveWaiting;
-                    resolveWaiting = null;
-                    resolve();
-                }
-            } else if (msg.type === 'frame') {
-                // Signal frame update - push a special marker
-                chunkQueue.push({ isFrame: true });
-                if (resolveWaiting) {
-                    const resolve = resolveWaiting;
-                    resolveWaiting = null;
-                    resolve();
-                }
-            } else if (msg.type === 'box') {
-                // Push the box as a special marker to keep it in order with frames
-                chunkQueue.push({ isBox: true, buffer: Buffer.from(msg.buffer) });
-                if (resolveWaiting) {
-                    const resolve = resolveWaiting;
-                    resolveWaiting = null;
-                    resolve();
-                }
-            } else if (msg.type === 'done') {
-                isDone = true;
-                if (resolveWaiting) {
-                    const resolve = resolveWaiting;
-                    resolveWaiting = null;
-                    resolve();
-                }
-            }
+            // The coordinates of a whole frame. The buffers are transferred, so they are wrapped and not copied
+            if (msg.type === 'data') chunkQueue.push(Buffer.from(msg.buffer));
+            // Signal frame update - push a special marker
+            else if (msg.type === 'frame') chunkQueue.push({ isFrame: true });
+            // Push the box as a special marker to keep it in order with frames
+            else if (msg.type === 'box') chunkQueue.push({ isBox: true, buffer: Buffer.from(msg.buffer) });
+            else if (msg.type === 'incomplete') logger.printLog(chalk.yellow(
+                `WARNING: Trajectory file '${filepath}' ends with an incomplete frame. Only the ${msg.frames} frames before it are loaded`));
+            else if (msg.type === 'done') isDone = true;
+            wakeUp();
         });
-        
+
         worker.on('error', (err) => {
             workerError = err;
             isDone = true;
-            if (resolveWaiting) {
-                const resolve = resolveWaiting;
-                resolveWaiting = null;
-                resolve();
-            }
+            wakeUp();
         });
-        
-        // Yield chunks as they arrive from worker
-        while (true) {
-            // Wait for data if queue is empty
-            while (chunkQueue.length === 0 && !isDone) {
-                await new Promise(resolve => { resolveWaiting = resolve; });
-            }
-            
-            // Check for errors
-            if (workerError) {
-                throw workerError;
-            }
-            
-            // If done and queue empty, exit
-            if (chunkQueue.length === 0 && isDone) {
-                break;
-            }
-            
-            // Get next item from queue
-            const item = chunkQueue.shift();
-            
-            // Resume worker if queue has drained below threshold
-            if (workerPaused && chunkQueue.length < MAX_QUEUE_SIZE / 2) {
-                workerPaused = false;
-                worker.postMessage({ type: 'resume' });
-            }
-            
-            // Handle frame marker
-            if (item.isFrame) {
-                newFrameUpdate(); // Send a log update signal every time a new frame is completed
-                continue;
-            }
 
-            // Handle box marker
-            if (item.isBox) {
-                newBoxUpdate(item.buffer);
-                continue;
-            }
-            
-            // Check once per second if the process has been aborted
-            const now = Date.now();
-            if (now > lastCheck + 1000) {
-                if (await abort()) {
-                    worker.terminate();
-                    process.exit(INTERRUPTION_EXIT_CODE);
+        try {
+            // Yield chunks as they arrive from worker
+            while (true) {
+                // Wait for data if queue is empty
+                while (chunkQueue.length === 0 && !isDone) {
+                    await new Promise(resolve => { resolveWaiting = resolve; });
                 }
-                lastCheck = now;
+
+                // Check for errors
+                if (workerError) {
+                    throw workerError;
+                }
+
+                // If done and queue empty, exit
+                if (chunkQueue.length === 0 && isDone) {
+                    break;
+                }
+
+                // Get next item from queue
+                const item = chunkQueue.shift();
+
+                // Handle frame marker
+                if (item.isFrame) {
+                    newFrameUpdate(); // Send a log update signal every time a new frame is completed
+                    continue;
+                }
+
+                // Handle box marker
+                if (item.isBox) {
+                    newBoxUpdate(item.buffer);
+                    continue;
+                }
+
+                // Give the coordinates of the frame in chunks
+                for (let offset = 0; offset < item.length; offset += maxChunkBytes) {
+                    // Check once per second if the process has been aborted
+                    const now = Date.now();
+                    if (now > lastCheck + 1000) {
+                        if (await abort()) {
+                            worker.terminate();
+                            process.exit(INTERRUPTION_EXIT_CODE);
+                        }
+                        lastCheck = now;
+                    }
+
+                    // Yield the data chunk, which is a part of the buffer and not a copy
+                    yield item.subarray(offset, offset + maxChunkBytes);
+                }
+
+                // This frame is not waiting any more: let the worker go on if it was waiting for room
+                Atomics.sub(queued, 0, BigInt(item.length));
+                Atomics.notify(queued, 0);
             }
-            
-            // Yield the data chunk
-            yield item;
+        } finally {
+            // Ensure worker is terminated, also if we stop reading before the end
+            await worker.terminate();
         }
-        
-        // Ensure worker is terminated
-        await worker.terminate();
     };
 
     module.exports = readAndParseTrajectory;

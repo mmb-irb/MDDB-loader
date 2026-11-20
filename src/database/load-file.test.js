@@ -8,7 +8,7 @@ const { Writable } = require('stream');
 const { Database } = require('mddb-database');
 const getDatabase = require('./index');
 const Project = require('./project');
-// Trajectories are read with Gromacs. The tests give the frames instead
+// Trajectories are decoded in a worker thread. The tests give the frames instead
 jest.mock('../utils/read-and-parse-trajectory', () => jest.fn());
 const readAndParseTrajectory = require('../utils/read-and-parse-trajectory');
 
@@ -231,11 +231,36 @@ describe('loading a file', () => {
 
     it('rejects a trajectory with no frames, without registering its deleted file', async () => {
         const project = await makeProject();
-        // Gromacs gives no frame
+        // The trajectory reader gives no frame
         readAndParseTrajectory.mockImplementationOnce(async function* () {});
         await expect(project.loadTrajectoryFile('trajectory.bin', 0, '/fake/trajectory.xtc', 'gmx', null))
             .rejects.toThrow(/Failed to load any frame/);
         expect(await database.files.countDocuments({ filename: 'trajectory.bin', 'metadata.project': project.id })).toBe(0);
+        expect(project.data.mds[0].files).toEqual([]);
+    });
+
+    it('rejects a trajectory which cannot be read to the end, deleting the chunks already written', async () => {
+        const project = await makeProject();
+        // 3 frames of 8 MiB, enough to write 4 chunks, and then the file turns out to be damaged
+        readAndParseTrajectory.mockImplementationOnce(async function* (filepath, gromacsCommand, addOneFrame) {
+            for (let frame = 0; frame < 3; frame++) {
+                addOneFrame();
+                yield Buffer.alloc(8 * 1024 * 1024, frame);
+            }
+            throw new Error('Wrong magic number in xtc file');
+        });
+        const watch = watchNextUpload();
+        try {
+            await expect(project.loadTrajectoryFile('trajectory.bin', 0, '/fake/trajectory.xtc', 'gmx', null))
+                .rejects.toThrow('Wrong magic number in xtc file');
+        } finally {
+            watch.restore();
+        }
+        // Chunks were written before the failure and none is left
+        expect(watch.writes.length).toBeGreaterThan(0);
+        const id = database.currentUploadId;
+        expect(await database.db.collection('fs.chunks').countDocuments({ files_id: id })).toBe(0);
+        expect(await database.files.countDocuments({ _id: id })).toBe(0);
         expect(project.data.mds[0].files).toEqual([]);
     });
 

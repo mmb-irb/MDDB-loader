@@ -705,10 +705,8 @@ class Project {
                 await this.database.abortUpload(uploadStream);
                 reject(error);
             });
-            // This function is equivalent to openning a new terinal and typing this:
-            // gmx dump -f path/to/trajectory
-            // This assembly runs Gromacs as a paralel process which returns an output in string chunks
-            // These strings are converted in standarized "lines"
+            // Read the trajectory file, which is decoded in a parallel thread
+            // Its coordinates come frame by frame, as float32 binary data in Ångstroms
             const trajectoryCoordinates = readAndParseTrajectory(sourceFilepath, gromacsCommand, addOneFrame, abort, addOneBox);
             // Set a timeout
             let timeout;
@@ -730,12 +728,25 @@ class Project {
                 }
             };
             // Iterate over buffers of binary coordinates
-            for await (const coordinates of trajectoryCoordinates) {
-                // Track bytes written
-                bytesWritten += coordinates.length;
-                pieces.push(coordinates);
-                piecesBytes += coordinates.length;
-                if (piecesBytes >= writeBytes) await writePieces();
+            try {
+                for await (const coordinates of trajectoryCoordinates) {
+                    // Track bytes written
+                    bytesWritten += coordinates.length;
+                    pieces.push(coordinates);
+                    piecesBytes += coordinates.length;
+                    if (piecesBytes >= writeBytes) await writePieces();
+                }
+            } catch (error) {
+                // The trajectory could not be read, e.g. the file is damaged
+                // Fail as when the upload fails. Otherwise part of the trajectory would stay in the database
+                // and this promise would never end, since nothing catches errors thrown here
+                updateLogs.cancel();
+                if (timeoutID) clearTimeout(timeoutID);
+                logger.stopFailLog(`💽 Failed to read trajectory file '${basename}' to load it as '${filename}' [${uploadStream.id}] (${error.message})`);
+                await this.database.abortUpload(uploadStream);
+                // The box file will never be finished either
+                if (boxUploadStream) await this.database.abortUpload(boxUploadStream);
+                return reject(error);
             }
             // Write the last pieces
             if (piecesBytes > 0) await writePieces();
@@ -756,7 +767,7 @@ class Project {
                         // Delete the wrong trajectory entry
                         // WARNING: If not deleted here, it would create a duplicate entry
                         await this.database.bucket.delete(uploadStream.id);
-                        const message = `💽 Failed to load any frame in trajectory file '${basename}' as '${filename}' [${uploadStream.id}] -> Check Gromacs is working fine`;
+                        const message = `💽 Failed to load any frame in trajectory file '${basename}' as '${filename}' [${uploadStream.id}] -> Check the file is not empty or truncated`;
                         logger.stopFailLog(message);
                         // Stop here: the file is deleted, so it must not be updated nor registered
                         return reject(new Error(message));
