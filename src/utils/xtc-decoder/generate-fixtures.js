@@ -458,10 +458,10 @@ const main = () => {
         console.error('Usage: node generate-fixtures.js <gmx> [gmx with dump -bin]');
         process.exit(2);
     }
-    // Start from no fixtures, so the ones that are not made any more go away
+    // Start from no fixtures, so the ones that are not made any more go away. fuzz.json is made by generate-fuzz.js
     fs.mkdirSync(FIXTURES_DIRECTORY, { recursive: true });
     for (const name of fs.readdirSync(FIXTURES_DIRECTORY))
-        if (/\.(xtc|bin|json)$/.test(name)) fs.unlinkSync(path.join(FIXTURES_DIRECTORY, name));
+        if (/\.(xtc|bin|json)$/.test(name) && name !== 'fuzz.json') fs.unlinkSync(path.join(FIXTURES_DIRECTORY, name));
     const fixture = name => path.join(FIXTURES_DIRECTORY, name);
     // Keep an xtc file with what GROMACS reads from it
     const keep = (name, covers, xtc, expectedFrames) => {
@@ -539,4 +539,4 @@ const waters30 = frame => waters(random(500 + frame), 30, 0, 3);
 
 if (require.main === module) main();
 
-module.exports = { randomSystem, writeXtc, withTemporaryDirectory };
+module.exports = { random, randomSystem, writeXtc, withTemporaryDirectory };

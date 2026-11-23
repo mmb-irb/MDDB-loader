@@ -199,6 +199,59 @@ describe('xtc decoder', () => {
         });
     });
 
+    // Limits no file written by GROMACS is at, and the fuzz tests do not reach either
+    describe('limits of a frame', () => {
+        // The size of a compressed frame whose header has these values
+        const size = ({ magic = 1995, natoms, dataBytes }) => {
+            const header = Buffer.alloc(96);
+            header.writeInt32BE(magic, 0);
+            header.writeInt32BE(natoms, 4);
+            header.writeInt32BE(natoms, 52);
+            if (magic === 2023) header.writeInt32BE(Math.floor(dataBytes / 2 ** 32), 88);
+            header.writeUInt32BE(dataBytes % 2 ** 32, magic === 2023 ? 92 : 88);
+            return frameBytes(new DataView(header.buffer, header.byteOffset, header.length), 0, header.length);
+        };
+
+        it('takes as much compressed data as GROMACS has room for, and no more', () => {
+            // GROMACS reads it into 240 bytes up to 16 atoms, and into 1.2 ints per coordinate with more atoms
+            expect(size({ natoms: 16, dataBytes: 240 })).toBe(92 + 240);
+            expect(() => size({ natoms: 16, dataBytes: 241 })).toThrow(/Wrong size of the compressed data in xtc frame \(241 bytes for 16 atoms\)/);
+            expect(size({ natoms: 17, dataBytes: 244 })).toBe(92 + 244);
+            expect(() => size({ natoms: 17, dataBytes: 245 })).toThrow(/Wrong size of the compressed data/);
+            expect(size({ natoms: 1000, dataBytes: 14400 })).toBe(92 + 14400);
+            expect(() => size({ natoms: 1000, dataBytes: 14401 })).toThrow(/Wrong size of the compressed data/);
+        });
+
+        it('needs one bit of compressed data per atom at least', () => {
+            expect(size({ natoms: 80, dataBytes: 10 })).toBe(92 + 12);
+            expect(() => size({ natoms: 81, dataBytes: 10 })).toThrow(/its compressed data is too short/);
+        });
+
+        it('takes up to 298261617 atoms with the magic number of 1995', () => {
+            expect(size({ natoms: 298261617, dataBytes: 40000000 })).toBe(92 + 40000000);
+            expect(() => size({ natoms: 298261618, dataBytes: 40000000 })).toThrow(/298261618 atoms need the magic number 2023/);
+            expect(size({ magic: 2023, natoms: 298261618, dataBytes: 40000000 })).toBe(96 + 40000000);
+        });
+
+        it('reads the size of the compressed data as an int64 with the magic number of 2023', () => {
+            expect(size({ magic: 2023, natoms: 400000000, dataBytes: 2 ** 32 + 8 })).toBe(96 + 2 ** 32 + 8);
+            expect(() => size({ magic: 2023, natoms: 400000000, dataBytes: 2 ** 33 })).toThrow(/Wrong size of the compressed data in xtc frame \(8589934592 bytes/);
+        });
+
+        it('reads frames one byte smaller and one byte bigger than its buffer', () => {
+            const ends = frameEnds(fs.readFileSync(fixture('waters.xtc')));
+            const expectedFrames = splitDump(fs.readFileSync(fixture('waters.bin')));
+            // Buffers of the size of every frame, and of the frames up to every one, give or take a byte
+            const sizes = ends.map((end, i) => end - (ends[i - 1] || 0));
+            for (const bufferBytes of [1, 2, 3, ...[...sizes, ...ends].flatMap(size => [size - 1, size, size + 1])]) {
+                const { dumps, incomplete, error } = read(fixture('waters.xtc'), { bufferBytes });
+                expect({ bufferBytes, error }).toEqual({ bufferBytes, error: undefined });
+                expectSameFrames(dumps, expectedFrames);
+                expect(incomplete).toBe(false);
+            }
+        });
+    });
+
     describe('with a file that is not a trajectory', () => {
         it('reads no frames from an empty file', () => {
             expect(readBytes(Buffer.alloc(0))).toEqual({ dumps: [], incomplete: false, count: 0, fast: 0 });

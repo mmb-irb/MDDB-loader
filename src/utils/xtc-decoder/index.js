@@ -3,7 +3,8 @@
 // This is a port of the GROMACS reader: xdr3dfcoord, receivebits, receiveints, sizeofint and sizeofints
 // in src/gromacs/fileio/libxdrf.cpp, and read_first_xtc / read_next_xtc in src/gromacs/fileio/xtcio.cpp.
 // Every frame has the same float32 values GROMACS gives, bit for bit: values stay in nm and nothing is rounded here.
-// The tests compare it with "gmx dump -bin" of GROMACS itself (see generate-fixtures.js).
+// The tests compare it with GROMACS itself: with "gmx dump -bin" on files GROMACS wrote (see generate-fixtures.js),
+// and with the code of its reader on frames made at random (see generate-fuzz.js).
 //
 // An xtc file is a list of frames. All numbers are big endian:
 //   int32    magic           1995, or 2023 for systems over 298 million atoms
