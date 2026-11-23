@@ -35,7 +35,7 @@ describe('load command input validation', () => {
         database = { setup: jest.fn().mockResolvedValue(undefined) };
     });
 
-    // Build the command arguments, skipping trajectories so Gromacs is not required
+    // Build the command arguments, with no trajectories to load
     const args = extra => ({ pdir: projectDir, skipTrajectories: true, ...extra });
 
     it('runs the database setup before validating', async () => {
@@ -120,6 +120,19 @@ describe('load command frames check for new MDs', () => {
         const database = makeDatabase(null);
         await expect(load(args(), database)).rejects.toThrow('passed the check');
         expect(database.createProject).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not need Gromacs when there are trajectories to load', async () => {
+        writeProject({ name: 'replica 1', frames: 10 });
+        const database = makeDatabase(null);
+        // No command can be found, as in a machine with no Gromacs
+        const systemPath = process.env.PATH;
+        process.env.PATH = projectDir;
+        try {
+            await expect(load({ ...args(), skipTrajectories: false }, database)).rejects.toThrow('passed the check');
+        } finally {
+            process.env.PATH = systemPath;
+        }
     });
 
     it('stops before writing when a new MD in an existing project has no frames', async () => {

@@ -112,7 +112,7 @@ yargs
             // --gromacs-path
             .option('gro', {
                 alias: 'gromacs-path', // Option name. Useful for the help
-                description: 'path to gromacs command-line tool', // Option description. Useful for the help
+                description: 'Not used any more: trajectories are loaded with no need of gromacs', // Option description. Useful for the help
                 type: 'string',
                 default: null,
                 coerce: idOrAccessionCoerce,

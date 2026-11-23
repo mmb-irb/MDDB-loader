@@ -12,9 +12,6 @@ const { Database } = require('mddb-database');
 const fs = require('fs');
 // Utilities for working with file and directory paths
 const nodePath = require('node:path');
-// Allows to call a unix command or run another script
-// The execution of this code keeps running
-const { spawnSync } = require('child_process');
 // Used to read the current working directory through cwd
 const process = require('process');
 
@@ -72,24 +69,6 @@ const userConfirmOrphanDataDeletion = async fieldname => {
         : `Orphan ${fieldname} will be conserved`;
     console.log(chalk.yellow(message));
     return confirm;
-};
-
-// Check if gromacs excutable is in path
-// If a command is passed then use it
-// Otherwiese, guess the gromacs command by try and fail
-// Return the working command
-const USUAL_GROMACS_COMMANDS = ['gmx', 'gmx_mpi']
-const getGromacsCommand = command => {
-    // Set the commands to try before we give up
-    const commandsToTry = command ? [ command ] : USUAL_GROMACS_COMMANDS;
-    for (const cmd of commandsToTry) {
-        // Check if a command is installed in the system
-        // WARNING: "error" is not used, but it must be declared in order to obtain the output
-        const process = spawnSync(cmd, ['/?'], {encoding: 'utf8'});
-        if (process.output !== null) return cmd;
-    }
-    // In case no grommacs command was found in the path we warn the user and stop here
-    throw new Error('Gromacs is not installed or its source is not in $PATH');
 };
 
 // Translate a MD name to a MD directory
@@ -242,7 +221,6 @@ module.exports = {
     userConfirm,
     userConfirmDataLoad,
     userConfirmOrphanDataDeletion,
-    getGromacsCommand,
     mdNameToDirectory,
     directoryCoerce,
     getBasename,

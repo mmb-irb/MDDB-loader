@@ -7,7 +7,6 @@ const chalk = require('chalk');
 const prettyMs = require('pretty-ms');
 // Load auxiliar functions
 const {
-  getGromacsCommand,
   directoryCoerce,
   getBasename,
   loadJSON,
@@ -80,7 +79,6 @@ const load = async (
     skipFiles,
     skipAnalyses,
     skipCounters,
-    gromacsPath,
     timeout,
   },
   // Database handler
@@ -136,11 +134,6 @@ const load = async (
     skipTrajectories ? undefined : directoryFiles.mainTrajectory,
     ...directoryFiles.uploadableTrajectories
   ].filter(file => file && file.length !== 0);
-  // Get the correct gromacs command while checking it is installed in the system
-  // If there are no trajectories to load then skip this part as well since Gromacs is used for loading trajectories only
-  const anyParsedTrajectory = Object.values(categorizedMdFiles)
-    .some(directoryFiles => getParsedTrajectoryFiles(directoryFiles).length !== 0);
-  const gromacsCommand = anyParsedTrajectory ? getGromacsCommand(gromacsPath) : null;
 
   // Set a function to load references
   // We se it this early because it may be used now or later in the code
@@ -518,7 +511,7 @@ const load = async (
         databaseFilename,
         mdIndex,
         trajectoryPath,
-        gromacsCommand,
+        null, // The gromacs command: trajectories are read with no need of Gromacs now
         checkAbort,
         boxFilename
       );
