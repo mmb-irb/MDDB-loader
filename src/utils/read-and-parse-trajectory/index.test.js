@@ -167,6 +167,17 @@ describe('trajectory reader', () => {
         await exited;
     });
 
+    it('fails if the worker stops before the end, instead of waiting forever', async () => {
+        const reader = readAndParseTrajectory(fixture('many-frames.xtc'), 'gmx', () => {}, () => false, undefined, { maxQueuedBytes: 1000 });
+        await reader.next();
+        // The worker is waiting for room: kill it, as the system could
+        await mockWorkers[0].terminate();
+        const readTheRest = async () => {
+            for await (const chunk of reader) expect(chunk).toBeDefined();
+        };
+        await expect(readTheRest()).rejects.toThrow(/many-frames.xtc' stopped unexpectedly \(exit code 1\)/);
+    });
+
     it('exits when the load is aborted', async () => {
         // The reader asks if the load was aborted once per second: make time run fast
         let now = Date.now();

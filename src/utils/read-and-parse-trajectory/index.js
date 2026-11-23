@@ -129,6 +129,15 @@ if (!isMainThread) {
             wakeUp();
         });
 
+        // A worker that stops without being done nor failing would leave us waiting forever
+        // Its messages and its error always come before this event
+        worker.on('exit', (code) => {
+            if (isDone) return;
+            workerError = new Error(`The reader of trajectory file '${filepath}' stopped unexpectedly (exit code ${code})`);
+            isDone = true;
+            wakeUp();
+        });
+
         try {
             // Yield chunks as they arrive from worker
             while (true) {
