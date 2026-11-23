@@ -181,13 +181,13 @@ const readHugeInts = (bits, size1, size2) => {
     int0 = (mid1 * LIMB + low1) | 0;
 };
 
-// Bits up to which the fast decoder below reads the 3 ints of an atom: with 52 bits the number is still exact
-// That is enough for a box of 160 nm with a precision of 1000
-const FAST_MAX_PACKED_BITS = 52;
+// Bits up to which the fast decoder below reads the 3 ints of an atom: a number of 53 bits is still exact,
+// and so are its divisions. That is enough for a box of 200 nm with a precision of 1000
+const FAST_MAX_PACKED_BITS = 53;
 // And its 3 small differences: two pieces of 24 bits
 const FAST_MAX_SMALL_BITS = 48;
 
-// The loop of decodeCoordinates for the usual frames: the 3 ints of an atom packed in up to 52 bits, and its small
+// The loop of decodeCoordinates for the usual frames: the 3 ints of an atom packed in up to 53 bits, and its small
 // differences in up to 48. It does the same, but faster: it is one function, with the bit reader written
 // in place and its state in local variables, which the JavaScript engine keeps in registers
 // It returns false as soon as it finds anything it is not made for, damaged frames included: nothing fails here
