@@ -6,6 +6,9 @@ const UNIT_CONVERSION_SCALE = 10;
 // Backpressure control: bytes of coordinates the main thread may have waiting before the worker pauses
 // GridFS is written 16 MiB at a time, so this is enough to keep it fed
 const MAX_QUEUED_BYTES = 64 * 1024 * 1024;
+// And frames it may have waiting. This is the limit that counts with frames of a few atoms: they would wait
+// by the hundred thousand otherwise, and a queue that long is slow and takes far more memory than its coordinates
+const MAX_QUEUED_FRAMES = 1024;
 // Coordinates are given in chunks of this size at most, whatever the size of a frame
 // The loader gathers them to write 16 MiB at a time: with small chunks all its writes have about that size
 const MAX_CHUNK_BYTES = 64 * 1024;
@@ -28,7 +31,7 @@ const MAX_CHUNK_BYTES = 64 * 1024;
 if (!isMainThread) {
     // The xtc file is decoded here, with no need of GROMACS: frames come with the same values GROMACS reads
     const { readXtcFrames } = require('../xtc-decoder');
-    const { filepath, parseBox, queued, maxQueuedBytes } = workerData;
+    const { filepath, parseBox, queued, maxQueuedBytes, maxQueuedFrames } = workerData;
 
     // Convert float32 values from nm to Ångström in place
     // Every product is rounded once, when it is stored as float32: the same result as a float32 multiplication
@@ -52,11 +55,13 @@ if (!isMainThread) {
         // Send the coordinates of the whole frame. The buffer is transferred, not copied
         toAngstroms(coordinates);
         Atomics.add(queued, 0, BigInt(coordinates.byteLength));
+        Atomics.add(queued, 1, 1n);
         parentPort.postMessage({ type: 'data', buffer: coordinates.buffer }, [coordinates.buffer]);
-        // Backpressure: wait while the main thread has too many bytes waiting
-        // The main thread wakes us up every time it consumes a chunk. The timeout is just in case
+        // Backpressure: wait while the main thread has too many bytes or too many frames waiting
+        // The main thread wakes us up every time it consumes a frame, which changes the bytes. The timeout is just in case
         let waiting;
-        while ((waiting = Atomics.load(queued, 0)) >= maxQueuedBytes) Atomics.wait(queued, 0, waiting, 1000);
+        while ((waiting = Atomics.load(queued, 0)) >= maxQueuedBytes || Atomics.load(queued, 1) >= maxQueuedFrames)
+            Atomics.wait(queued, 0, waiting, 1000);
     }
     // The file ended in the middle of a frame: the frames before it were sent
     if (next.value.incomplete) parentPort.postMessage({ type: 'incomplete', frames: next.value.frames });
@@ -77,7 +82,7 @@ if (!isMainThread) {
     // The gromacs command is not used any more, since the file is decoded here: the argument stays so callers do not change
     // The last argument is for tests only, to try the limits above with small files
     const readAndParseTrajectory = async function* (filepath, gromacsCommand, newFrameUpdate, abort, newBoxUpdate, limits = {}) {
-        const { maxQueuedBytes = MAX_QUEUED_BYTES, maxChunkBytes = MAX_CHUNK_BYTES } = limits;
+        const { maxQueuedBytes = MAX_QUEUED_BYTES, maxQueuedFrames = MAX_QUEUED_FRAMES, maxChunkBytes = MAX_CHUNK_BYTES } = limits;
         // Chunks are the bytes of float32 values as they are in memory, and we store them little endian
         if (os.endianness() !== 'LE') throw new Error('Trajectories can only be loaded from a little endian machine');
         // Track the last time we checked if the load was aborted
@@ -87,13 +92,13 @@ if (!isMainThread) {
         // Without a limit the difference accumulates in the queue below, causing memory to grow
         // (potentially to GB). When heap fills up, Node.js triggers garbage collection (GC),
         // which pauses ALL JavaScript execution for 50-500ms, causing gaps in network upload.
-        // Solution: both threads share the number of bytes sent by the worker and not consumed yet.
-        // The worker adds to it and waits while it is over the limit, even if this thread is too busy to say so.
-        const queued = new BigInt64Array(new SharedArrayBuffer(BigInt64Array.BYTES_PER_ELEMENT));
+        // Solution: both threads share the number of bytes and of frames sent by the worker and not consumed yet.
+        // The worker adds to them and waits while one is over its limit, even if this thread is too busy to say so.
+        const queued = new BigInt64Array(new SharedArrayBuffer(2 * BigInt64Array.BYTES_PER_ELEMENT));
 
         // Create worker thread for parsing
         const worker = new Worker(__filename, {
-            workerData: { filepath, parseBox: Boolean(newBoxUpdate), queued, maxQueuedBytes }
+            workerData: { filepath, parseBox: Boolean(newBoxUpdate), queued, maxQueuedBytes, maxQueuedFrames }
         });
 
         // Queue to hold chunks from worker until consumed
@@ -188,6 +193,7 @@ if (!isMainThread) {
                 }
 
                 // This frame is not waiting any more: let the worker go on if it was waiting for room
+                Atomics.sub(queued, 1, 1n);
                 Atomics.sub(queued, 0, BigInt(item.length));
                 Atomics.notify(queued, 0);
             }

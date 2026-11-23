@@ -130,7 +130,7 @@ describe('trajectory reader', () => {
         await expect(readAll(path.join(directory, 'missing.xtc'))).rejects.toThrow(/ENOENT/);
     });
 
-    it('stops the worker while too many bytes wait to be consumed', async () => {
+    it('stops the worker while too many bytes or too many frames wait to be consumed', async () => {
         // 200 frames of 144 bytes. Count the chunks the worker has sent
         const countSent = () => {
             const count = { sent: 0 };
@@ -138,16 +138,18 @@ describe('trajectory reader', () => {
             return count;
         };
         const expected = Buffer.concat(expectedFrames('many-frames').map(frame => frame.coordinates));
-        // With room for 1000 bytes, the worker stops after 7 chunks until one is consumed
-        const slow = readAndParseTrajectory(fixture('many-frames.xtc'), 'gmx', () => {}, () => false, undefined, { maxQueuedBytes: 1000 });
-        const first = await slow.next();
-        const slowCount = countSent();
-        await wait(300);
-        expect(slowCount.sent).toBeLessThanOrEqual(7);
-        // Everything comes in the end, in order
-        const chunks = [first.value];
-        for await (const chunk of slow) chunks.push(chunk);
-        expect(Buffer.concat(chunks).equals(expected)).toBe(true);
+        // With room for 1000 bytes, the worker stops after 7 chunks until one is consumed. With room for 5 frames, after 5
+        for (const [limits, most] of [[{ maxQueuedBytes: 1000 }, 7], [{ maxQueuedFrames: 5 }, 5]]) {
+            const slow = readAndParseTrajectory(fixture('many-frames.xtc'), 'gmx', () => {}, () => false, undefined, limits);
+            const first = await slow.next();
+            const slowCount = countSent();
+            await wait(300);
+            expect({ limits, sent: slowCount.sent <= most }).toEqual({ limits, sent: true });
+            // Everything comes in the end, in order
+            const chunks = [first.value];
+            for await (const chunk of slow) chunks.push(chunk);
+            expect(Buffer.concat(chunks).equals(expected)).toBe(true);
+        }
         // With the usual room, the whole file is sent without waiting
         const fast = readAndParseTrajectory(fixture('many-frames.xtc'), 'gmx', () => {}, () => false);
         await fast.next();
