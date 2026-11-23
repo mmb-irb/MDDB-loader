@@ -264,6 +264,33 @@ describe('loading a file', () => {
         expect(project.data.mds[0].files).toEqual([]);
     });
 
+    it('deletes the chunks of the box file too when the trajectory cannot be read to the end', async () => {
+        const project = await makeProject();
+        const chunks = database.db.collection('fs.chunks');
+        const before = await chunks.countDocuments({});
+        let written;
+        // 3 frames and then the file turns out to be damaged
+        // A box has 36 bytes: these have 3 MiB so that chunks of the box file are written with only 3 frames
+        readAndParseTrajectory.mockImplementationOnce(async function* (filepath, gromacsCommand, addOneFrame, abort, addOneBox) {
+            for (let frame = 0; frame < 3; frame++) {
+                addOneFrame();
+                addOneBox(Buffer.alloc(3 * 1024 * 1024, frame));
+                yield Buffer.alloc(36);
+            }
+            // Give the chunks time to reach the database
+            await new Promise(resolve => setTimeout(resolve, 500));
+            written = (await chunks.countDocuments({})) - before;
+            throw new Error('Wrong magic number in xtc file');
+        });
+        await expect(project.loadTrajectoryFile('trajectory.bin', 0, '/fake/trajectory.xtc', 'gmx', null, 'box.bin'))
+            .rejects.toThrow('Wrong magic number in xtc file');
+        // Chunks were written before the failure and none is left, of the box nor of the coordinates
+        expect(written).toBeGreaterThan(0);
+        expect(await chunks.countDocuments({})).toBe(before);
+        const files = { filename: { $in: ['trajectory.bin', 'box.bin'] }, 'metadata.project': project.id };
+        expect(await database.files.countDocuments(files)).toBe(0);
+    });
+
     it('loads a trajectory and stores its frames and atoms', async () => {
         const project = await makeProject();
         // Two frames of 3 atoms, of 3 coordinates of 4 bytes each
