@@ -1,5 +1,5 @@
 // Tests of the xtc decoder against GROMACS itself
-// The fixtures are xtc files written by GROMACS with what GROMACS reads from them ("gmx dump -bin"),
+// The fixtures are xtc files written by GROMACS with what GROMACS reads from them (the .bin files, see dump-bin.js),
 // so these tests need no GROMACS. See generate-fixtures.js, which makes them
 const fs = require('fs');
 const os = require('os');
@@ -299,21 +299,27 @@ describe('xtc decoder', () => {
         });
 
         it('does as GROMACS, where GROMACS knows what it does', () => {
-            const counts = { same: 0, 'no warning': 0, 'not defined': 0 };
+            const counts = { same: 0, 'no warning': 0, 'no first frame': 0, 'not defined': 0 };
             for (let size = 0; size < bytes.length; size++) {
                 const whole = ends.filter(end => end <= size).length;
                 const incomplete = size !== 0 && !ends.includes(size);
                 const inFrame = size - (ends[whole - 1] || 0);
                 const [code, frames, warned, dumpHash] = gromacs[size];
                 const sameFrames = frames === whole && dumpHash === hash(Buffer.concat(expected.slice(0, whole)));
-                // GROMACS never checks if it could read the first frame: it crashes, or it dumps a frame it made up
-                // With the 2023 format, the same happens when the file ends in the second half of the size of the compressed data
-                if (whole === 0 || (name === 'bad-input-magic-2023' && inFrame >= 92 && inFrame < 96)) {
+                // With the 2023 format, GROMACS does not notice that the file ends in the second half of the size
+                // of the compressed data: it crashes, or it gives a frame it made up
+                if (name === 'bad-input-magic-2023' && inFrame >= 92 && inFrame < 96) {
                     expect({ size, crashOrMadeUpFrame: code !== 0 || (frames === whole + 1 && !warned) }).toEqual({
                         size,
                         crashOrMadeUpFrame: true,
                     });
                     counts['not defined']++;
+                    continue;
+                }
+                // GROMACS fails if it cannot read a first frame. The decoder gives no frames, and the loader fails then
+                if (whole === 0) {
+                    expect({ size, code }).toEqual({ size, code: 1 });
+                    counts['no first frame']++;
                     continue;
                 }
                 expect({ size, code, sameFrames }).toEqual({ size, code: 0, sameFrames: true });
@@ -326,11 +332,14 @@ describe('xtc decoder', () => {
                 expect({ size, warned }).toEqual({ size, warned: incomplete });
                 counts.same++;
             }
-            const notDefined = ends[0] + (name === 'bad-input-magic-2023' ? 8 : 0);
+            // 4 sizes in every frame
+            const notDefined = name === 'bad-input-magic-2023' ? 4 * ends.length : 0;
+            const noFirstFrame = ends[0] - (notDefined ? 4 : 0);
             const noWarning = 3 * (ends.length - 1);
             expect(counts).toEqual({
-                same: bytes.length - notDefined - noWarning,
+                same: bytes.length - notDefined - noFirstFrame - noWarning,
                 'no warning': noWarning,
+                'no first frame': noFirstFrame,
                 'not defined': notDefined,
             });
         });
@@ -340,16 +349,15 @@ describe('xtc decoder', () => {
     describe('with damaged files', () => {
         const bytes = fs.readFileSync(fixture('bad-input-waters.xtc'));
         // Compare the decoder with what GROMACS did (in bad-input.json): [exit code, frames, warned of incomplete frame, hash]
-        // Returns 'same', 'both fail', or the reason why the decoder fails when GROMACS does not
+        // Returns 'same', 'both give an error', or the error of the decoder when GROMACS gives none
         const compare = (damaged, [code, frames, warned, dumpHash], options) => {
             const { dumps, incomplete, error } = readBytes(damaged, options);
             if (error && !(error instanceof XtcError)) throw error;
-            // GROMACS failed or crashed: the decoder must fail
-            if (code !== 0) {
-                expect(error).toBeInstanceOf(XtcError);
-                return 'both fail';
-            }
-            // The decoder is stricter than GROMACS
+            // GROMACS gave an error or crashed: the decoder must fail
+            if (code !== 0) expect(error).toBeInstanceOf(XtcError);
+            if (code === 1) return 'both give an error';
+            // The decoder is stricter than GROMACS, which crashed or read something
+            // These count together: with the same file GROMACS may crash in one run and not in the next
             if (error) return error.message.replace(/ \(.*\)$/, '');
             // Both read it: they must read the same
             expect({ frames: dumps.length, incomplete, hash: hash(Buffer.concat(dumps)) }).toEqual({
@@ -371,14 +379,15 @@ describe('xtc decoder', () => {
                 results[result] = (results[result] || 0) + 1;
             }
             // Changes in the time, the step, the box and most of the compressed data cannot be noticed: xtc has no checksum
-            // The decoder also fails in cases where GROMACS reads or writes memory that is not its own, and happens not to crash
+            // Where only the decoder gives an error, GROMACS reads or writes memory that is not its own, and it crashes
+            // or not, or it reads values of no use
             expect(results).toEqual({
                 same: 1570,
-                'both fail': 313,
-                'Wrong number of atoms in xtc frame': 16,
+                'both give an error': 73,
+                'Wrong number of atoms in xtc frame': 48,
                 'Wrong precision in xtc frame': 6,
-                'Wrong smallidx in xtc frame': 4,
-                'Wrong run in xtc frame: it has more atoms than the frame': 49,
+                'Wrong smallidx in xtc frame': 33,
+                'Wrong run in xtc frame: it has more atoms than the frame': 228,
                 'Wrong size of the compressed data in xtc frame': 16,
                 'Wrong xtc frame: its compressed data is too short': 6,
             });
@@ -435,7 +444,7 @@ describe('xtc decoder', () => {
     });
 });
 
-// Tests that run GROMACS, skipped unless XTC_TEST_GMX has the path of a GROMACS with "gmx dump -bin"
+// Tests that run GROMACS, skipped unless XTC_TEST_GMX has the path of any GROMACS in single precision
 // XTC_TEST_SYSTEMS is the number of random systems to try (200 by default)
 const gmx = process.env.XTC_TEST_GMX;
 (gmx ? describe : describe.skip)('xtc decoder against GROMACS', () => {

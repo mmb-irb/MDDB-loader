@@ -2,11 +2,12 @@
  * Generate the fixtures of the xtc decoder tests: small xtc files written by GROMACS, what GROMACS reads
  * from them, and what GROMACS does with truncated and damaged copies of some of them
  *
- * Not needed to run the tests, only to make the fixtures again. It needs two GROMACS:
- * - any installed GROMACS, to write the xtc files (trjconv, grompp and mdrun)
- * - one with "gmx dump -bin" (the gromacs_mddb package), to read them. If it is installed, it can do both
- * Run with: node src/utils/xtc-decoder/generate-fixtures.js <gmx> [gmx with dump -bin]
- * The same input gives the same fixtures, so git shows what changed
+ * Not needed to run the tests, only to make the fixtures again. It needs any installed GROMACS in single precision,
+ * to write the xtc files (trjconv, grompp and mdrun) and to read them (trjconv to trr, see dump-bin.js)
+ * Run with: node src/utils/xtc-decoder/generate-fixtures.js <gmx>
+ * The same input gives the same fixtures, so git shows what changed. The only exception is in bad-input.json:
+ * with some damaged files GROMACS reads or writes memory that is not its own, and then it crashes or not,
+ * and reads one thing or another, from one run to the next. The tests do not depend on what it does with those
  */
 const fs = require('fs');
 const os = require('os');
@@ -355,12 +356,14 @@ const hash = bytes =>
         .digest('hex')
         .slice(0, 16);
 
-// What GROMACS does with some bytes as an xtc file: [exit code or signal, whole frames dumped, if it warned
-// of an incomplete frame, hash of its dump]
-const gromacsOutcome = (gmxDump, bytes, directory) => {
+// What GROMACS does with some bytes as an xtc file: [exit code or signal, whole frames read, if it warned
+// of an incomplete frame, hash of the dump of the frames]
+// When GROMACS fails no frame counts: the ones it read before it failed are not all in what it wrote
+const gromacsOutcome = (gmx, bytes, directory) => {
     const filepath = path.join(directory, 'damaged.xtc');
     fs.writeFileSync(filepath, bytes);
-    const { dump, code, incomplete } = runDump(gmxDump, filepath);
+    const { dump, code, incomplete } = runDump(gmx, filepath);
+    if (code !== 0) return [code, 0, incomplete, hash(Buffer.alloc(0))];
     const natoms = dump.length >= 4 ? dump.readInt32LE(0) : -1;
     const frames = natoms >= 0 ? Math.floor(dump.length / dumpFrameBytes(natoms)) : 0;
     return [code, frames, incomplete, hash(dump)];
@@ -453,9 +456,9 @@ const toMagic2023 = bytes => {
 // ----- Main -----
 
 const main = () => {
-    const [gmx, gmxDump = gmx] = process.argv.slice(2);
+    const [gmx] = process.argv.slice(2);
     if (!gmx) {
-        console.error('Usage: node generate-fixtures.js <gmx> [gmx with dump -bin]');
+        console.error('Usage: node generate-fixtures.js <gmx>');
         process.exit(2);
     }
     // Start from no fixtures, so the ones that are not made any more go away. fuzz.json is made by generate-fuzz.js
@@ -466,7 +469,7 @@ const main = () => {
     // Keep an xtc file with what GROMACS reads from it
     const keep = (name, covers, xtc, expectedFrames) => {
         fs.writeFileSync(fixture(`${name}.xtc`), xtc);
-        const { dump, code, incomplete } = runDump(gmxDump, fixture(`${name}.xtc`));
+        const { dump, code, incomplete } = runDump(gmx, fixture(`${name}.xtc`));
         if (code !== 0 || incomplete) throw new Error(`GROMACS could not read ${name}.xtc`);
         fs.writeFileSync(fixture(`${name}.bin`), dump);
         const natoms = dump.readInt32LE(0);
@@ -507,7 +510,7 @@ const main = () => {
             console.log(`Truncating ${name} at every one of its ${bytes.length} bytes`);
             badInput.truncated[name] = [];
             for (let size = 0; size < bytes.length; size++)
-                badInput.truncated[name].push(gromacsOutcome(gmxDump, bytes.subarray(0, size), directory));
+                badInput.truncated[name].push(gromacsOutcome(gmx, bytes.subarray(0, size), directory));
         }
         // Every byte of the first file changed in 3 ways: its lowest bit, its highest bit and all of its bits
         console.log(`Damaging every byte of bad-input-waters`);
@@ -515,13 +518,13 @@ const main = () => {
             for (const flip of [0x01, 0x80, 0xff]) {
                 const copy = Buffer.from(smallXtc);
                 copy[offset] ^= flip;
-                badInput.damaged[`${offset}^${flip}`] = gromacsOutcome(gmxDump, copy, directory);
+                badInput.damaged[`${offset}^${flip}`] = gromacsOutcome(gmx, copy, directory);
             }
         }
         // And its headers edited
         for (const [what, edits] of EDITS) {
             const { copy, changes } = applyEdits(smallXtc, edits);
-            badInput.edited.push({ what, changes, gromacs: gromacsOutcome(gmxDump, copy, directory) });
+            badInput.edited.push({ what, changes, gromacs: gromacsOutcome(gmx, copy, directory) });
         }
         // One line per case, to keep the file small and its changes readable
         const lines = object => '{\n' + Object.entries(object).map(([key, value]) => `  ${JSON.stringify(key)}: ${JSON.stringify(value)}`).join(',\n') + '\n }';

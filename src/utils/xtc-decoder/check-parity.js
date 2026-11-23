@@ -1,7 +1,8 @@
 /**
  * Compare the xtc decoder with GROMACS on whole trajectories, frame by frame and bit by bit
  *
- * Not a jest test: it needs GROMACS with "gmx dump -bin" (the gromacs_mddb package) and real trajectories
+ * Not a jest test: it needs any installed GROMACS in single precision and real trajectories
+ * It writes nothing next to the trajectories: GROMACS gives its frames through a named pipe in the temporary directory
  * Run with: node src/utils/xtc-decoder/check-parity.js <gmx> <trajectory.xtc> [more trajectories]
  * It exits with 1 if any trajectory differs
  */
