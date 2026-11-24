@@ -44,6 +44,7 @@
     "jest": "^29.7.0",
     "jsdom": "15.1.1",
     "lint-staged": "8.2.1",
+    "mongodb-memory-server": "^9.0.x",
     "ngl": "2.0.0-dev.36",
     "prettier": "1.18.2"
   },
